@@ -1,5 +1,4 @@
 version: "3.9"
-
 services:
   app:
     build: .
@@ -15,9 +14,11 @@ services:
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - DB=postgresql://postgres:postgres@db:5432/mydb
+      - REDIS_URL=redis://redis:6379
     depends_on:
       - db
       - minio
+      - redis
     restart: unless-stopped
 
   caddy:
@@ -31,6 +32,7 @@ services:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
+      - caddy_logs:/var/log/caddy    # 👈 log volume
     depends_on:
       - app
     restart: unless-stopped
@@ -56,13 +58,36 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000" # only expose console
+      - "9000:9000"
     volumes:
       - miniodata:/data
     restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    command: >
+      redis-server
+      --maxmemory 50mb
+      --maxmemory-policy allkeys-lru
+    expose:
+      - "6379"
+    restart: unless-stopped
+
+  vector:
+    image: timberio/vector:0.38.0-alpine
+    container_name: vector
+    volumes:
+      - caddy_logs:/var/log/caddy:ro          # caddy log পড়বে
+      - ./config/vector.toml:/etc/vector/vector.toml:ro
+    depends_on:
+      - caddy
+      - app
+    restart: unless-stopped
 
 volumes:
   pgdata:
   miniodata:
   caddy_data:
   caddy_config:
+  caddy_logs:    # 👈 shared between caddy + vector

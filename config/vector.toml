@@ -1,0 +1,27 @@
+[sources.caddy]
+type = "file"
+include = ["/var/log/caddy/access.log"]
+read_from = "beginning"
+
+[transforms.parse]
+type = "remap"
+inputs = ["caddy"]
+source = '''
+  row, err = parse_json(.message)
+  if err != null { abort }
+  .host = row.request.host
+  .bytes = to_int(row.size) ?? 0
+'''
+
+[transforms.filter_valid]
+type = "filter"
+inputs = ["parse"]
+condition = '.host != null'
+
+[sinks.express]
+type = "http"
+inputs = ["filter_valid"]
+uri = "http://express_app:3000/internal/log"
+encoding.codec = "json"
+batch.timeout_secs = 10
+batch.max_events = 1000

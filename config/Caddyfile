@@ -3,6 +3,14 @@
     admin 0.0.0.0:2019 {
         origins caddy_server:2019 express_app:2019 localhost 127.0.0.1:2019
     }
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 50mb
+            roll_keep 2
+            roll_keep_for 2h
+        }
+        format json
+    }
 }
 
 
