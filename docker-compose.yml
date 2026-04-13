@@ -77,6 +77,7 @@ services:
   vector:
     image: timberio/vector:0.38.0-alpine
     container_name: vector
+    command: ["--config", "/etc/vector/vector.toml"]
     volumes:
       - caddy_logs:/var/log/caddy:ro          # caddy log পড়বে
       - ./config/vector.toml:/etc/vector/vector.toml:ro

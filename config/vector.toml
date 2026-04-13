@@ -7,16 +7,15 @@ read_from = "beginning"
 type = "remap"
 inputs = ["caddy"]
 source = '''
-  row, err = parse_json(.message)
-  if err != null { abort }
-  .host = row.request.host
-  .bytes = to_int(row.size) ?? 0
+  . = parse_json!(.message)
+  .host = .request.host
+  .bytes = to_int(.size) ?? 0
 '''
 
 [transforms.filter_valid]
 type = "filter"
 inputs = ["parse"]
-condition = '.host != null'
+condition = 'exists(.host) && .host != null'
 
 [sinks.express]
 type = "http"

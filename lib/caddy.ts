@@ -40,18 +40,16 @@ export async function restoreRoutes() {
         const projects = await db.select().from(pages)
 
         for (const project of projects) {
-            addCustomDomain({
+            await addCustomDomain({  // ✅ await যোগ করো
                 tenantId: project.id,
                 projectName: project.project_name,
                 customDomain: project.domain
             })
         }
-
     } catch (error) {
-
+        console.error("Failed to restore routes:", error)
     }
 }
-
 
 export async function addCustomDomain({ tenantId, projectName, customDomain }: {
     tenantId: string,
@@ -63,6 +61,12 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
 } = {}) {
     const bucketName = projectName
     const routeId = `${tenantId}-${projectName}-custom`
+
+    // ✅ আগে delete করো — already exist করলে সরিয়ে দাও
+    await fetch(`${caddyAdmin}/id/${routeId}`, {
+        method: "DELETE",
+        headers: { "Origin": "http://caddy_server:2019" }
+    }).catch(() => {}) // না থাকলে error ignore করো
 
     const route = {
         match: [{ host: [customDomain] }],
@@ -77,8 +81,7 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
                             { handler: "rewrite", uri: `/${bucketName}/index.html` },
                             {
                                 handler: "reverse_proxy",
-                                upstreams: [{ dial: minioHost }],
-                                //headers: { request: { set: { Host: [minioHost] } } }
+                                upstreams: [{ dial: minioHost }]
                             }
                         ]
                     },
@@ -87,7 +90,6 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
                             {
                                 handler: "reverse_proxy",
                                 upstreams: [{ dial: minioHost }],
-                                //headers: { request: { set: { Host: [minioHost] } } },
                                 rewrite: { uri: `/${bucketName}{http.request.uri.path}` },
                                 handle_response: [
                                     {
@@ -98,8 +100,7 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
                                                     { handler: "rewrite", uri: `/${bucketName}/index.html` },
                                                     {
                                                         handler: "reverse_proxy",
-                                                        upstreams: [{ dial: minioHost }],
-                                                        //headers: { request: { set: { Host: [minioHost] } } }
+                                                        upstreams: [{ dial: minioHost }]
                                                     }
                                                 ]
                                             }
@@ -120,7 +121,6 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
         headers: {
             "Content-Type": "application/json",
             "Origin": "http://caddy_server:2019"
-
         },
         body: JSON.stringify(route)
     })
@@ -130,16 +130,9 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
         throw new Error(`Failed to add custom domain: ${err}`)
     }
 
-    console.log(`${customDomain} added`)
+    console.log(`✅ ${customDomain} added`)
 
-    //
-    // return {
-    //     success: true,
-    //     tenantId,
-    //     projectName,
-    //     customDomain,
-    //     url: `http://${customDomain}`
-    // }
+    return { success: true, tenantId, projectName, customDomain }
 }
 
 export async function removeCustomDomain({
@@ -149,12 +142,13 @@ export async function removeCustomDomain({
     tenantId: string,
     projectName: string
 },
-    caddyAdmin = "http://localhost:2019"
+    caddyAdmin = "http://caddy_server:2019"  // ✅ localhost → caddy_server
 ) {
     const routeId = `${tenantId}-${projectName}-custom`
 
     const res = await fetch(`${caddyAdmin}/id/${routeId}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: { "Origin": "http://caddy_server:2019" }
     })
 
     if (!res.ok) {

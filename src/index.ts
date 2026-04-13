@@ -28,6 +28,8 @@ app.post("/internal/log", async (req, res) => {
         pipeline.incrby(`bandwidth:${log.host}`, log.bytes || 0)
     }
 
+    console.log("working pipline logs")
+
     await pipeline.exec()
     res.json({ ok: true })
 })
