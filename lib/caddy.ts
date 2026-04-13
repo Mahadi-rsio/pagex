@@ -95,6 +95,9 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
         const err = await res.text()
         throw new Error(`Failed to add custom domain: ${err}`)
     }
+
+    console.log(`${customDomain} added`)
+
     //
     // return {
     //     success: true,
