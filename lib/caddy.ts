@@ -1,3 +1,24 @@
+import { db } from './db/db.js'
+import { pages } from './db/schema.js'
+
+export async function restoreRoutes() {
+    try {
+        const projects = await db.select().from(pages)
+
+        for (const project of projects) {
+            addCustomDomain({
+                tenantId: project.id,
+                projectName: project.project_name,
+                customDomain: project.domain
+            })
+        }
+
+    } catch (error) {
+
+    }
+}
+
+
 export async function addCustomDomain({ tenantId, projectName, customDomain }: {
     tenantId: string,
     projectName: string,
@@ -44,7 +65,7 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
                                                     {
                                                         handler: "reverse_proxy",
                                                         upstreams: [{ dial: minioHost }],
-                                                      //headers: { request: { set: { Host: [minioHost] } } }
+                                                        //headers: { request: { set: { Host: [minioHost] } } }
                                                     }
                                                 ]
                                             }
@@ -74,14 +95,14 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
         const err = await res.text()
         throw new Error(`Failed to add custom domain: ${err}`)
     }
-
-    return {
-        success: true,
-        tenantId,
-        projectName,
-        customDomain,
-        url: `http://${customDomain}`
-    }
+    //
+    // return {
+    //     success: true,
+    //     tenantId,
+    //     projectName,
+    //     customDomain,
+    //     url: `http://${customDomain}`
+    // }
 }
 
 export async function removeCustomDomain({
