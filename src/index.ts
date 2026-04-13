@@ -1,7 +1,7 @@
 import express from 'express'
 import { log } from 'node:console'
 import { createPage } from './controllers/pages/pageController.js'
-import { restoreRoutes } from './../lib/caddy.js'
+import { restoreRoutes, setupAccessLog } from './../lib/caddy.js'
 import { redis } from './../lib/redis.js'
 
 const app = express()
@@ -46,4 +46,5 @@ app.get("/api/usage/:domain", async (req, res) => {
 app.listen(3000, async () => {
     log("server started at 3000")
     await restoreRoutes()
+    await setupAccessLog()
 })
