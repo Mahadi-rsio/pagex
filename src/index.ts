@@ -3,6 +3,8 @@ import { log } from 'node:console'
 import { createPage } from './controllers/pages/pageController.js'
 import { restoreRoutes, setupAccessLog } from './../lib/caddy.js'
 import { redis } from './../lib/redis.js'
+import { setInterval } from 'node:timers/promises'
+import { syncUsageToDB } from './../lib/cron.js'
 
 const app = express()
 
@@ -40,7 +42,7 @@ app.get("/api/usage/:domain", async (req, res) => {
 
     res.json({
         requests: { used: requests, limit: 100_000 },
-        bandwidth: { used_gb: (bandwidth / 1024 ** 3).toFixed(4), limit: "1GB" }
+        bandwidth: { used_gb: (bandwidth / 1024 ** 3).toFixed(6), limit: "1GB" }
     })
 })
 
@@ -48,5 +50,8 @@ app.get("/api/usage/:domain", async (req, res) => {
 app.listen(3000, async () => {
     log("server started at 3000")
     await restoreRoutes()
-    await setupAccessLog()
+
+    setInterval(10000, async () => {
+        await syncUsageToDB().catch(console.error)
+    })
 })
