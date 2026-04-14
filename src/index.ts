@@ -3,7 +3,7 @@ import { log } from 'node:console'
 import { createPage } from './controllers/pages/pageController.js'
 import { restoreRoutes, setupAccessLog } from './../lib/caddy.js'
 import { redis } from './../lib/redis.js'
-import { setInterval } from 'node:timers/promises'
+//import { setInterval } from 'node:timers/promises'
 import { syncUsageToDB } from './../lib/cron.js'
 
 const app = express()
@@ -51,7 +51,7 @@ app.listen(3000, async () => {
     log("server started at 3000")
     await restoreRoutes()
 
-    setInterval(10000, async () => {
+    setInterval( async () => {
         await syncUsageToDB().catch(console.error)
-    })
+    },1000 * 60 * 1)
 })
