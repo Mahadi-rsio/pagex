@@ -1,4 +1,4 @@
-import { integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 export const pages = pgTable("pages", {
     id: uuid("id").primaryKey().notNull().defaultRandom(),
@@ -8,13 +8,13 @@ export const pages = pgTable("pages", {
     domain: text("domain").notNull(),
     project_name: text('project_name').notNull(),
 
-    request: integer("request").notNull().default(0),
-    request_limit: integer("request_limit").notNull().default(100000),
+    request: bigint("request", { mode: 'number' }).notNull().default(0),
+    request_limit: bigint("request_limit", { mode: 'number' }).notNull().default(100000),
 
-    bandwidth_usage: integer("bandwidth_usage").notNull().default(0),
+    bandwidth_usage: bigint("bandwidth_usage", { mode: "number" }).notNull().default(0),
 
     // 2 GB limit (in bytes)
-    bandwidth_limit: integer("bandwidth_limit")
+    bandwidth_limit: bigint("bandwidth_limit", { mode: 'number' })
         .notNull()
         .default(2147483648),
 
