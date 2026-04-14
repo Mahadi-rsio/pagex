@@ -23,4 +23,5 @@ inputs = ["filter_valid"]
 uri = "http://express_app:3000/internal/log"
 encoding.codec = "json"
 batch.timeout_secs = 10
-batch.max_events = 1000
+batch.max_bytes = 512000
+batch.max_events = 500
