@@ -6,9 +6,6 @@ import { redis } from './../lib/redis.js'
 
 const app = express()
 
-app.use(express.json({
-    limit: "10mb"
-}))
 
 app.get("/", async (req, res) => {
     return res.json({
@@ -20,21 +17,22 @@ app.post('/create_page', createPage)
 
 // index.ts এ সরাসরি যোগ করো
 
-app.post("/internal/log", async (req, res) => {
-    const logs = Array.isArray(req.body) ? req.body : [req.body]
-    const pipeline = redis.pipeline()
+app.post("/internal/log", express.json({ limit: "100mb" }),
+    async (req, res) => {
+        const logs = Array.isArray(req.body) ? req.body : [req.body]
+        const pipeline = redis.pipeline()
 
-    for (const log of logs) {
-        if (!log.host) continue
-        pipeline.incr(`requests:${log.host}`)
-        pipeline.incrby(`bandwidth:${log.host}`, log.bytes || 0)
-    }
+        for (const log of logs) {
+            if (!log.host) continue
+            pipeline.incr(`requests:${log.host}`)
+            pipeline.incrby(`bandwidth:${log.host}`, log.bytes || 0)
+        }
 
-    console.log("working pipline logs")
+        console.log("working pipline logs")
 
-    await pipeline.exec()
-    res.json({ ok: true })
-})
+        await pipeline.exec()
+        res.json({ ok: true })
+    })
 
 app.get("/api/usage/:domain", async (req, res) => {
     const requests = parseInt(await redis.get(`requests:${req.params.domain}`) || "0")
