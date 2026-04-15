@@ -1,11 +1,13 @@
 import { Worker } from 'bullmq'
 import { SYNC_QUEUE } from './../queues/sync.queue.js'
 import { syncUsageToDB } from './../../helpers/sync.database.js'
+import { connection } from './../../../lib/redis.js'
 
 const sync_worker = new Worker(SYNC_QUEUE,
     async () => {
         await syncUsageToDB()
-    }
+    },
+    { connection }
 )
 
 sync_worker.on('completed', async () => {

@@ -33,7 +33,7 @@ services:
   sync_worker:
     build: .
     container_name: sync_w
-    command: ["node", "dist/src/queue/worker/sync.worker.js"]
+    command: ["node", "dist/src/queue/worker/sync.database.worker.js"]
     depends_on:
       - redis
       - db
