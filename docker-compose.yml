@@ -21,6 +21,15 @@ services:
       - redis
     restart: unless-stopped
 
+  worker:
+    build: .
+    container_name: log_worker
+    command: ["node", "dist/src/queue/worker/worker.js"]
+   depends_on:
+      - redis
+      - db
+    restart: unless-stopped
+
   caddy:
     image: caddy:2-alpine
     container_name: caddy_server

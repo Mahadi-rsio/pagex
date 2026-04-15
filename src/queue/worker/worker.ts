@@ -1,6 +1,6 @@
 import { Job, Worker } from 'bullmq'
-import { PagesQueueType, connection, PAGES_QUEUE } from './../queues/queue.js'
-import { processLogs } from './../../src/helpers/pipeline.js'
+import { type PagesQueueType, connection, PAGES_QUEUE } from './../queues/queue.js'
+import { processLogs } from './../../helpers/pipeline.js'
 
 export const worker = new Worker<PagesQueueType>(PAGES_QUEUE,
     async (job: Job<PagesQueueType>) => {

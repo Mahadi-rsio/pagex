@@ -4,7 +4,7 @@ import { createPage } from './controllers/pages/pageController.js'
 import { restoreRoutes } from './../lib/caddy.js'
 import { redis } from './../lib/redis.js'
 import { syncUsageToDB } from './../lib/cron.js'
-import { queue } from './../queue/queues/queue.js'
+import { queue } from './queue/queues/queue.js'
 import { processLogs } from './helpers/pipeline.js'
 
 const app = express()
