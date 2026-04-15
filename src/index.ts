@@ -1,10 +1,11 @@
 import express from 'express'
 import { log } from 'node:console'
 import { createPage } from './controllers/pages/pageController.js'
-import { restoreRoutes, setupAccessLog } from './../lib/caddy.js'
+import { restoreRoutes } from './../lib/caddy.js'
 import { redis } from './../lib/redis.js'
-//import { setInterval } from 'node:timers/promises'
 import { syncUsageToDB } from './../lib/cron.js'
+import { queue } from './../queue/queues/queue.js'
+import { processLogs } from './helpers/pipeline.js'
 
 const app = express()
 
@@ -16,23 +17,34 @@ app.get("/", async (req, res) => {
     })
 })
 
+
+//
+// app.post('/job', async (req, res) => {
+//
+//     const { name } = req.body
+//     const data = await queue.add("myjob", {
+//         plan: "free",
+//         tenent_name: name,
+//         project_name: "jhdbjsbh"
+//     })
+//
+//     return res.json({
+//         jobId: data.id
+//     })
+// })
+//
+
+
 app.post('/create_page', createPage)
 
-// index.ts এ সরাসরি যোগ করো
 
 app.post("/internal/log", async (req, res) => {
     const logs = Array.isArray(req.body) ? req.body : [req.body]
-    const pipeline = redis.pipeline()
 
-    for (const log of logs) {
-        if (!log.host) continue
-        pipeline.incr(`requests:${log.host}`)
-        pipeline.incrby(`bandwidth:${log.host}`, log.bytes || 0)
-    }
+    await processLogs(logs)
+    await queue.add("process_logs", { logs })
 
-    console.log("working pipline logs")
 
-    await pipeline.exec()
     res.json({ ok: true })
 })
 
@@ -51,7 +63,7 @@ app.listen(3000, async () => {
     log("server started at 3000")
     await restoreRoutes()
 
-    setInterval( async () => {
+    setInterval(async () => {
         await syncUsageToDB().catch(console.error)
-    },1000 * 60 * 1)
+    }, 1000 * 60 * 1)
 })
