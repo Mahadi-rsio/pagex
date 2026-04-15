@@ -1,11 +1,10 @@
 
-import { redis } from "./redis.js"
+import { redis } from "./../../lib/redis.js"
 import { eq, sql } from "drizzle-orm"
-import { db } from './db/db.js'
-import { pages } from './db/schema.js'
+import { db } from './../../lib/db/db.js'
+import { pages } from './../../lib/db/schema.js'
 
 export async function syncUsageToDB() {
-    console.log("🔄 Syncing usage to DB...")
 
     const keys = await redis.keys("requests:*")
 
@@ -30,7 +29,5 @@ export async function syncUsageToDB() {
 
         console.log(`✅ Synced ${domain}: ${requests} reqs, ${bandwidth} bytes`)
     }
-
-    console.log("✅ Usage sync complete")
 }
 

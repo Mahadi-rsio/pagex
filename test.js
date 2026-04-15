@@ -6,7 +6,7 @@ fetch("http://localhost:3000/create_page", {
     body: JSON.stringify({
         project_name: "dev",
         plan: "free",
-        tenant_name: "hade",
+        tenant_name: "jonny",
     }),
 })
     .then(res => res.json())

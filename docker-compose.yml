@@ -1,4 +1,3 @@
-version: "3.9"
 services:
   app:
     build: .
@@ -21,14 +20,27 @@ services:
       - redis
     restart: unless-stopped
 
-  worker:
+  log_worker:
     build: .
-    container_name: log_worker
-    command: ["node", "dist/src/queue/worker/worker.js"]
+    container_name: log_w
+    command: ["node", "dist/src/queue/worker/log.worker.js"]
     depends_on:
       - redis
       - db
     restart: unless-stopped
+
+
+  sync_worker:
+    build: .
+    container_name: sync_w
+    command: ["node", "dist/src/queue/worker/sync.worker.js"]
+    depends_on:
+      - redis
+      - db
+    restart: unless-stopped
+
+
+
 
   caddy:
     image: caddy:2-alpine

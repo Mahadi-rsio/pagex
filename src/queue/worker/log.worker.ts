@@ -1,8 +1,9 @@
 import { Job, Worker } from 'bullmq'
-import { type PagesQueueType, connection, PAGES_QUEUE } from './../queues/queue.js'
+import { type PagesQueueType, LOGS_QUEUE } from './../queues/log.queue.js'
 import { processLogs } from './../../helpers/pipeline.js'
+import { connection } from './../../../lib/redis.js'
 
-export const worker = new Worker<PagesQueueType>(PAGES_QUEUE,
+export const worker = new Worker<PagesQueueType>(LOGS_QUEUE,
     async (job: Job<PagesQueueType>) => {
         await toDoHandler(job.data.logs)
         return { success: true }
