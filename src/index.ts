@@ -41,7 +41,7 @@ app.post('/create_page', createPage)
 app.post("/internal/log", async (req, res) => {
     const logs = Array.isArray(req.body) ? req.body : [req.body]
 
-    await processLogs(logs)
+    //await processLogs(logs)
     await queue.add("process_logs", { logs })
 
 
