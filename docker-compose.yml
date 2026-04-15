@@ -25,7 +25,7 @@ services:
     build: .
     container_name: log_worker
     command: ["node", "dist/src/queue/worker/worker.js"]
-   depends_on:
+    depends_on:
       - redis
       - db
     restart: unless-stopped
