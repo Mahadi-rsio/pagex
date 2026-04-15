@@ -17,3 +17,6 @@ sync_worker.on('completed', async () => {
 sync_worker.on('failed', async () => {
     console.log(`[ERROR] : Log sync failed at [ ${Date.now()} ]`)
 })
+
+console.log("sync worker running");
+
