@@ -1,11 +1,9 @@
-
 import { redis } from "./../../lib/redis.js"
 import { eq, sql } from "drizzle-orm"
 import { db } from './../../lib/db/db.js'
 import { pages } from './../../lib/db/schema.js'
 
 export async function syncUsageToDB() {
-
     const keys = await redis.keys("requests:*")
 
     for (const key of keys) {
@@ -21,13 +19,15 @@ export async function syncUsageToDB() {
                 bandwidth_usage: sql`${pages.bandwidth_usage} + ${bandwidth}`
             })
             .where(eq(pages.domain, domain))
-            .catch(() => { }) // domain না থাকলে ignore
+            .catch(() => { })
 
-        // Redis reset করো
+        // Reset live counters
         await redis.set(`requests:${domain}`, 0)
         await redis.set(`bandwidth:${domain}`, 0)
+
+        // ✅ Invalidate computed cache so next /api/usage call recomputes fresh
+        await redis.del(`usage_cache:${domain}`)
 
         console.log(`✅ Synced ${domain}: ${requests} reqs, ${bandwidth} bytes`)
     }
 }
-
