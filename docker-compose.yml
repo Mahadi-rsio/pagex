@@ -19,6 +19,8 @@ services:
       - minio
       - redis
     restart: unless-stopped
+    volumes:
+      - temp_zips:/app/temp_zips
 
   upload_worker:
     build: .
@@ -35,6 +37,8 @@ services:
       - redis
       - db
     restart: unless-stopped
+    volumes:
+      - temp_zips:/app/temp_zips
 
 
   log_worker:
@@ -135,4 +139,5 @@ volumes:
   caddy_data:
   caddy_config:
   vector_data:
+  temp_zips:
   caddy_logs:    # 👈 shared between caddy + vector
