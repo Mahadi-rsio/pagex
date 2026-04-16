@@ -34,6 +34,9 @@ services:
     build: .
     container_name: sync_w
     command: ["node", "dist/src/queue/worker/sync.database.worker.js"]
+    environment:
+      - DB=postgresql://postgres:postgres@db:5432/mydb
+
     depends_on:
       - redis
       - db

@@ -104,7 +104,7 @@ app.listen(3000, async () => {
         {
             jobId: "sync-logs-cron",
             repeat: {
-                pattern: "0 */15 * * * *", // every 5 min
+                pattern: "0 */2 * * * *", // every 5 min
             },
         }
     );
