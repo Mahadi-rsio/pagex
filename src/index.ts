@@ -46,8 +46,8 @@ app.get("/api/usage/:domain", async (req, res) => {
                 return res.status(404).json({ error: "Domain not found" });
             }
 
-            dbRequests = Number(page[0].request) || 0;
-            dbBandwidth = Number(page[0].bandwidth_usage) || 0;
+            dbRequests = Number(page[0]?.request) || 0;
+            dbBandwidth = Number(page[0]?.bandwidth_usage) || 0;
 
             // Cache only DB totals — TTL 15min matches sync window
             await redis.set(dbCacheKey, JSON.stringify({
