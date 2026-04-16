@@ -21,63 +21,63 @@ app.get("/", async (req, res) => {
 
 app.get("/api/usage/:domain", async (req, res) => {
     const domain = req.params.domain;
-    const cacheKey = `usage_cache:${domain}`;
+    const dbCacheKey = `db_cache:${domain}`;
 
     try {
-        // 1. Check computed cache
-        const cached = await redis.get(cacheKey);
-        if (cached) {
-            return res.json(JSON.parse(cached));
+        // 1. Cache only the DB totals (heavy part), not the computed result
+        let dbRequests = 0;
+        let dbBandwidth = 0;
+
+        const cachedDb = await redis.get(dbCacheKey);
+        if (cachedDb) {
+            const parsed = JSON.parse(cachedDb);
+            dbRequests = parsed.request;
+            dbBandwidth = parsed.bandwidth_usage;
+        } else {
+            const page = await db.select({
+                request: pages.request,
+                bandwidth_usage: pages.bandwidth_usage
+            })
+                .from(pages)
+                .where(eq(pages.domain, domain))
+                .limit(1);
+
+            if (!page.length) {
+                return res.status(404).json({ error: "Domain not found" });
+            }
+
+            dbRequests = Number(page[0].request) || 0;
+            dbBandwidth = Number(page[0].bandwidth_usage) || 0;
+
+            // Cache only DB totals — TTL 15min matches sync window
+            await redis.set(dbCacheKey, JSON.stringify({
+                request: dbRequests,
+                bandwidth_usage: dbBandwidth
+            }), "EX", 900);
         }
 
-        // 2. Fetch DB historical totals
-        const page = await db.select({
-            request: pages.request,
-            bandwidth_usage: pages.bandwidth_usage
-        })
-            .from(pages)
-            .where(eq(pages.domain, domain))
-            .limit(1);
-
-        if (!page.length) {
-            return res.status(404).json({ error: "Domain not found" });
-        }
-
-        const dbRequests = Number(page[0]?.request) || 0;
-        const dbBandwidth = Number(page[0]?.bandwidth_usage) || 0;
-
-        // 3. Get live unsync'd delta from Redis counters
+        // 2. Always read live delta fresh — never cached
         const [liveReq, liveBw] = await Promise.all([
             redis.get(`requests:${domain}`),
             redis.get(`bandwidth:${domain}`)
         ]);
 
-        const deltaRequests = parseInt(liveReq || "0");
-        const deltaBandwidth = parseInt(liveBw || "0");
+        const totalRequests = dbRequests + parseInt(liveReq || "0");
+        const totalBandwidth = dbBandwidth + parseInt(liveBw || "0");
 
-        // 4. Real total = DB (already synced) + Redis (not yet synced)
-        const totalRequests = dbRequests + deltaRequests;
-        const totalBandwidth = dbBandwidth + deltaBandwidth;
-
-        const payload = {
+        return res.json({
             requests: { used: totalRequests, limit: 100_000 },
             bandwidth: {
                 used_gb: (totalBandwidth / 1024 ** 3).toFixed(6),
                 limit: "1GB"
             }
-        };
-
-        // 5. Cache for 15 min (matches your sync window)
-        await redis.set(cacheKey, JSON.stringify(payload), "EX", 900);
-
-        return res.json(payload);
+        });
 
     } catch (err) {
         console.error(`Usage fetch failed for ${domain}:`, err);
         return res.status(500).json({ error: "Failed to fetch usage" });
     }
 });
-
 
 app.post('/create_page', createPage)
 
