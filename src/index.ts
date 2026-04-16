@@ -130,6 +130,28 @@ app.post("/internal/log", async (req, res) => {
     res.json({ ok: true })
 })
 
+app.get('/upload/status/:jobId', async (req, res) => {
+    const { jobId } = req.params
+
+    try {
+        const job = await UploadQueue.getJob(jobId)
+
+        if (!job) {
+            return res.status(404).json({ error: 'Job not found' })
+        }
+
+        const state = await job.getState()
+
+        return res.json({
+            jobId: job.id,
+            state,
+            failedReason: job.failedReason || null
+        })
+
+    } catch (err) {
+        return res.status(500).json({ error: 'Failed to fetch job status' })
+    }
+})
 
 app.listen(3000, async () => {
     log("server started at 3000")
