@@ -1,7 +1,8 @@
 [sources.caddy]
 type = "file"
 include = ["/var/log/caddy/access.log"]
-read_from = "beginning"
+read_from = "end"          # ← was "beginning", only process new lines on restart
+data_dir = "/var/lib/vector"  # ← persist checkpoint so position survives restart
 
 [transforms.parse]
 type = "remap"

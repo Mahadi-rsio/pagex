@@ -103,6 +103,7 @@ services:
     volumes:
       - caddy_logs:/var/log/caddy:ro          # caddy log পড়বে
       - ./config/vector.toml:/etc/vector/vector.toml:ro
+      - vector_data:/var/lib/vector
     depends_on:
       - caddy
       - app
@@ -113,4 +114,5 @@ volumes:
   miniodata:
   caddy_data:
   caddy_config:
+  vector_data:
   caddy_logs:    # 👈 shared between caddy + vector
