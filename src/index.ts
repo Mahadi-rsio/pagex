@@ -8,12 +8,50 @@ import { queue as SyncQueue } from './queue/queues/sync.queue.js'
 import { db } from './../lib/db/db.js'
 import { pages } from './../lib/db/schema.js'
 import { eq } from 'drizzle-orm'
+import { authMiddleware } from './middleware/auth.middleware.js'
+import multer from 'multer'
+import { queue as UploadQueue } from './queue/queues/upload.queue.js'
+
+// index.ts — top of file
+import { mkdirSync } from 'fs'
+mkdirSync('temp_zips', { recursive: true })
 
 const app = express()
+const upload = multer({ dest: 'temp_zips/' });
 
 app.use(express.json({ limit: "100mb" }))
 
-app.get("/", async (req, res) => {
+
+app.post('/upload/:bucket', upload.single('file'), async (req, res) => {
+    const { bucket } = req.params
+
+    if (!bucket || Array.isArray(bucket)) {
+        return res.status(400).json({ error: "Invalid bucket" });
+    }
+
+
+    try {
+        if (!req.file) return res.status(400).send('No file uploaded.');
+
+        const job = await UploadQueue.add('process-zip', {
+            path: req.file.path,
+            bucket_name: bucket
+        }, {
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 5000 }
+        });
+
+        res.json({
+            success: true,
+            message: 'File queued for processing',
+            jobId: job.id
+        });
+    } catch (error) {
+        res.status(500).json({ error: error });
+    }
+});
+
+app.get("/", authMiddleware, async (req, res) => {
     return res.json({
         message: "hello"
     })

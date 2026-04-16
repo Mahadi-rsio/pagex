@@ -4,9 +4,8 @@ import { db } from '../../../lib/db/db.js'
 import { pages } from '../../../lib/db/schema.js'
 import { eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
-import { createPageBucket } from './minio.js'
+import { createPageBucket } from './../../../lib/minio.js'
 import { addCustomDomain } from './../../../lib/caddy.js'
-import { log } from 'node:console'
 
 const createPageSchema = z.object({
     tenant_name: z.string().min(1),
@@ -50,9 +49,7 @@ export async function createPage(req: Request, res: Response) {
             customDomain: insert[0]?.domain!
         })
 
-        log(`Added Domain ${insert[0]?.domain}`)
-
-
+        console.log(`Added Domain ${insert[0]?.domain}`)
 
         return res.json(insert[0])
 
@@ -61,3 +58,4 @@ export async function createPage(req: Request, res: Response) {
         return res.status(500).json({ error: "Internal Server Error" })
     }
 }
+

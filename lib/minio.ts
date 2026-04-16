@@ -2,7 +2,7 @@ import * as Minio from 'minio';
 import 'dotenv/config'
 
 
-const minioClient = new Minio.Client({
+export const minioClient = new Minio.Client({
     endPoint: process.env.MINIO_ENDPOINT!,
     port: parseInt(process.env.MINIO_PORT!) || 9000,
     useSSL: false,
@@ -55,3 +55,5 @@ export async function createPageBucket(projectName: string) {
         console.error('❌ Error:', error);
     }
 }
+
+

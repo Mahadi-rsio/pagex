@@ -20,10 +20,29 @@ services:
       - redis
     restart: unless-stopped
 
+  upload_worker:
+    build: .
+    container_name: upload_w
+    command: ["node", "dist/src/queue/worker/upload.worker.js"]
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+ 
+    depends_on:
+      - redis
+      - db
+    restart: unless-stopped
+
+
   log_worker:
     build: .
     container_name: log_w
     command: ["node", "dist/src/queue/worker/log.worker.js"]
+    environment:
+      - REDIS_URL=redis://redis:6379
     depends_on:
       - redis
       - db
@@ -36,6 +55,7 @@ services:
     command: ["node", "dist/src/queue/worker/sync.database.worker.js"]
     environment:
       - DB=postgresql://postgres:postgres@db:5432/mydb
+      - REDIS_URL=redis://redis:6379
 
     depends_on:
       - redis
