@@ -5,7 +5,7 @@ import logRouter from './log.routes.js'
 
 const router = Router()
 
-router.get('/', (_, res) => { res.json({ message: "hello" }) })
+router.get('/health', (_, res) => { res.json({ message: "ok" }) })
 router.use(pageRouter)
 router.use('/upload', uploadRouter)
 router.use(logRouter)

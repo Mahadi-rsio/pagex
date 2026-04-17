@@ -1,9 +1,10 @@
 import { Router } from 'express'
 import { createPageHandler, getUsageHandler } from '../controllers/page.controller.js'
+import { authMiddleware } from '../middleware/auth.middleware.js'
 
 const router = Router()
 
-router.post('/create_page', createPageHandler)
-router.get('/api/usage/:domain', getUsageHandler)
+router.post('/api/pages/create', authMiddleware, createPageHandler)
+router.get('/api/pages/usage/:domain', authMiddleware, getUsageHandler)
 
 export default router

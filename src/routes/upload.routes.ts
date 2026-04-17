@@ -14,7 +14,7 @@ const upload = multer({
 
 const router = Router()
 
-router.post('/:bucket', authMiddleware, upload.single('file'), uploadFileHandler)
-router.get('/status/:jobId', getUploadStatusHandler)
+router.post('/api/upload/:bucket', authMiddleware, upload.single('file'), uploadFileHandler)
+router.get('/api/upload/status/:jobId', authMiddleware, getUploadStatusHandler)
 
 export default router
