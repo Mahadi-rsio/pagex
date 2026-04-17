@@ -12,15 +12,34 @@ import { authMiddleware } from './middleware/auth.middleware.js'
 import multer from 'multer'
 import { queue as UploadQueue } from './queue/queues/upload.queue.js'
 
-// index.ts — top of file
 import { mkdirSync } from 'fs'
+import RedisStore from 'rate-limit-redis'
+import rateLimit from 'express-rate-limit'
 mkdirSync('temp_zips', { recursive: true })
 
 const app = express()
-const upload = multer({ dest: 'temp_zips/' });
+
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: new RedisStore({
+        sendCommand: (...args: string[]) => redis.call(...args as [string, ...string[]]) as any
+    })
+})
+
+
+
+const upload = multer({
+    dest: 'temp_zips/',
+    limits: {
+        fileSize: 250 * 1024 * 1024
+    }
+});
 
 app.use(express.json({ limit: "100mb" }))
-
+app.use(limiter)
 
 app.post('/upload/:bucket', authMiddleware, upload.single('file'), async (req, res) => {
     const { bucket } = req.params
@@ -51,7 +70,7 @@ app.post('/upload/:bucket', authMiddleware, upload.single('file'), async (req, r
     }
 });
 
-app.get("/", authMiddleware, async (req, res) => {
+app.get("/", async (req, res) => {
     return res.json({
         message: "hello"
     })
@@ -168,7 +187,4 @@ app.listen(3000, async () => {
             },
         }
     );
-
-
-
 })
