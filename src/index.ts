@@ -39,6 +39,9 @@ const upload = multer({
 });
 
 app.use(express.json({ limit: "100mb" }))
+
+app.set('trust proxy', 1)
+
 app.use(limiter)
 
 app.post('/upload/:bucket', authMiddleware, upload.single('file'), async (req, res) => {
