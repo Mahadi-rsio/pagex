@@ -76,7 +76,7 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
                     {
                         match: [{ path: ["/"] }],
                         handle: [
-                            { handler: "rewrite", uri: `/${bucketName}/index.html` },
+                            { handler: "rewrite", uri: `/${bucketName}/dist/index.html` },
                             {
                                 handler: "reverse_proxy",
                                 upstreams: [{ dial: minioHost }]
@@ -88,14 +88,14 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
                             {
                                 handler: "reverse_proxy",
                                 upstreams: [{ dial: minioHost }],
-                                rewrite: { uri: `/${bucketName}{http.request.uri.path}` },
+                                rewrite: { uri: `/${bucketName}/dist{http.request.uri.path}` },
                                 handle_response: [
                                     {
                                         match: { status_code: [403, 404] },
                                         routes: [
                                             {
                                                 handle: [
-                                                    { handler: "rewrite", uri: `/${bucketName}/index.html` },
+                                                    { handler: "rewrite", uri: `/${bucketName}/dist/index.html` },
                                                     {
                                                         handler: "reverse_proxy",
                                                         upstreams: [{ dial: minioHost }]
