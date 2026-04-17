@@ -1,4 +1,4 @@
-import { redis } from './../../lib/redis.js'
+import { redis } from '../infrastructure/cache/redis.js'
 
 export async function processLogs(logs: any[]) {
     const pipeline = redis.pipeline()
@@ -9,8 +9,7 @@ export async function processLogs(logs: any[]) {
         pipeline.incrby(`bandwidth:${log.host}`, log.bytes || 0)
     }
 
-    console.log("working pipline logs")
+    console.log("working pipeline logs")
 
     await pipeline.exec()
-
 }

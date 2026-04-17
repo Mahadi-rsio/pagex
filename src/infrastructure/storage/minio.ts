@@ -30,15 +30,12 @@ async function changeToPublicPolicy(bucketName: string) {
         ],
     };
 
-    // Apply the policy
     await minioClient.setBucketPolicy(bucketName, JSON.stringify(policy));
     console.log(`🔓 Bucket "${bucketName}" is now public (Read-Only).`);
-
 }
 
 
 export async function createPageBucket(projectName: string) {
-
     try {
         const exists = await minioClient.bucketExists(projectName);
 
@@ -46,7 +43,6 @@ export async function createPageBucket(projectName: string) {
             await minioClient.makeBucket(projectName);
             console.log(`✅ Bucket "${projectName}" created.`);
         } else {
-
             console.log(`ℹ️ Bucket "${projectName}" already exists.`);
         }
         await changeToPublicPolicy(projectName)
@@ -55,5 +51,3 @@ export async function createPageBucket(projectName: string) {
         console.error('❌ Error:', error);
     }
 }
-
-

@@ -1,7 +1,6 @@
-import { db } from './db/db.js'
-import { pages } from './db/schema.js'
+import { db } from '../db/db.js'
+import { pages } from '../db/schema.js'
 
-// lib/caddy.ts
 export async function setupAccessLog(caddyAdmin = "http://caddy_server:2019") {
     await fetch(`${caddyAdmin}/config/logging/logs/access`, {
         method: "PUT",
@@ -40,7 +39,7 @@ export async function restoreRoutes() {
         const projects = await db.select().from(pages)
 
         for (const project of projects) {
-            await addCustomDomain({  // ✅ await যোগ করো
+            await addCustomDomain({
                 tenantId: project.id,
                 projectName: project.project_name,
                 customDomain: project.domain
@@ -62,11 +61,10 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
     const bucketName = projectName
     const routeId = `${tenantId}-${projectName}-custom`
 
-    // ✅ আগে delete করো — already exist করলে সরিয়ে দাও
     await fetch(`${caddyAdmin}/id/${routeId}`, {
         method: "DELETE",
         headers: { "Origin": "http://caddy_server:2019" }
-    }).catch(() => {}) // না থাকলে error ignore করো
+    }).catch(() => {})
 
     const route = {
         match: [{ host: [customDomain] }],
@@ -142,7 +140,7 @@ export async function removeCustomDomain({
     tenantId: string,
     projectName: string
 },
-    caddyAdmin = "http://caddy_server:2019"  // ✅ localhost → caddy_server
+    caddyAdmin = "http://caddy_server:2019"
 ) {
     const routeId = `${tenantId}-${projectName}-custom`
 

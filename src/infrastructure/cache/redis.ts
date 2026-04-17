@@ -1,5 +1,3 @@
-// lib/redis.ts
-
 import 'dotenv/config'
 
 import { Redis } from "ioredis"

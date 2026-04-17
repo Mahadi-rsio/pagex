@@ -5,8 +5,7 @@
 
     "module": "nodenext",
     "target": "esnext",
-    "types": [],
-     "types": ["node"],
+    "types": ["node"],
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "strict": true,

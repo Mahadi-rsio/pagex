@@ -1,7 +1,7 @@
 import { Worker } from 'bullmq'
-import { SYNC_QUEUE } from './../queues/sync.queue.js'
-import { syncUsageToDB } from './../../helpers/sync.database.js'
-import { connection } from './../../../lib/redis.js'
+import { SYNC_QUEUE } from '../jobs/sync.job.js'
+import { syncUsageToDB } from '../../services/sync.service.js'
+import { connection } from '../../infrastructure/cache/redis.js'
 
 const sync_worker = new Worker(SYNC_QUEUE,
     async () => {
@@ -19,4 +19,3 @@ sync_worker.on('failed', async () => {
 })
 
 console.log("sync worker running");
-

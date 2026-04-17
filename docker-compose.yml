@@ -25,7 +25,7 @@ services:
   upload_worker:
     build: .
     container_name: upload_w
-    command: ["node", "dist/src/queue/worker/upload.worker.js"]
+    command: ["node", "dist/src/queue/workers/upload.worker.js"]
     environment:
       - REDIS_URL=redis://redis:6379
       - MINIO_ENDPOINT=minio
@@ -44,7 +44,7 @@ services:
   log_worker:
     build: .
     container_name: log_w
-    command: ["node", "dist/src/queue/worker/log.worker.js"]
+    command: ["node", "dist/src/queue/workers/log.worker.js"]
     environment:
       - REDIS_URL=redis://redis:6379
     depends_on:
@@ -56,7 +56,7 @@ services:
   sync_worker:
     build: .
     container_name: sync_w
-    command: ["node", "dist/src/queue/worker/sync.database.worker.js"]
+    command: ["node", "dist/src/queue/workers/sync.worker.js"]
     environment:
       - DB=postgresql://postgres:postgres@db:5432/mydb
       - REDIS_URL=redis://redis:6379
