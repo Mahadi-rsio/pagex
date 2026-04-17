@@ -22,7 +22,7 @@ const upload = multer({ dest: 'temp_zips/' });
 app.use(express.json({ limit: "100mb" }))
 
 
-app.post('/upload/:bucket', upload.single('file'), async (req, res) => {
+app.post('/upload/:bucket', authMiddleware, upload.single('file'), async (req, res) => {
     const { bucket } = req.params
 
     if (!bucket || Array.isArray(bucket)) {
