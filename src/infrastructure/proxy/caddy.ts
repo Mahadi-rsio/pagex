@@ -64,7 +64,21 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
     await fetch(`${caddyAdmin}/id/${routeId}`, {
         method: "DELETE",
         headers: { "Origin": "http://caddy_server:2019" }
-    }).catch(() => {})
+    }).catch(() => { })
+
+    const indexHandle = [
+        { handler: "rewrite", uri: `/${bucketName}/dist/index.html` },
+        {
+            handler: "headers",
+            response: {
+                set: { "Content-Type": ["text/html; charset=utf-8"] }
+            }
+        },
+        {
+            handler: "reverse_proxy",
+            upstreams: [{ dial: minioHost }]
+        }
+    ]
 
     const route = {
         match: [{ host: [customDomain] }],
@@ -75,13 +89,7 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
                 routes: [
                     {
                         match: [{ path: ["/"] }],
-                        handle: [
-                            { handler: "rewrite", uri: `/${bucketName}/dist/index.html` },
-                            {
-                                handler: "reverse_proxy",
-                                upstreams: [{ dial: minioHost }]
-                            }
-                        ]
+                        handle: indexHandle
                     },
                     {
                         handle: [
@@ -92,17 +100,7 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
                                 handle_response: [
                                     {
                                         match: { status_code: [403, 404] },
-                                        routes: [
-                                            {
-                                                handle: [
-                                                    { handler: "rewrite", uri: `/${bucketName}/dist/index.html` },
-                                                    {
-                                                        handler: "reverse_proxy",
-                                                        upstreams: [{ dial: minioHost }]
-                                                    }
-                                                ]
-                                            }
-                                        ]
+                                        routes: [{ handle: indexHandle }]
                                     }
                                 ]
                             }
