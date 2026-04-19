@@ -140,4 +140,4 @@ volumes:
   caddy_config:
   vector_data:
   temp_zips:
-  caddy_logs:    # 👈 shared between caddy + vector
+  caddy_logs:
