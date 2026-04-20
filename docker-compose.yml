@@ -2,18 +2,11 @@ services:
   app:
     build: .
     container_name: express_app
+    env_file: .env
     expose:
       - "3000"
     ports:
       - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - MINIO_ENDPOINT=minio
-      - MINIO_PORT=9000
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin
-      - DB=postgresql://postgres:postgres@db:5432/mydb
-      - REDIS_URL=redis://redis:6379
     depends_on:
       - db
       - minio
@@ -25,14 +18,8 @@ services:
   upload_worker:
     build: .
     container_name: upload_w
+    env_file: .env
     command: ["node", "dist/src/queue/workers/upload.worker.js"]
-    environment:
-      - REDIS_URL=redis://redis:6379
-      - MINIO_ENDPOINT=minio
-      - MINIO_PORT=9000
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin
- 
     depends_on:
       - redis
       - db
@@ -40,38 +27,30 @@ services:
     volumes:
       - temp_zips:/app/temp_zips
 
-
   log_worker:
     build: .
     container_name: log_w
+    env_file: .env
     command: ["node", "dist/src/queue/workers/log.worker.js"]
-    environment:
-      - REDIS_URL=redis://redis:6379
     depends_on:
       - redis
       - db
     restart: unless-stopped
-
 
   sync_worker:
     build: .
     container_name: sync_w
+    env_file: .env
     command: ["node", "dist/src/queue/workers/sync.worker.js"]
-    environment:
-      - DB=postgresql://postgres:postgres@db:5432/mydb
-      - REDIS_URL=redis://redis:6379
-
     depends_on:
       - redis
       - db
     restart: unless-stopped
 
-
-
-
   caddy:
     image: caddy:2-alpine
     container_name: caddy_server
+    env_file: .env
     ports:
       - "80:80"
       - "443:443"
@@ -80,7 +59,7 @@ services:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
-      - caddy_logs:/var/log/caddy    # 👈 log volume
+      - caddy_logs:/var/log/caddy
     depends_on:
       - app
     restart: unless-stopped
@@ -88,10 +67,7 @@ services:
   db:
     image: postgres:16-alpine
     container_name: postgres_db
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: mydb
+    env_file: .env
     ports:
       - "5432:5432"
     volumes:
@@ -101,10 +77,8 @@ services:
   minio:
     image: minio/minio
     container_name: minio_server
+    env_file: .env
     command: server /data
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
     ports:
       - "9000:9000"
     volumes:
@@ -114,8 +88,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: redis
-    command: >
-      redis-server
+    command: redis-server
     expose:
       - "6379"
     restart: unless-stopped
@@ -123,9 +96,10 @@ services:
   vector:
     image: timberio/vector:0.38.0-alpine
     container_name: vector
+    env_file: .env
     command: ["--config", "/etc/vector/vector.toml"]
     volumes:
-      - caddy_logs:/var/log/caddy:ro          # caddy log পড়বে
+      - caddy_logs:/var/log/caddy:ro
       - ./config/vector.toml:/etc/vector/vector.toml:ro
       - vector_data:/var/lib/vector
     depends_on:
