@@ -44,10 +44,13 @@ export async function createPageBucket(projectName: string) {
             console.log(`✅ Bucket "${projectName}" created.`);
         } else {
             console.log(`ℹ️ Bucket "${projectName}" already exists.`);
+
         }
         await changeToPublicPolicy(projectName)
+        return true
 
     } catch (error) {
         console.error('❌ Error:', error);
+        return false
     }
 }

@@ -9,7 +9,13 @@ export async function createPageHandler(req: Request, res: Response) {
     }
 
     try {
-        const page = await createPage(validate.data)
+        const page = await createPage({
+            project_name: validate.data.project_name,
+
+        }, {
+            tenant_id: (req as any).id,
+            tenant_name: (req as any).name
+        })
         return res.json(page)
     } catch (err) {
         console.error(err)

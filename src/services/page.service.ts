@@ -7,29 +7,40 @@ import { addCustomDomain } from '../infrastructure/proxy/caddy.js'
 import { redis } from '../infrastructure/cache/redis.js'
 import { TOP_LEVEL_DOMAIN } from '../constants/index.js'
 import type { CreatePageInput } from '../validators/page.validator.js'
+import { log } from 'node:console'
 
-export async function createPage(data: CreatePageInput) {
-    let { tenant_name, plan, project_name } = data
+export async function createPage(data: CreatePageInput,
+    reqHeader: { tenant_name: string, tenant_id: string }) {
+    let { project_name } = data
+
 
     const existing = await db.select().from(pages).where(eq(pages.project_name, project_name))
 
+
     if (existing.length > 0) {
-        project_name = `${project_name}-${nanoid(4)}`.toLowerCase()
+        project_name = `${project_name}${nanoid(4)}`.toLowerCase()
     }
 
     const domain = `${project_name}.${TOP_LEVEL_DOMAIN}`
 
     const insert = await db.insert(pages).values({
-        tenant_name,
-        plan,
+        tenant_name: reqHeader.tenant_name,
         project_name,
-        domain
+        domain,
+        tenant_id: reqHeader.tenant_id
     }).returning()
 
-    await createPageBucket(project_name)
+    const isBucketCreated = await createPageBucket(project_name)
+
+    if (!isBucketCreated) {
+        log('Bucket not created so no route created')
+        return {
+            "message": "bucket not created and domain not added"
+        }
+    }
 
     addCustomDomain({
-        tenantId: insert[0]!.id,
+        tenantId: insert[0]!.tenant_id,
         projectName: insert[0]!.project_name,
         customDomain: insert[0]!.domain
     })
