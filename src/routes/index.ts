@@ -2,10 +2,16 @@ import { Router } from 'express'
 import pageRouter from './page.routes.js'
 import uploadRouter from './upload.routes.js'
 import logRouter from './log.routes.js'
+import { authMiddleware } from './../middleware/auth.middleware.js'
 
 const router = Router()
 
-router.get('/health', (_, res) => { res.json({ message: "ok" }) })
+router.get('/health', authMiddleware, (req, res) => {
+    res.json({
+        message: "ok",
+        user_id: (req as any).id
+    })
+})
 
 
 //for testing
