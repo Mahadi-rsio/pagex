@@ -9,7 +9,7 @@ export async function processUpload(path: string, bucketName: string): Promise<v
     for (const file of directory.files) {
         if (file.type === 'File') {
             const buffer = await file.buffer()
-            await minioClient.putObject(bucketName, file.path, buffer, buffer.length, {
+            await minioClient.putObject(bucketName, `dist/${file.path}`, buffer, buffer.length, {
                 'Content-Type': lookup(file.path) || 'application/octet-stream'
             })
             console.log(`Uploaded: ${file.path}`)
