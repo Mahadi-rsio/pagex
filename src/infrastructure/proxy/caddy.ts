@@ -1,3 +1,5 @@
+// src/infrastructure/proxy/caddy.ts
+
 import { db } from '../db/db.js'
 import { pages } from '../db/schema.js'
 
@@ -61,13 +63,53 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
     const bucketName = projectName
     const routeId = `${tenantId}-${projectName}-custom`
 
+    // Clean up existing route first
     await fetch(`${caddyAdmin}/id/${routeId}`, {
         method: "DELETE",
         headers: { "Origin": "http://caddy_server:2019" }
     }).catch(() => { })
 
+    // Shown when bucket exists but has no files / index.html missing
+    const notDeployedHandle = [
+        {
+            handler: "static_response",
+            status_code: 404,
+            body: `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Not Deployed — ${projectName}</title>
+    <style>
+        body { font-family: sans-serif; display: flex; align-items: center;
+               justify-content: center; height: 100vh; margin: 0; background: #f5f5f5; }
+        .box { text-align: center; padding: 2rem; background: white;
+               border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        h2 { color: #333; }
+        p  { color: #666; }
+        code { background: #eee; padding: 2px 6px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h2>🚀 No deployment found</h2>
+        <p>Project <code>${projectName}</code> has no files uploaded yet.</p>
+        <p>Deploy your build to get started.</p>
+    </div>
+</body>
+</html>`,
+            headers: {
+                "Content-Type": ["text/html; charset=utf-8"]
+            }
+        }
+    ]
+
+    // Serves index.html — if index.html itself is missing, shows notDeployedHandle
     const indexHandle = [
-        { handler: "rewrite", uri: `/${bucketName}/dist/index.html` },
+        {
+            handler: "rewrite",
+            uri: `/${bucketName}/dist/index.html`
+        },
         {
             handler: "headers",
             response: {
@@ -76,7 +118,31 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
         },
         {
             handler: "reverse_proxy",
-            upstreams: [{ dial: minioHost }]
+            upstreams: [{ dial: minioHost }],
+            handle_response: [
+                {
+                    match: { status_code: [403, 404] },
+                    routes: [{ handle: notDeployedHandle }]
+                }
+            ]
+        }
+    ]
+
+    // Serves static assets — if asset missing, falls back to index.html (SPA routing)
+    const assetHandle = [
+        {
+            handler: "rewrite",
+            uri: `/${bucketName}/dist{http.request.uri.path}`
+        },
+        {
+            handler: "reverse_proxy",
+            upstreams: [{ dial: minioHost }],
+            handle_response: [
+                {
+                    match: { status_code: [403, 404] },
+                    routes: [{ handle: indexHandle }]
+                }
+            ]
         }
     ]
 
@@ -87,24 +153,14 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
                 "@id": routeId,
                 handler: "subroute",
                 routes: [
+                    // Root path → serve index.html directly
                     {
                         match: [{ path: ["/"] }],
                         handle: indexHandle
                     },
+                    // Everything else → try asset, fallback to index.html
                     {
-                        handle: [
-                            {
-                                handler: "reverse_proxy",
-                                upstreams: [{ dial: minioHost }],
-                                rewrite: { uri: `/${bucketName}/dist{http.request.uri.path}` },
-                                handle_response: [
-                                    {
-                                        match: { status_code: [403, 404] },
-                                        routes: [{ handle: indexHandle }]
-                                    }
-                                ]
-                            }
-                        ]
+                        handle: assetHandle
                     }
                 ]
             }

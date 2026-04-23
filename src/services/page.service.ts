@@ -49,7 +49,7 @@ export async function createPage(data: CreatePageInput,
         }
     }
 
-    addCustomDomain({
+    await addCustomDomain({
         tenantId: insert[0]!.tenant_id,
         projectName: insert[0]!.project_name,
         customDomain: insert[0]!.domain
