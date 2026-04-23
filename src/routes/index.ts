@@ -6,10 +6,9 @@ import { authMiddleware } from './../middleware/auth.middleware.js'
 
 const router = Router()
 
-router.get('/health', authMiddleware, (req, res) => {
+router.get('/health', (req, res) => {
     res.json({
         message: "ok",
-        user_id: (req as any).id
     })
 })
 
