@@ -15,6 +15,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     try {
         const { payload } = await jwtVerify(token!, JWKS)
             ; (req as any).id = payload.id
+            ; (req as any).name = payload.name
 
         next()
     } catch (err) {

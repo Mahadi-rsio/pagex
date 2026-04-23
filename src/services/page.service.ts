@@ -1,7 +1,7 @@
 import { db } from '../infrastructure/db/db.js'
 import { pages } from '../infrastructure/db/schema.js'
 import { eq } from 'drizzle-orm'
-import { nanoid } from 'nanoid'
+import { customAlphabet } from 'nanoid'
 import { createPageBucket } from '../infrastructure/storage/minio.js'
 import { addCustomDomain } from '../infrastructure/proxy/caddy.js'
 import { redis } from '../infrastructure/cache/redis.js'
@@ -16,10 +16,13 @@ export async function createPage(data: CreatePageInput,
 
     const existing = await db.select().from(pages).where(eq(pages.project_name, project_name))
 
+    const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz1234567890')
 
     if (existing.length > 0) {
         project_name = `${project_name}${nanoid(4)}`.toLowerCase()
     }
+
+
 
     const domain = `${project_name}.${TOP_LEVEL_DOMAIN}`
 
