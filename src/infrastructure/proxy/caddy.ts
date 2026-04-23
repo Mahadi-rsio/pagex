@@ -1,5 +1,3 @@
-// src/infrastructure/proxy/caddy.ts
-
 import { db } from '../db/db.js'
 import { pages } from '../db/schema.js'
 
@@ -52,6 +50,22 @@ export async function restoreRoutes() {
     }
 }
 
+async function getWildcardIndex(caddyAdmin: string): Promise<number> {
+    const res = await fetch(`${caddyAdmin}/config/apps/http/servers/srv0/routes`, {
+        headers: { "Origin": caddyAdmin }
+    })
+
+    if (!res.ok) return 0
+
+    const routes = await res.json() as any[]
+
+    const wildcardIndex = routes.findIndex((r: any) =>
+        r.match?.some((m: any) => m.host?.includes('*.cloudisy.top'))
+    )
+
+    return wildcardIndex !== -1 ? wildcardIndex : 0
+}
+
 export async function addCustomDomain({ tenantId, projectName, customDomain }: {
     tenantId: string,
     projectName: string,
@@ -66,7 +80,7 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
     // Clean up existing route first
     await fetch(`${caddyAdmin}/id/${routeId}`, {
         method: "DELETE",
-        headers: { "Origin": "http://caddy_server:2019" }
+        headers: { "Origin": caddyAdmin }
     }).catch(() => { })
 
     // Shown when bucket exists but has no files / index.html missing
@@ -168,11 +182,14 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
         terminal: true
     }
 
-    const res = await fetch(`${caddyAdmin}/config/apps/http/servers/srv0/routes`, {
-        method: "POST",
+    // *.cloudisy.top এর আগে insert করুন
+    const insertIndex = await getWildcardIndex(caddyAdmin)
+
+    const res = await fetch(`${caddyAdmin}/config/apps/http/servers/srv0/routes/${insertIndex}`, {
+        method: "PUT",
         headers: {
             "Content-Type": "application/json",
-            "Origin": "http://caddy_server:2019"
+            "Origin": caddyAdmin
         },
         body: JSON.stringify(route)
     })
@@ -182,7 +199,7 @@ export async function addCustomDomain({ tenantId, projectName, customDomain }: {
         throw new Error(`Failed to add custom domain: ${err}`)
     }
 
-    console.log(`✅ ${customDomain} added`)
+    console.log(`✅ ${customDomain} added at index ${insertIndex}`)
 
     return { success: true, tenantId, projectName, customDomain }
 }
@@ -200,13 +217,15 @@ export async function removeCustomDomain({
 
     const res = await fetch(`${caddyAdmin}/id/${routeId}`, {
         method: "DELETE",
-        headers: { "Origin": "http://caddy_server:2019" }
+        headers: { "Origin": caddyAdmin }
     })
 
     if (!res.ok) {
         const err = await res.text()
         throw new Error(`Failed to remove custom domain: ${err}`)
     }
+
+    console.log(`✅ ${projectName} removed`)
 
     return { success: true, tenantId, projectName }
 }
