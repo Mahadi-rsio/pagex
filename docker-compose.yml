@@ -14,6 +14,8 @@ services:
     restart: unless-stopped
     volumes:
       - temp_zips:/app/temp_zips
+    networks:
+      - cloudisy_network
 
   upload_worker:
     build: .
@@ -26,6 +28,8 @@ services:
     restart: unless-stopped
     volumes:
       - temp_zips:/app/temp_zips
+    networks:
+      - cloudisy_network
 
   log_worker:
     build: .
@@ -36,6 +40,8 @@ services:
       - redis
       - db
     restart: unless-stopped
+    networks:
+      - cloudisy_network
 
   sync_worker:
     build: .
@@ -46,11 +52,24 @@ services:
       - redis
       - db
     restart: unless-stopped
+    networks:
+      - cloudisy_network
 
   caddy:
-    image: caddy:2-alpine
+    build:
+      context: ./plugins
+      dockerfile: Dockerfile
     container_name: caddy_server
     env_file: .env
+    environment:
+      # DATABASE_URL and REDIS_URL are read directly by the static_s3 plugin
+      # (no Caddyfile directive needed — see plugin.go Provision()).
+      S3_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      S3_SECRET_KEY: ${MINIO_SECRET_KEY}
+      DATABASE_URL: ${DB}?sslmode=disable
+      REDIS_URL: ${REDIS_URL}
+      BASE_DOMAIN: ${BASE_DOMAIN:-localhost}
+      MINIO_BUCKET: ${MINIO_BUCKET}
     ports:
       - "80:80"
       - "443:443"
@@ -61,8 +80,18 @@ services:
       - caddy_config:/config
       - caddy_logs:/var/log/caddy
     depends_on:
+      - db
+      - redis
+      - minio
       - app
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - cloudisy_network
 
   db:
     image: postgres:16-alpine
@@ -73,6 +102,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: always
+    networks:
+      - cloudisy_network
 
   minio:
     image: minio/minio
@@ -84,6 +115,8 @@ services:
     volumes:
       - miniodata:/data
     restart: always
+    networks:
+      - cloudisy_network
 
   redis:
     image: redis:7-alpine
@@ -92,6 +125,8 @@ services:
     expose:
       - "6379"
     restart: unless-stopped
+    networks:
+      - cloudisy_network
 
   vector:
     image: timberio/vector:0.38.0-alpine
@@ -106,6 +141,8 @@ services:
       - caddy
       - app
     restart: unless-stopped
+    networks:
+      - cloudisy_network
 
 volumes:
   pgdata:
@@ -115,3 +152,7 @@ volumes:
   vector_data:
   temp_zips:
   caddy_logs:
+
+networks:
+  cloudisy_network:
+    driver: bridge

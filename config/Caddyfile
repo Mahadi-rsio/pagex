@@ -1,48 +1,78 @@
 {
-    auto_https off
-    admin 0.0.0.0:2019 {
-        origins caddy_server:2019 express_app:2019 localhost 127.0.0.1:2019
-    }
+	auto_https off
+	order static_s3 before respond
+	admin 0.0.0.0:2019 {
+		origins caddy_server:2019 express_app:2019 localhost 127.0.0.1:2019
+	}
 }
 
-(spa) {
-    encode gzip
-    handle / {
-        rewrite * /{args[0]}/index.html
-        reverse_proxy {args[1]} {
-            header_up Host "{args[1]}"
-        }
-    }
-    handle {
-        rewrite * /{args[0]}{path}
-        reverse_proxy {args[1]} {
-            header_up Host "{args[1]}"
-            @notfound status 403 404
-            handle_response @notfound {
-                rewrite * /{args[0]}/index.html
-                reverse_proxy {args[1]} {
-                    header_up Host "{args[1]}"
-                }
-            }
-        }
-    }
+# ── Wildcard: all tenant subdomains ─────────────────────────────────────────
+# The static_s3 plugin resolves: subdomain → sites.id (PostgreSQL) → S3 key
+# db_dsn and redis_url are intentionally omitted here — the plugin reads
+# DATABASE_URL and REDIS_URL environment variables automatically (plugin.go).
+*.{$BASE_DOMAIN:localhost} {
+
+	# Hashed assets — cache aggressively in browser (immutable)
+	@hashed_assets path *.js *.css *.woff2 *.woff *.ttf
+	# HTML & other assets — must revalidate with server
+	@revalidate_assets not path *.js *.css *.woff2 *.woff *.ttf
+
+	header @hashed_assets Cache-Control "public, max-age=31536000, immutable"
+	header @revalidate_assets Cache-Control "public, max-age=0, must-revalidate"
+
+	# Media files: redirect client directly to MinIO to save VPS bandwidth
+	@media path *.png *.jpg *.jpeg *.gif *.mp4 *.pdf *.zip *.mp3 *.ico *.webp *.svg
+
+	handle @media {
+		static_s3 {
+			endpoint       http://minio:9000
+			bucket         {$MINIO_BUCKET}
+			access_key     {$S3_ACCESS_KEY}
+			secret_key     {$S3_SECRET_KEY}
+			use_path_style true
+
+			base_domain    {$BASE_DOMAIN:localhost}
+
+			redirect_to_s3   true
+			presign_redirect true
+			presign_lifetime 15m
+
+			fallback_except png jpg jpeg gif mp4 pdf zip mp3 ico webp svg css js woff woff2 ttf map
+		}
+	}
+
+	# All other requests: serve from Caddy with LRU memory cache
+	handle {
+		static_s3 {
+			endpoint       http://minio:9000
+			bucket         {$MINIO_BUCKET}
+			access_key     {$S3_ACCESS_KEY}
+			secret_key     {$S3_SECRET_KEY}
+			use_path_style true
+
+			base_domain    {$BASE_DOMAIN:localhost}
+
+			cache_ttl      2m
+			cache_size     1000
+			max_cache_size 512KiB
+
+			fallback_except png jpg jpeg gif mp4 pdf zip mp3 ico webp svg css js woff woff2 ttf map
+
+			analytics on
+		}
+	}
+
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 50mb
+			roll_keep 2
+			roll_keep_for 2h
+		}
+		format json
+	}
 }
 
-app.localhost:80 {
-    respond "hello"
-}
-
-api.localhost:80 {
-    reverse_proxy app:3000
-}
-
-:80 {
-    log {
-        output file /var/log/caddy/access.log {
-            roll_size 50mb
-            roll_keep 2
-            roll_keep_for 2h
-        }
-        format json
-    }
+# ── API / Admin server ───────────────────────────────────────────────────────
+api.{$BASE_DOMAIN:localhost} {
+	reverse_proxy app:3000
 }

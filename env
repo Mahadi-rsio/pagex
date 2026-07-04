@@ -1,5 +1,4 @@
 
-
 NODE_ENV=production
 DRIZZLE_CONNECTION=postgresql://postgres:postgres@localhost:5432/mydb
 
@@ -24,5 +23,9 @@ MINIO_ENDPOINT=minio
 MINIO_PORT=9000
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
+# Shared bucket name used by all tenants (caddy static_s3 plugin + MinIO). REQUIRED.
+MINIO_BUCKET=
 
-
+# Base domain used by caddy static_s3 plugin for subdomain extraction.
+# e.g. BASE_DOMAIN=cloudisy.com → "mysite.cloudisy.com" extracts subdomain "mysite"
+BASE_DOMAIN=localhost

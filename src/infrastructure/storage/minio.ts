@@ -7,50 +7,63 @@ export const minioClient = new Minio.Client({
     port: parseInt(process.env.MINIO_PORT!) || 9000,
     useSSL: false,
     accessKey: process.env.MINIO_ACCESS_KEY!,
-    secretKey: process.env.MINIO_SECRET_KEY!
+    secretKey: process.env.MINIO_SECRET_KEY!,
+    // path-style URLs: requests go to minio_server:9000/bucket/key
+    // (instead of virtual-host style: bucket.minio_server:9000/key)
+    pathStyle: true,
+    // Setting region explicitly prevents the SDK from calling getBucketRegionAsync,
+    // which internally constructs a virtual-host URL (bucket.endpoint) and fails
+    // when the endpoint contains an underscore (e.g. "minio_server").
+    region: process.env.MINIO_REGION ?? 'us-east-1',
 });
 
+// The single shared bucket used by all tenants.
+// Files are stored at: {SHARED_BUCKET}/{site_uuid}/{filepath}
+// Must be set via MINIO_BUCKET env var — no default to avoid accidental bucket naming.
+if (!process.env.MINIO_BUCKET) {
+    throw new Error('MINIO_BUCKET environment variable is required')
+}
+export const SHARED_BUCKET = process.env.MINIO_BUCKET
 
-async function changeToPublicPolicy(bucketName: string) {
-    const policy = {
-        Version: '2012-10-17',
-        Statement: [
-            {
-                Effect: 'Allow',
-                Principal: { AWS: ['*'] },
-                Action: ['s3:GetBucketLocation', 's3:ListBucket'],
-                Resource: [`arn:aws:s3:::${bucketName}`],
-            },
-            {
-                Effect: 'Allow',
-                Principal: { AWS: ['*'] },
-                Action: ['s3:GetObject'],
-                Resource: [`arn:aws:s3:::${bucketName}/*`],
-            },
-        ],
-    };
-
-    await minioClient.setBucketPolicy(bucketName, JSON.stringify(policy));
-    console.log(`🔓 Bucket "${bucketName}" is now public (Read-Only).`);
+/**
+ * Ensures the shared bucket exists so Caddy's static_s3 plugin can serve files.
+ * Non-fatal: if it fails (e.g. MinIO not ready yet), the app still starts.
+ * The bucket can be created manually via the MinIO console at :9001.
+ */
+export async function ensureSharedBucket(): Promise<void> {
+    try {
+        // makeBucket is idempotent — it returns without error if the bucket already exists
+        await minioClient.makeBucket(SHARED_BUCKET, process.env.MINIO_REGION ?? 'us-east-1')
+        console.log(`✅ Shared bucket "${SHARED_BUCKET}" ready.`)
+    } catch (err: any) {
+        // BucketAlreadyOwnedByYou / BucketAlreadyExists → bucket is fine, continue
+        if (err?.code === 'BucketAlreadyOwnedByYou' || err?.code === 'BucketAlreadyExists') {
+            console.log(`ℹ️  Shared bucket "${SHARED_BUCKET}" already exists.`)
+            return
+        }
+        // Any other error: log but don't crash — MinIO may still be starting up
+        console.warn(`⚠️  Could not ensure bucket "${SHARED_BUCKET}": ${err?.message ?? err}`)
+        console.warn('   Create it manually via the MinIO console at http://localhost:9001')
+    }
 }
 
+/**
+ * Removes all objects under the given `siteId` prefix in the shared bucket.
+ * Used when deleting a project.
+ */
+export async function deleteSiteObjects(siteId: string): Promise<void> {
+    const prefix = `${siteId}/`
+    const objects: string[] = []
 
-export async function createPageBucket(projectName: string) {
-    try {
-        const exists = await minioClient.bucketExists(projectName);
+    await new Promise<void>((resolve, reject) => {
+        const stream = minioClient.listObjects(SHARED_BUCKET, prefix, true)
+        stream.on('data', obj => { if (obj.name) objects.push(obj.name) })
+        stream.on('end', resolve)
+        stream.on('error', reject)
+    })
 
-        if (!exists) {
-            await minioClient.makeBucket(projectName);
-            console.log(`✅ Bucket "${projectName}" created.`);
-        } else {
-            console.log(`ℹ️ Bucket "${projectName}" already exists.`);
+    if (objects.length === 0) return
 
-        }
-        await changeToPublicPolicy(projectName)
-        return true
-
-    } catch (error) {
-        console.error('❌ Error:', error);
-        return false
-    }
+    await minioClient.removeObjects(SHARED_BUCKET, objects)
+    console.log(`🗑️  Removed ${objects.length} objects for site ${siteId}`)
 }

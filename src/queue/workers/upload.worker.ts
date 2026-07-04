@@ -4,11 +4,11 @@ import { processUpload } from '../../services/upload.service.js'
 import { connection } from '../../infrastructure/cache/redis.js'
 
 const worker = new Worker<UploadJobData>(UPLOAD_QUEUE, async (job) => {
-    const { path, bucket_name } = job.data;
-    console.log(`Processing job ${job.id}...`);
+    const { path, site_id } = job.data;
+    console.log(`Processing job ${job.id} for site_id: ${site_id}...`);
 
     try {
-        await processUpload(path, bucket_name)
+        await processUpload(path, site_id)
         console.log(`Job ${job.id} completed successfully.`);
     } catch (error) {
         console.error(`Job ${job.id} failed:`, error);

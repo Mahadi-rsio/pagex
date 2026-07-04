@@ -1,63 +1,61 @@
 import { db } from '../infrastructure/db/db.js'
-import { pages } from '../infrastructure/db/schema.js'
+import { pages, sites } from '../infrastructure/db/schema.js'
 import { eq } from 'drizzle-orm'
 import { customAlphabet } from 'nanoid'
-import { createPageBucket, minioClient } from '../infrastructure/storage/minio.js'
-import { addCustomDomain, removeCustomDomain } from '../infrastructure/proxy/caddy.js'
+import { minioClient, SHARED_BUCKET, deleteSiteObjects } from '../infrastructure/storage/minio.js'
 import { redis } from '../infrastructure/cache/redis.js'
 import { TOP_LEVEL_DOMAIN } from '../constants/index.js'
 import type { CreatePageInput } from '../validators/page.validator.js'
-import { log } from 'node:console'
-import { emptyBucket } from '../utils/emptyBucket.js'
 
-export async function createPage(data: CreatePageInput,
-    reqHeader: { tenant_name: string, tenant_id: string }) {
+export async function createPage(
+    data: CreatePageInput,
+    reqHeader: { tenant_name: string; tenant_id: string }
+) {
     let { project_name } = data
 
     if (!reqHeader.tenant_id || !reqHeader.tenant_name) {
-        return {
-            message: "token is not valid"
-        }
+        return { message: 'token is not valid' }
     }
 
-
-    const existing = await db.select().from(pages).where(eq(pages.project_name, project_name))
-
+    // Ensure subdomain uniqueness — append a short random suffix if taken
     const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz1234567890')
-
-    if (existing.length > 0) {
+    const existingSite = await db.select().from(sites).where(eq(sites.subdomain, project_name))
+    if (existingSite.length > 0) {
         project_name = `${project_name}${nanoid(4)}`.toLowerCase()
     }
 
-
-
     const domain = `${project_name}.${TOP_LEVEL_DOMAIN}`
 
-    const insert = await db.insert(pages).values({
+    // 1. Insert into `sites` — this is what the caddy plugin reads.
+    //    The returned UUID (site_id) is the MinIO key prefix.
+    const [site] = await db.insert(sites).values({
+        subdomain: project_name,
+        active: true,
+    }).returning()
+
+    if (!site) throw new Error('Failed to create site record')
+
+    // 2. Insert tenant project metadata into `pages`
+    const [page] = await db.insert(pages).values({
+        site_id: site.id,
+        tenant_id: reqHeader.tenant_id,
         tenant_name: reqHeader.tenant_name,
         project_name,
         domain,
-        tenant_id: reqHeader.tenant_id
     }).returning()
 
-    const isBucketCreated = await createPageBucket(project_name)
+    if (!page) throw new Error('Failed to create page record')
 
-    if (!isBucketCreated) {
-        log('Bucket not created so no route created')
-        return {
-            "message": "bucket not created and domain not added"
-        }
+    // 3. The caddy static_s3 plugin now handles routing automatically —
+    //    no Caddy admin API call needed. Files will be served from:
+    //    {SHARED_BUCKET}/{site.id}/{filepath}
+
+    console.log(`✅ Created project "${project_name}" → site_id: ${site.id}`)
+
+    return {
+        ...page,
+        site_id: site.id,
     }
-
-    await addCustomDomain({
-        tenantId: insert[0]!.tenant_id,
-        projectName: insert[0]!.project_name,
-        customDomain: insert[0]!.domain
-    })
-
-    console.log(`Added Domain ${insert[0]!.domain}`)
-
-    return insert[0]!
 }
 
 export async function getPageUsage(domain: string) {
@@ -71,10 +69,11 @@ export async function getPageUsage(domain: string) {
         dbRequests = parsed.request
         dbBandwidth = parsed.bandwidth_usage
     } else {
-        const page = await db.select({
-            request: pages.request,
-            bandwidth_usage: pages.bandwidth_usage
-        })
+        const page = await db
+            .select({
+                request: pages.request,
+                bandwidth_usage: pages.bandwidth_usage,
+            })
             .from(pages)
             .where(eq(pages.domain, domain))
             .limit(1)
@@ -84,30 +83,30 @@ export async function getPageUsage(domain: string) {
         dbRequests = Number(page[0]!.request) || 0
         dbBandwidth = Number(page[0]!.bandwidth_usage) || 0
 
-        await redis.set(dbCacheKey, JSON.stringify({
-            request: dbRequests,
-            bandwidth_usage: dbBandwidth
-        }), "EX", 900)
+        await redis.set(
+            dbCacheKey,
+            JSON.stringify({ request: dbRequests, bandwidth_usage: dbBandwidth }),
+            'EX',
+            900
+        )
     }
 
     const [liveReq, liveBw] = await Promise.all([
         redis.get(`requests:${domain}`),
-        redis.get(`bandwidth:${domain}`)
+        redis.get(`bandwidth:${domain}`),
     ])
 
-    const totalRequests = dbRequests + parseInt(liveReq || "0")
-    const totalBandwidth = dbBandwidth + parseInt(liveBw || "0")
+    const totalRequests = dbRequests + parseInt(liveReq || '0')
+    const totalBandwidth = dbBandwidth + parseInt(liveBw || '0')
 
     return {
         requests: { used: totalRequests, limit: 100_000 },
         bandwidth: {
             used_gb: (totalBandwidth / 1024 ** 3).toFixed(6),
-            limit: "1GB"
-        }
+            limit: '1GB',
+        },
     }
 }
-
-
 
 export async function getListPages(tenantId: string) {
     const result = await db.select().from(pages).where(eq(pages.tenant_id, tenantId))
@@ -116,38 +115,40 @@ export async function getListPages(tenantId: string) {
 
 export async function deletePage(pageId: string, tenantId: string) {
     // Verify ownership
-    const existing = await db.select().from(pages)
+    const existing = await db
+        .select()
+        .from(pages)
         .where(eq(pages.id, pageId))
         .limit(1)
 
-    if (!existing.length) {
-        return { error: 'Page not found' }
-    }
-    if (existing[0]!.tenant_id !== tenantId) {
-        return { error: 'Forbidden' }
-    }
+    if (!existing.length) return { error: 'Page not found' }
+    if (existing[0]!.tenant_id !== tenantId) return { error: 'Forbidden' }
 
     const page = existing[0]!
 
-    // Remove Caddy route
-    await removeCustomDomain({
-        tenantId: page.tenant_id,
-        projectName: page.project_name
-    }).catch(err => console.error('Caddy route removal failed:', err))
+    // 1. Remove all files from the shared bucket under this site's prefix
+    await deleteSiteObjects(page.site_id).catch(err =>
+        console.error('MinIO object deletion failed:', err)
+    )
 
-    await emptyBucket(page.project_name)
+    // 2. Delete pages row (cascades will also delete from site_daily_stats)
+    await db.delete(pages).where(eq(pages.id, pageId))
 
-    // Delete MinIO bucket
-    await minioClient.removeBucket(page.project_name)
-        .catch(err => console.error('MinIO bucket removal failed:', err))
+    // 3. Deactivate the site in the `sites` table and invalidate Redis cache
+    //    so the caddy plugin immediately stops routing this subdomain.
+    await db
+        .update(sites)
+        .set({ active: false })
+        .where(eq(sites.id, page.site_id))
 
-    // Clear Redis cache
+    await redis.del(`site:${page.project_name}`)
+
+    // 4. Clear usage caches
     await redis.del(`db_cache:${page.domain}`)
     await redis.del(`requests:${page.domain}`)
     await redis.del(`bandwidth:${page.domain}`)
 
-    // Delete from DB
-    await db.delete(pages).where(eq(pages.id, pageId))
+    console.log(`🗑️  Deleted project "${page.project_name}" (site_id: ${page.site_id})`)
 
     return { success: true }
 }
