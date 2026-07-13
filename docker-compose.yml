@@ -9,7 +9,6 @@ services:
       - "3000:3000"
     depends_on:
       - db
-      - minio
       - redis
     restart: unless-stopped
     volumes:
@@ -56,14 +55,10 @@ services:
       - cloudisy_network
 
   caddy:
-    build:
-      context: ./plugins
-      dockerfile: Dockerfile
+    image: ghcr.io/mahadi-rsio/cdx_s3:latest
     container_name: caddy_server
     env_file: .env
     environment:
-      # DATABASE_URL and REDIS_URL are read directly by the static_s3 plugin
-      # (no Caddyfile directive needed — see plugin.go Provision()).
       S3_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       S3_SECRET_KEY: ${MINIO_SECRET_KEY}
       DATABASE_URL: ${DB}?sslmode=disable
@@ -82,7 +77,6 @@ services:
     depends_on:
       - db
       - redis
-      - minio
       - app
     restart: unless-stopped
     logging:
@@ -101,19 +95,6 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-    restart: always
-    networks:
-      - cloudisy_network
-
-  minio:
-    image: minio/minio
-    container_name: minio_server
-    env_file: .env
-    command: server /data
-    ports:
-      - "9000:9000"
-    volumes:
-      - miniodata:/data
     restart: always
     networks:
       - cloudisy_network
@@ -146,7 +127,6 @@ services:
 
 volumes:
   pgdata:
-  miniodata:
   caddy_data:
   caddy_config:
   vector_data:
