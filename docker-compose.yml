@@ -53,6 +53,7 @@ services:
       REDIS_URL: ${REDIS_URL}
       BASE_DOMAIN: ${BASE_DOMAIN:-localhost}
       MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_ENDPOINT_URL: ${MINIO_ENDPOINT_URL}
     ports:
       - "80:80"
       - "443:443"
