@@ -30,18 +30,6 @@ services:
     networks:
       - cloudisy_network
 
-  log_worker:
-    build: .
-    container_name: log_w
-    env_file: .env
-    command: ["node", "dist/src/queue/workers/log.worker.js"]
-    depends_on:
-      - redis
-      - db
-    restart: unless-stopped
-    networks:
-      - cloudisy_network
-
   sync_worker:
     build: .
     container_name: sync_w
@@ -59,8 +47,8 @@ services:
     container_name: caddy_server
     env_file: .env
     environment:
-      S3_ACCESS_KEY: ${MINIO_ACCESS_KEY}
-      S3_SECRET_KEY: ${MINIO_SECRET_KEY}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
       DATABASE_URL: ${DB}?sslmode=disable
       REDIS_URL: ${REDIS_URL}
       BASE_DOMAIN: ${BASE_DOMAIN:-localhost}
@@ -73,7 +61,6 @@ services:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
-      - caddy_logs:/var/log/caddy
     depends_on:
       - db
       - redis
@@ -109,29 +96,12 @@ services:
     networks:
       - cloudisy_network
 
-  vector:
-    image: timberio/vector:0.38.0-alpine
-    container_name: vector
-    env_file: .env
-    command: ["--config", "/etc/vector/vector.toml"]
-    volumes:
-      - caddy_logs:/var/log/caddy:ro
-      - ./config/vector.toml:/etc/vector/vector.toml:ro
-      - vector_data:/var/lib/vector
-    depends_on:
-      - caddy
-      - app
-    restart: unless-stopped
-    networks:
-      - cloudisy_network
 
 volumes:
   pgdata:
   caddy_data:
   caddy_config:
-  vector_data:
   temp_zips:
-  caddy_logs:
 
 networks:
   cloudisy_network:

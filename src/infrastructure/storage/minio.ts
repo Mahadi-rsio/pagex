@@ -5,9 +5,9 @@ import 'dotenv/config'
 export const minioClient = new Minio.Client({
     endPoint: process.env.MINIO_ENDPOINT!,
     port: parseInt(process.env.MINIO_PORT!) || 9000,
-    useSSL: false,
-    accessKey: process.env.MINIO_ACCESS_KEY!,
-    secretKey: process.env.MINIO_SECRET_KEY!,
+    useSSL: process.env.MINIO_USE_SSL === 'false' ? false : (process.env.MINIO_ENDPOINT !== 'minio' && process.env.MINIO_ENDPOINT !== 'localhost'),
+    accessKey: process.env.S3_ACCESS_KEY!,
+    secretKey: process.env.S3_SECRET_KEY!,
     // path-style URLs: requests go to minio_server:9000/bucket/key
     // (instead of virtual-host style: bucket.minio_server:9000/key)
     pathStyle: true,

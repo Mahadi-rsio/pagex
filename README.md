@@ -24,8 +24,7 @@ Caddy (static_s3 plugin)
             ├── Redis       (tenant UUID cache, usage counters, BullMQ queues)
             └── BullMQ Workers
                     ├── upload  — extracts zip → stores to MinIO under {UUID}/{file}
-                    ├── sync    — flushes Redis usage counters → PostgreSQL
-                    └── log     — processes access logs from Vector
+                    └── sync    — flushes Redis usage counters → PostgreSQL
 ```
 
 ### Key design decisions
@@ -50,8 +49,6 @@ Caddy (static_s3 plugin)
 | `redis` | `redis:7-alpine` | Cache + BullMQ broker |
 | `upload_w` | `./Dockerfile` | Upload queue worker |
 | `sync_w` | `./Dockerfile` | Usage sync worker |
-| `log_w` | `./Dockerfile` | Log ingestion worker |
-| `vector` | `timberio/vector` | Caddy access log pipeline |
 
 ---
 
@@ -192,13 +189,6 @@ Returns `{ jobId, state, failedReason }`.
 
 ---
 
-### Internal
-
-```
-POST /internal/log
-```
-Used by the Vector log pipeline to ingest Caddy access logs. Not authenticated with JWT (internal network only).
-
 ---
 
 ## Environment Variables
@@ -212,8 +202,8 @@ Copy `env` to `.env` before starting.
 | `REDIS_URL` | `redis://redis:6379` | Redis connection URL |
 | `MINIO_ENDPOINT` | `minio_server` | MinIO hostname |
 | `MINIO_PORT` | `9000` | MinIO port |
-| `MINIO_ACCESS_KEY` | `minioadmin` | MinIO access key |
-| `MINIO_SECRET_KEY` | `minioadmin` | MinIO secret key |
+| `S3_ACCESS_KEY` | `minioadmin` | MinIO access key |
+| `S3_SECRET_KEY` | `minioadmin` | MinIO secret key |
 | `MINIO_BUCKET` | `cloudisy-sites` | Shared bucket name |
 | `BASE_DOMAIN` | `localhost` | Base domain for subdomain routing (e.g. `cloudisy.com`) |
 | `POSTGRES_USER/PASSWORD/DB` | — | PostgreSQL init vars |
@@ -308,8 +298,7 @@ pnpm run dev
 ```
 cloudisy_server/
 ├── config/
-│   ├── Caddyfile          # Caddy static_s3 plugin config (wildcard routing)
-│   └── vector.toml        # Vector log pipeline config
+│   └── Caddyfile          # Caddy static_s3 plugin config (wildcard routing)
 ├── plugins/               # Git submodule — Caddy static_s3 plugin (Go)
 ├── src/
 │   ├── app.ts             # Express app setup, rate limiting
@@ -324,7 +313,7 @@ cloudisy_server/
 │   ├── middleware/         # JWT auth middleware
 │   ├── queue/
 │   │   ├── jobs/          # BullMQ queue definitions
-│   │   └── workers/       # upload, sync, log workers
+│   │   └── workers/       # upload, sync workers
 │   ├── routes/            # Express routers
 │   ├── services/          # Business logic (page, upload, sync)
 │   ├── types/
