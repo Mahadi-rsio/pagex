@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 
-const JWKS = createRemoteJWKSet(new URL('https://cloudisy.vercel.app/api/auth/jwks'))
+const JWKS = createRemoteJWKSet(new URL('https://auth.cloudisy.com/api/auth/jwks'))
 
 export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
     const authHeader = req.headers.authorization
