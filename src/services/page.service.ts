@@ -114,6 +114,9 @@ export async function getListPages(tenantId: string) {
 }
 
 export async function deletePage(pageId: string, tenantId: string) {
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!UUID_RE.test(pageId)) return { error: 'Page not found' }
+
     // Verify ownership
     const existing = await db
         .select()
