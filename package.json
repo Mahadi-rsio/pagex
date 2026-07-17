@@ -7,6 +7,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "gen": "drizzle-kit generate",
     "mig": "drizzle-kit migrate",
+    "migrate": "drizzle-kit migrate",
     "push": "drizzle-kit push",
     "build": "tsc"
   },

@@ -1,4 +1,20 @@
 services:
+  migrator:
+    build:
+      context: .
+      target: migrator
+    container_name: drizzle_migrator
+    env_file: .env
+    environment:
+      # Use the in-network DB host (not localhost from host-side DRIZZLE_CONNECTION)
+      DRIZZLE_CONNECTION: ${DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - cloudisy_network
+
   app:
     build: .
     container_name: express_app
@@ -8,8 +24,10 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - db
-      - redis
+      migrator:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
     restart: unless-stopped
     volumes:
       - temp_zips:/app/temp_zips
@@ -22,8 +40,10 @@ services:
     env_file: .env
     command: ["node", "dist/src/queue/workers/upload.worker.js"]
     depends_on:
-      - redis
-      - db
+      migrator:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
     restart: unless-stopped
     volumes:
       - temp_zips:/app/temp_zips
@@ -36,8 +56,10 @@ services:
     env_file: .env
     command: ["node", "dist/src/queue/workers/sync.worker.js"]
     depends_on:
-      - redis
-      - db
+      migrator:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
     restart: unless-stopped
     networks:
       - cloudisy_network
@@ -63,9 +85,12 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - db
-      - redis
-      - app
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      app:
+        condition: service_started
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -83,6 +108,12 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
     restart: always
     networks:
       - cloudisy_network

@@ -246,9 +246,14 @@ docker compose up --build
 
 Drizzle migrations are run by the `migrator` service automatically before the app starts.
 
-To run manually:
+To run manually (from the host, with Postgres reachable at `DRIZZLE_CONNECTION`):
 ```bash
-pnpm run migrate
+npm run migrate
+```
+
+After changing `src/infrastructure/db/schema.ts`, generate a new migration and commit it:
+```bash
+npm run gen
 ```
 
 ---

@@ -5,6 +5,15 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
+# ---- migrator (one-shot drizzle-kit migrate) ----
+FROM deps AS migrator
+WORKDIR /app
+
+COPY drizzle.config.ts ./
+COPY drizzle ./drizzle
+
+CMD ["npx", "drizzle-kit", "migrate"]
+
 # ---- builder (compile TS) ----
 FROM node:20-alpine AS builder
 WORKDIR /app
