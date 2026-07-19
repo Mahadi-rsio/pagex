@@ -70,3 +70,26 @@ export const siteDailyStats = pgTable("site_daily_stats", {
 }, (t) => ({
     siteDataIdx: index("idx_site_daily_stats_site_date").on(t.site_id, t.date),
 }));
+
+/**
+ * `builds` — records of page build jobs and their status.
+ */
+export const builds = pgTable("builds", {
+    id: uuid("id").primaryKey().notNull().defaultRandom(),
+    page_id: uuid("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+    tenant_id: text("tenant_id").notNull(),
+    job_id: text("job_id"),
+    status: text("status").notNull().default("queued"),
+    repo_url: text("repo_url").notNull(),
+    git_provider: text("git_provider").notNull(),
+    framework: text("framework").notNull(),
+    build_command: text("build_command").notNull().default("pnpm build"),
+    output_dir: text("output_dir"),
+    error: text("error"),
+    triggered_by: text("triggered_by").notNull().default("cli"),
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    completed_at: timestamp("completed_at", { withTimezone: true }),
+}, (t) => ({
+    buildsPageTenantStatusIdx: index("idx_builds_page_tenant_status").on(t.page_id, t.tenant_id, t.status),
+}));
+

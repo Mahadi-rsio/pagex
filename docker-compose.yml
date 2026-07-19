@@ -64,6 +64,22 @@ services:
     networks:
       - cloudisy_network
 
+  build_worker:
+    build: .
+    container_name: build_w
+    env_file: .env
+    command: ["node", "dist/src/queue/workers/build.worker.js"]
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - cloudisy_network
+
   caddy:
     image: ghcr.io/mahadi-rsio/cdx_s3:latest
     container_name: caddy_server

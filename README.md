@@ -49,6 +49,7 @@ Caddy (static_s3 plugin)
 | `redis` | `redis:7-alpine` | Cache + BullMQ broker |
 | `upload_w` | `./Dockerfile` | Upload queue worker |
 | `sync_w` | `./Dockerfile` | Usage sync worker |
+| `build_w` | `./Dockerfile` | Cloud build queue worker |
 
 ---
 
@@ -92,6 +93,26 @@ Written by the Caddy `static_s3` plugin's analytics middleware.
 | `humans / bots` | BIGINT | User-agent classification |
 | `unique_ips` | BIGINT | HyperLogLog cardinality estimate |
 | `peak_hour` | TEXT | `YYYY-MM-DD:HH` |
+
+### `builds`
+Records of page build jobs and their statuses.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | Primary key — generated random UUID |
+| `page_id` | UUID FK → pages | Cascade delete |
+| `tenant_id` | TEXT | Same as `pages.tenant_id` |
+| `job_id` | TEXT | BullMQ Job ID (nullable) |
+| `status` | TEXT | `queued` (default) \| `active` \| `completed` \| `failed` |
+| `repo_url` | TEXT | HTTPS URL of GitHub/GitLab repository |
+| `git_provider` | TEXT | `github` \| `gitlab` |
+| `framework` | TEXT | `nextjs` \| `react` \| `vue` \| `vite` \| `static` |
+| `build_command`| TEXT | `pnpm build` (default) |
+| `output_dir` | TEXT | Nullable (auto-detected if null) |
+| `error` | TEXT | Nullable (captured output on build failure) |
+| `triggered_by` | TEXT | `cli` (default) \| `dashboard` |
+| `created_at` | TIMESTAMPTZ | Time job was created |
+| `completed_at` | TIMESTAMPTZ | Time job completed (nullable) |
 
 ---
 
@@ -186,6 +207,47 @@ Authorization: Bearer <token>
 ```
 Returns `{ jobId, state, failedReason }`.  
 `state` is one of: `waiting`, `active`, `completed`, `failed`.
+
+---
+
+### Builds
+
+Trigger and monitor cloud builds from GitHub or GitLab.
+
+#### Trigger a build
+```
+POST /api/builds
+Authorization: Bearer <token>
+
+Body:
+{
+  "pageId": "<uuid>",
+  "repoUrl": "https://github.com/user/repo",
+  "gitProvider": "github",
+  "gitToken": "ghp_...",
+  "framework": "vite",
+  "buildCommand": "pnpm build",     // Optional (defaults to pnpm build)
+  "outputDir": "dist",              // Optional (auto-detected if null)
+  "envVars": { "KEY": "VALUE" }     // Optional environment variables
+}
+```
+- Validates page ownership.
+- Enqueues a BullMQ job to clone, build inside Docker, and deploy.
+- Returns `201 Created` status with the build details.
+
+#### Get build status
+```
+GET /api/builds/:buildId
+Authorization: Bearer <token>
+```
+Returns the build details including `status`, `error` (if failed), and `job_id`.
+
+#### List page builds
+```
+GET /api/builds/page/:pageId
+Authorization: Bearer <token>
+```
+Returns an array of the latest 20 builds for the page.
 
 ---
 
