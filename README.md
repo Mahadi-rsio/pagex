@@ -18,13 +18,15 @@ Caddy (static_s3 plugin)
   │
   ├──▶ MinIO  (object storage — single shared bucket)
   │
-  └──▶ Express API  (site management, uploads, analytics)
+  └──▶ Express API  (site management, uploads, cloud builds, analytics)
             │
-            ├── PostgreSQL  (sites, pages, site_daily_stats)
+            ├── PostgreSQL  (sites, pages, site_daily_stats, builds)
             ├── Redis       (tenant UUID cache, usage counters, BullMQ queues)
             └── BullMQ Workers
                     ├── upload  — extracts zip → stores to MinIO under {UUID}/{file}
-                    └── sync    — flushes Redis usage counters → PostgreSQL
+                    ├── sync    — flushes Redis usage counters → PostgreSQL
+                    └── build   — git clone → docker build → MinIO deploy
+                                  (streams real-time logs via SSE)
 ```
 
 ### Key design decisions
@@ -35,6 +37,7 @@ Caddy (static_s3 plugin)
 | **Storage** | Single shared bucket `cloudisy-sites`. Every tenant's files live under `{site_id}/`. |
 | **Analytics** | The plugin writes `site_daily_stats` rows to PostgreSQL directly (Redis → PG flush every 5 min). |
 | **Auth** | JWT verified via remote JWKS at `https://cloudisy.vercel.app/api/auth/jwks`. |
+| **Cloud Builds** | Each build runs in an isolated Docker container (`cloudisy-build-env`) with pnpm pre-installed. The host Docker socket is mounted so the `build_w` container can spawn sibling containers. `/tmp/cloudisy-builds` is bind-mounted on both `build_w` and the host so Docker volume paths resolve correctly (DinD path sharing). |
 
 ---
 
@@ -42,14 +45,15 @@ Caddy (static_s3 plugin)
 
 | Container | Image / Build | Role |
 |-----------|---------------|------|
-| `express_app` | `./Dockerfile` | REST API |
-| `caddy_server` | `./plugins/Dockerfile` | Caddy + `static_s3` plugin |
+| `express_app` | `./Dockerfile` (`runner` stage) | REST API |
+| `caddy_server` | `ghcr.io/mahadi-rsio/cdx_s3` | Caddy + `static_s3` plugin |
 | `minio_server` | `minio/minio` | S3-compatible object storage |
 | `postgres_db` | `postgres:16-alpine` | Primary database |
 | `redis` | `redis:7-alpine` | Cache + BullMQ broker |
-| `upload_w` | `./Dockerfile` | Upload queue worker |
-| `sync_w` | `./Dockerfile` | Usage sync worker |
-| `build_w` | `./Dockerfile` | Cloud build queue worker |
+| `upload_w` | `./Dockerfile` (`runner` stage) | Upload queue worker |
+| `sync_w` | `./Dockerfile` (`runner` stage) | Usage sync worker |
+| `build_w` | `./Dockerfile` (`build-worker` stage) | Cloud build queue worker — has `git` + `docker-cli` |
+| `build_env` | `./Dockerfile` (`build-env` stage) | Builds & tags `cloudisy-build-env:latest` (pnpm pre-installed) used by cloud builds |
 
 ---
 
@@ -212,7 +216,7 @@ Returns `{ jobId, state, failedReason }`.
 
 ### Builds
 
-Trigger and monitor cloud builds from GitHub or GitLab.
+Trigger and monitor cloud builds directly from a GitHub or GitLab repository.
 
 #### Trigger a build
 ```
@@ -226,28 +230,58 @@ Body:
   "gitProvider": "github",
   "gitToken": "ghp_...",
   "framework": "vite",
-  "buildCommand": "pnpm build",     // Optional (defaults to pnpm build)
-  "outputDir": "dist",              // Optional (auto-detected if null)
-  "envVars": { "KEY": "VALUE" }     // Optional environment variables
+  "buildCommand": "pnpm build",     // Optional (defaults to "pnpm build")
+  "outputDir": "dist",              // Optional (auto-detected: .next, dist, out, build, public)
+  "envVars": { "KEY": "VALUE" }     // Optional build-time environment variables
 }
 ```
-- Validates page ownership.
-- Enqueues a BullMQ job to clone, build inside Docker, and deploy.
-- Returns `201 Created` status with the build details.
+
+What happens internally:
+1. Validates page ownership (JOIN `pages` + `sites`)
+2. Inserts a `builds` row with `status: "queued"`
+3. Enqueues a BullMQ job on `cloudisy-cloud-builds`
+4. Build worker picks up the job and runs:
+   - **Clone** — `git clone --depth=1` with the token injected into the HTTPS URL
+   - **Build** — `docker run cloudisy-build-env:latest` (pnpm pre-installed) with the build command
+   - **Detect** — finds the output dir (or uses the specified one)
+   - **Deploy** — deletes old MinIO objects, uploads all output files with correct MIME types
+   - **Finalize** — sets `builds.status = "completed"` and `completed_at`
+5. Returns `201 Created` with the build row
+
+#### Stream build logs (SSE)
+```
+GET /api/builds/:buildId/logs
+Authorization: Bearer <token>
+```
+Opens a **Server-Sent Events** stream. Each event is a JSON object:
+
+| `type` | Payload | Description |
+|--------|---------|-------------|
+| `log` | `{ message: string }` | A single line of build output |
+| `progress` | `{ value: number }` | Build progress 0–100% |
+| `status` | `{ status: string }` | Current BullMQ job state |
+| `done` | `{ status, error? }` | Final event — stream closes after this |
+| `error` | `{ message: string }` | Stream-level error |
+
+Example (curl):
+```bash
+curl -N -H "Authorization: Bearer <token>" \
+  http://localhost:3000/api/builds/<buildId>/logs
+```
 
 #### Get build status
 ```
 GET /api/builds/:buildId
 Authorization: Bearer <token>
 ```
-Returns the build details including `status`, `error` (if failed), and `job_id`.
+Returns the full build row including `status`, `error`, `job_id`, `created_at`, `completed_at`.
 
 #### List page builds
 ```
 GET /api/builds/page/:pageId
 Authorization: Bearer <token>
 ```
-Returns an array of the latest 20 builds for the page.
+Returns the latest 20 builds for the page, ordered by `created_at DESC`.
 
 ---
 
@@ -299,10 +333,15 @@ cp env .env
 ### 4. Run
 
 ```bash
+# Create the shared build workspace directory (needed for DinD path sharing)
+mkdir -p /tmp/cloudisy-builds
+
 docker compose up --build
 ```
 
-> **First run:** Docker builds Caddy from `plugins/Dockerfile` (compiles the `static_s3` Go plugin). This takes ~2 minutes but is cached on subsequent builds.
+> **First run:** `docker compose up --build` also builds and tags `cloudisy-build-env:latest` (the pnpm base image used for cloud builds). This is cached after the first run.
+
+> **DinD note:** The `build_w` container mounts `/var/run/docker.sock` to spawn sibling Docker containers for builds. `/tmp/cloudisy-builds` is bind-mounted on both the host and `build_w` so that volume paths in `docker run -v` commands resolve correctly on the host Docker daemon.
 
 ### 5. Run migrations
 
@@ -379,13 +418,13 @@ cloudisy_server/
 │   │   └── storage/       # MinIO client, shared bucket helpers
 │   ├── middleware/         # JWT auth middleware
 │   ├── queue/
-│   │   ├── jobs/          # BullMQ queue definitions
-│   │   └── workers/       # upload, sync workers
+│   │   ├── jobs/          # BullMQ queue definitions (upload, sync, build)
+│   │   └── workers/       # upload.worker, sync.worker, build.worker
 │   ├── routes/            # Express routers
-│   ├── services/          # Business logic (page, upload, sync)
+│   ├── services/          # Business logic (page, upload, sync, build)
 │   ├── types/
 │   ├── utils/
-│   └── validators/        # Zod schemas
+│   └── validators/        # Zod schemas (page, build)
 ├── docker-compose.yml
 ├── Dockerfile             # Node.js app image
 └── drizzle.config.ts
