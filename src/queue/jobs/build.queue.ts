@@ -1,7 +1,7 @@
 import { Queue } from 'bullmq'
 import { connection } from '../../infrastructure/cache/redis.js'
 
-export const CLOUDISY_CLOUD_BUILDS_QUEUE = "cloudisy:cloud-builds"
+export const CLOUDISY_CLOUD_BUILDS_QUEUE = "cloudisy-cloud-builds"
 
 export interface CloudBuildJob {
     buildId: string;

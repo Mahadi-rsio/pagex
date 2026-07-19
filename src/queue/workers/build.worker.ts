@@ -56,7 +56,6 @@ const worker = new Worker<CloudBuildJob>(
                 'run', '--rm',
                 '-v', `${cloneDir}:/app`,
                 '-w', '/app',
-                '--network', 'none',
             ];
             if (envVars) {
                 for (const [key, value] of Object.entries(envVars)) {
@@ -64,9 +63,9 @@ const worker = new Worker<CloudBuildJob>(
                 }
             }
             dockerArgs.push(
-                'node:20-alpine',
+                'cloudisy-build-env:latest',
                 'sh', '-c',
-                `npm install -g pnpm && pnpm install --frozen-lockfile && ${buildCommand}`
+                `(pnpm install --frozen-lockfile 2>/dev/null || pnpm install) && ${buildCommand}`
             );
 
             await new Promise<void>((resolve, reject) => {

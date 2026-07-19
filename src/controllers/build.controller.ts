@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { triggerCloudBuild, getBuildStatus, listBuilds } from '../services/build.service.js'
 import { triggerBuildSchema } from '../validators/build.validator.js'
+import { buildQueue } from '../queue/jobs/build.queue.js'
 
 export async function triggerBuildHandler(req: Request, res: Response) {
     const validate = triggerBuildSchema.safeParse(req.body)
@@ -60,4 +61,86 @@ export async function listBuildsHandler(req: Request, res: Response) {
         const status = err.status || 500
         return res.status(status).json({ error: err.message || 'Internal Server Error' })
     }
+}
+
+/**
+ * GET /api/builds/:buildId/logs
+ * Streams BullMQ job logs as Server-Sent Events.
+ * Events:
+ *   { type: "log",      message: string }
+ *   { type: "progress", value: number }
+ *   { type: "status",   status: string }
+ *   { type: "done",     status: "completed"|"failed", error?: string }
+ */
+export async function getBuildLogsSSEHandler(req: Request, res: Response) {
+    const buildId = req.params['buildId'] as string
+    const tenantId = (req as any).id
+
+    if (!buildId) return res.status(400).json({ error: 'Build ID is required' })
+    if (!tenantId) return res.status(401).json({ error: 'Unauthorized' })
+
+    let build: Awaited<ReturnType<typeof getBuildStatus>>
+    try {
+        build = await getBuildStatus(buildId, tenantId)
+    } catch (err: any) {
+        return res.status(err.status || 500).json({ error: err.message })
+    }
+
+    // SSE headers
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no')  // disable Nginx buffering if behind proxy
+    res.flushHeaders()
+
+    const send = (payload: object) => {
+        res.write(`data: ${JSON.stringify(payload)}\n\n`)
+    }
+
+    // If already terminal, just return current state immediately
+    if (build.status === 'completed' || build.status === 'failed') {
+        send({ type: 'done', status: build.status, error: build.error ?? undefined })
+        return res.end()
+    }
+
+    let lastLogIndex = 0
+
+    const interval = setInterval(async () => {
+        try {
+            const currentBuild = await getBuildStatus(buildId, tenantId)
+            const jobId = currentBuild.job_id
+
+            if (jobId) {
+                    // Stream new log lines since last poll
+                    const { logs } = await buildQueue.getJobLogs(jobId, lastLogIndex)
+                    for (const line of logs) {
+                        send({ type: 'log', message: line })
+                        lastLogIndex++
+                    }
+
+                    const job = await buildQueue.getJob(jobId)
+                    if (job) {
+                        const progress = typeof job.progress === 'number' ? job.progress : 0
+                        send({ type: 'progress', value: progress })
+                    }
+            }
+
+            // Send status
+            send({ type: 'status', status: currentBuild.status })
+
+            // Close stream when terminal
+            if (currentBuild.status === 'completed' || currentBuild.status === 'failed') {
+                send({ type: 'done', status: currentBuild.status, error: currentBuild.error ?? undefined })
+                clearInterval(interval)
+                res.end()
+            }
+        } catch (err: any) {
+            send({ type: 'error', message: err.message })
+            clearInterval(interval)
+            res.end()
+        }
+    }, 1000)
+
+    // Clean up when the client disconnects
+    req.on('close', () => clearInterval(interval))
 }

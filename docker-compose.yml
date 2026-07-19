@@ -1,4 +1,15 @@
 services:
+  # Pre-builds the pnpm image used by the build worker for cloud builds.
+  # Running `docker compose up --build` will tag cloudisy-build-env:latest
+  # on the host, which build_w can then use via the mounted Docker socket.
+  build_env:
+    build:
+      context: .
+      target: build-env
+    image: cloudisy-build-env:latest
+    restart: "no"
+    command: ["sh", "-c", "echo 'cloudisy-build-env ready'"]
+
   migrator:
     build:
       context: .
@@ -16,7 +27,9 @@ services:
       - cloudisy_network
 
   app:
-    build: .
+    build:
+      context: .
+      target: runner
     container_name: express_app
     env_file: .env
     expose:
@@ -35,7 +48,9 @@ services:
       - cloudisy_network
 
   upload_worker:
-    build: .
+    build:
+      context: .
+      target: runner
     container_name: upload_w
     env_file: .env
     command: ["node", "dist/src/queue/workers/upload.worker.js"]
@@ -51,7 +66,9 @@ services:
       - cloudisy_network
 
   sync_worker:
-    build: .
+    build:
+      context: .
+      target: runner
     container_name: sync_w
     env_file: .env
     command: ["node", "dist/src/queue/workers/sync.worker.js"]
@@ -65,10 +82,11 @@ services:
       - cloudisy_network
 
   build_worker:
-    build: .
+    build:
+      context: .
+      target: build-worker
     container_name: build_w
     env_file: .env
-    command: ["node", "dist/src/queue/workers/build.worker.js"]
     depends_on:
       migrator:
         condition: service_completed_successfully
@@ -77,6 +95,9 @@ services:
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # Shared with the host so `docker run -v /tmp/cloudisy-builds/...` works
+      # (Docker socket connects to the host daemon, which needs to see these paths)
+      - /tmp/cloudisy-builds:/tmp/cloudisy-builds
     networks:
       - cloudisy_network
 

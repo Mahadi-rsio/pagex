@@ -1,3 +1,7 @@
+# ---- build-env (reusable image for cloud build jobs — pnpm pre-installed) ----
+FROM node:20-alpine AS build-env
+RUN npm install -g pnpm --silent
+
 # ---- deps (install with dev deps for building) ----
 FROM node:20-alpine AS deps
 WORKDIR /app
@@ -41,3 +45,20 @@ COPY --from=builder /app/dist ./dist
 EXPOSE 3000
 
 CMD ["node", "dist/src/server.js"]
+
+# ---- build-worker (needs git + docker CLI to run cloud builds) ----
+FROM node:20-alpine AS build-worker
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+RUN apk add --no-cache git docker-cli
+
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+# Copy compiled output
+COPY --from=builder /app/dist ./dist
+
+CMD ["node", "dist/src/queue/workers/build.worker.js"]
+
