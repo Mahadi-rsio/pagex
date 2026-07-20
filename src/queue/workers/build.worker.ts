@@ -52,8 +52,11 @@ const worker = new Worker<CloudBuildJob>(
             await job.updateProgress(35);
             await job.log("Step 2: Building project with Docker...");
 
+            const containerName = `cloudisy-build-${jobId}`;
             const dockerArgs = [
                 'run', '--rm',
+                '--name', containerName,
+                '--memory', '1g',
                 '-v', `${cloneDir}:/app`,
                 '-w', '/app',
             ];
@@ -72,6 +75,24 @@ const worker = new Worker<CloudBuildJob>(
                 const p = spawn('docker', dockerArgs);
                 let stdoutBuf = '';
                 let stderrBuf = '';
+
+                // Start stats collection interval (every 2 seconds)
+                const statsInterval = setInterval(() => {
+                    const statsProcess = spawn('docker', ['stats', '--no-stream', '--format', 'RAM: {{.MemUsage}} | Net I/O: {{.NetIO}}', containerName]);
+                    let output = '';
+                    statsProcess.stdout?.on('data', (data) => {
+                        output += data.toString();
+                    });
+                    statsProcess.on('close', (code) => {
+                        if (code === 0 && output.trim()) {
+                            job.log(`[Stats] ${output.trim()}`);
+                        }
+                    });
+                }, 2000);
+
+                const cleanup = () => {
+                    clearInterval(statsInterval);
+                };
 
                 const handleData = (data: Buffer, isError: boolean) => {
                     const str = data.toString();
@@ -98,12 +119,16 @@ const worker = new Worker<CloudBuildJob>(
                 p.stderr?.on('data', (data) => handleData(data, true));
 
                 p.on('close', (code) => {
+                    cleanup();
                     if (stdoutBuf) job.log(stdoutBuf);
                     if (stderrBuf) job.log(stderrBuf);
                     if (code === 0) resolve();
                     else reject(new Error(`Docker build failed with code ${code}`));
                 });
-                p.on('error', reject);
+                p.on('error', (err) => {
+                    cleanup();
+                    reject(err);
+                });
             });
 
             // Step 3 (70%) — Detect output dir
@@ -161,6 +186,11 @@ const worker = new Worker<CloudBuildJob>(
 
         } catch (err: any) {
             console.error(`Build job ${jobId} failed:`, err);
+            // Force stop the docker container if it is still running
+            const killProcess = spawn('docker', ['kill', `cloudisy-build-${jobId}`]);
+            killProcess.on('close', () => {
+                console.log(`Forced container cloudisy-build-${jobId} to stop.`);
+            });
             await fs.rm(cloneDir, { recursive: true, force: true }).catch(() => {});
             
             await db.update(builds)
