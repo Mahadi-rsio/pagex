@@ -67,3 +67,42 @@ export async function deleteSiteObjects(siteId: string): Promise<void> {
     await minioClient.removeObjects(SHARED_BUCKET, objects)
     console.log(`🗑️  Removed ${objects.length} objects for site ${siteId}`)
 }
+
+/**
+ * Server-side copy of all files under a source prefix to a destination prefix.
+ */
+export async function copyFolder(sourcePrefix: string, destPrefix: string): Promise<number> {
+    const objects: string[] = []
+    await new Promise<void>((resolve, reject) => {
+        const stream = minioClient.listObjects(SHARED_BUCKET, sourcePrefix, true)
+        stream.on('data', obj => { if (obj.name) objects.push(obj.name) })
+        stream.on('end', resolve)
+        stream.on('error', reject)
+    })
+
+    let count = 0
+    for (const objName of objects) {
+        const relativePath = objName.substring(sourcePrefix.length)
+        const destKey = `${destPrefix}${relativePath}`
+        await minioClient.copyObject(SHARED_BUCKET, destKey, `/${SHARED_BUCKET}/${objName}`)
+        count++
+    }
+    return count
+}
+
+/**
+ * Removes all objects under the given prefix in the shared bucket.
+ */
+export async function deleteFolder(prefix: string): Promise<void> {
+    const objects: string[] = []
+    await new Promise<void>((resolve, reject) => {
+        const stream = minioClient.listObjects(SHARED_BUCKET, prefix, true)
+        stream.on('data', obj => { if (obj.name) objects.push(obj.name) })
+        stream.on('end', resolve)
+        stream.on('error', reject)
+    })
+
+    if (objects.length === 0) return
+
+    await minioClient.removeObjects(SHARED_BUCKET, objects)
+}

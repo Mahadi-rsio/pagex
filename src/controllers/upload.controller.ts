@@ -34,6 +34,8 @@ export async function uploadFileHandler(req: Request, res: Response) {
             {
                 path: req.file.path,
                 site_id: page.site_id,
+                page_id: page.id,
+                tenant_id: tenantId,
             },
             {
                 attempts: 3,

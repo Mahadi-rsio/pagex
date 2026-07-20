@@ -10,6 +10,7 @@ import { db } from '../../infrastructure/db/db.js'
 import { builds } from '../../infrastructure/db/schema.js'
 import { deleteSiteObjects, minioClient, SHARED_BUCKET } from '../../infrastructure/storage/minio.js'
 import { CLOUDISY_CLOUD_BUILDS_QUEUE, type CloudBuildJob } from '../jobs/build.queue.js'
+import { executeDeploymentFlow } from '../../services/deployment.service.js'
 
 async function getFilesRecursively(dir: string): Promise<string[]> {
     const dirents = await fs.readdir(dir, { withFileTypes: true });
@@ -162,17 +163,25 @@ const worker = new Worker<CloudBuildJob>(
             await job.updateProgress(90);
             await job.log("Step 4: Uploading build outputs to MinIO...");
 
-            await deleteSiteObjects(siteId);
-
-            const files = await getFilesRecursively(detectedDir);
-            for (const file of files) {
-                const relativePath = path.relative(detectedDir, file);
-                const s3Key = `${siteId}/${relativePath}`;
-                const fileBuffer = await fs.readFile(file);
-                await minioClient.putObject(SHARED_BUCKET, s3Key, fileBuffer, fileBuffer.length, {
-                    'Content-Type': lookup(file) || 'application/octet-stream'
-                });
-            }
+            await executeDeploymentFlow(
+                pageId,
+                tenantId,
+                siteId,
+                'build',
+                buildId,
+                async () => {
+                    const files = await getFilesRecursively(detectedDir)
+                    for (const file of files) {
+                        const relativePath = path.relative(detectedDir, file)
+                        const s3Key = `${siteId}/${relativePath}`
+                        const fileBuffer = await fs.readFile(file)
+                        await minioClient.putObject(SHARED_BUCKET, s3Key, fileBuffer, fileBuffer.length, {
+                            'Content-Type': lookup(file) || 'application/octet-stream'
+                        })
+                    }
+                    return files.length
+                }
+            )
 
             // Step 5 (100%) — Update DB + Cleanup
             await job.updateProgress(100);

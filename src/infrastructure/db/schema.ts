@@ -1,4 +1,4 @@
-import { bigint, boolean, date, index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, date, index, pgTable, text, timestamp, uuid, integer } from "drizzle-orm/pg-core";
 
 
 /**
@@ -92,4 +92,21 @@ export const builds = pgTable("builds", {
 }, (t) => ({
     buildsPageTenantStatusIdx: index("idx_builds_page_tenant_status").on(t.page_id, t.tenant_id, t.status),
 }));
+
+/**
+ * `deployments` — snapshots and active deployment history.
+ */
+export const deployments = pgTable("deployments", {
+    id: uuid("id").primaryKey().notNull().defaultRandom(),
+    page_id: uuid("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+    site_id: uuid("site_id").notNull().references(() => sites.id),
+    tenant_id: text("tenant_id").notNull(),
+    build_id: uuid("build_id").references(() => builds.id),
+    version: integer("version").notNull(),
+    snapshot_prefix: text("snapshot_prefix").notNull(),
+    is_active: boolean("is_active").default(false).notNull(),
+    source: text("source").notNull(), // "build" | "upload"
+    file_count: integer("file_count").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
 

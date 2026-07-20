@@ -18,15 +18,15 @@ Caddy (static_s3 plugin)
   │
   ├──▶ MinIO  (object storage — single shared bucket)
   │
-  └──▶ Express API  (site management, uploads, cloud builds, analytics)
+  └──▶ Express API  (site management, uploads, cloud builds, rollbacks, analytics)
             │
-            ├── PostgreSQL  (sites, pages, site_daily_stats, builds)
+            ├── PostgreSQL  (sites, pages, site_daily_stats, builds, deployments)
             ├── Redis       (tenant UUID cache, usage counters, BullMQ queues)
             └── BullMQ Workers
-                    ├── upload  — extracts zip → stores to MinIO under {UUID}/{file}
+                    ├── upload  — snapshot → extracts zip → deploys to MinIO
                     ├── sync    — flushes Redis usage counters → PostgreSQL
-                    └── build   — git clone → docker build → MinIO deploy
-                                  (streams real-time logs via SSE)
+                    └── build   — git clone → docker build → snapshot → deploy
+                                  (1 GB RAM limit · live stats via SSE · build time metric)
 ```
 
 ### Key design decisions
@@ -34,10 +34,11 @@ Caddy (static_s3 plugin)
 | Topic | Decision |
 |-------|----------|
 | **Routing** | Caddy `static_s3` plugin resolves `subdomain → UUID → S3 key` at request time. No Caddy admin API calls needed. |
-| **Storage** | Single shared bucket `cloudisy-sites`. Every tenant's files live under `{site_id}/`. |
+| **Storage** | Two MinIO prefixes: `{site_id}/` (live files) and `cloudisy-snapshots/{site_id}/v{N}/` (deployment snapshots). |
 | **Analytics** | The plugin writes `site_daily_stats` rows to PostgreSQL directly (Redis → PG flush every 5 min). |
 | **Auth** | JWT verified via remote JWKS at `https://cloudisy.vercel.app/api/auth/jwks`. |
-| **Cloud Builds** | Each build runs in an isolated Docker container (`cloudisy-build-env`) with pnpm pre-installed. The host Docker socket is mounted so the `build_w` container can spawn sibling containers. `/tmp/cloudisy-builds` is bind-mounted on both `build_w` and the host so Docker volume paths resolve correctly (DinD path sharing). |
+| **Cloud Builds** | Each build runs in an isolated Docker container (`cloudisy-build-env`) with pnpm pre-installed, limited to 1 GB RAM. Live RAM + Net I/O stats are streamed every 2 s via SSE. Total build time is logged as a final metric. |
+| **Rollbacks** | Before every deploy (ZIP upload or build), live files are server-side copied to `cloudisy-snapshots/{site_id}/v{N}/`. Only the last **5 snapshots** per page are retained — older rows + objects are pruned automatically. |
 
 ---
 
@@ -117,6 +118,23 @@ Records of page build jobs and their statuses.
 | `triggered_by` | TEXT | `cli` (default) \| `dashboard` |
 | `created_at` | TIMESTAMPTZ | Time job was created |
 | `completed_at` | TIMESTAMPTZ | Time job completed (nullable) |
+
+### `deployments`
+Snapshot and deployment history per page. One row per deployment, with `is_active = true` for the currently live version.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | Primary key |
+| `page_id` | UUID FK → pages | Cascade delete |
+| `site_id` | UUID FK → sites | |
+| `tenant_id` | TEXT | |
+| `build_id` | UUID FK → builds | Nullable — NULL for ZIP upload deployments |
+| `version` | INTEGER | Auto-incrementing per page (1, 2, 3…) |
+| `snapshot_prefix` | TEXT | MinIO prefix: `cloudisy-snapshots/{site_id}/v{N}/` |
+| `is_active` | BOOLEAN | Only one per page is `true` at a time |
+| `source` | TEXT | `build` \| `upload` |
+| `file_count` | INTEGER | Number of files in this deployment |
+| `created_at` | TIMESTAMPTZ | |
 
 ---
 
@@ -242,10 +260,12 @@ What happens internally:
 3. Enqueues a BullMQ job on `cloudisy-cloud-builds`
 4. Build worker picks up the job and runs:
    - **Clone** — `git clone --depth=1` with the token injected into the HTTPS URL
-   - **Build** — runs `cloudisy-build-env:latest` in a resource-constrained container (limited to **1 GB RAM** max) to execute the build command. Live container resource usage (RAM and Network bandwidth) is streamed directly into the build log.
-   - **Detect** — finds the output dir (or uses the specified one)
-   - **Deploy** — deletes old MinIO objects, uploads all output files with correct MIME types
-   - **Finalize** — sets `builds.status = "completed"` and `completed_at`
+   - **Build** — runs `cloudisy-build-env:latest` (pnpm pre-installed) in an isolated container limited to **1 GB RAM**. Live RAM + Net I/O is polled every 2 s and emitted as `[Stats]` log lines via SSE.
+   - **Detect** — finds the output dir (auto-detected: `.next`, `dist`, `out`, `build`, `public`) or uses `outputDir`
+   - **Snapshot** — server-side copies current live files to `cloudisy-snapshots/{site_id}/v{N}/` before touching live traffic
+   - **Deploy** — atomically replaces live files in MinIO; records a `deployments` row and sets `is_active = true`
+   - **Finalize** — sets `builds.status = "completed"`, `completed_at`, and logs total build duration
+   - **Prune** — deletes any snapshot older than the last 5 versions
 5. Returns `201 Created` with the build row
 
 #### Stream build logs (SSE)
@@ -257,10 +277,10 @@ Opens a **Server-Sent Events** stream. Each event is a JSON object:
 
 | `type` | Payload | Description |
 |--------|---------|-------------|
-| `log` | `{ message: string }` | A single line of build output or live resource stats: `[Stats] RAM: <used>/1GiB \| Net I/O: <rx>/<tx>` |
+| `log` | `{ message: string }` | A single log line. Stats lines are prefixed `[Stats]`: e.g. `[Stats] RAM: 350MiB / 1GiB \| Net I/O: 46.8MB / 317kB` or `[Stats] Total Build Duration: 28.84s` |
 | `progress` | `{ value: number }` | Build progress 0–100% |
 | `status` | `{ status: string }` | Current BullMQ job state |
-| `done` | `{ status, error? }` | Final event — stream closes after this |
+| `done` | `{ status, error?, durationMs? }` | Final event — includes `durationMs` (ms from `created_at` to `completed_at`). Stream closes after this |
 | `error` | `{ message: string }` | Stream-level error |
 
 Example (curl):
@@ -282,6 +302,38 @@ GET /api/builds/page/:pageId
 Authorization: Bearer <token>
 ```
 Returns the latest 20 builds for the page, ordered by `created_at DESC`.
+
+---
+
+### Deployments & Rollbacks
+
+Every successful deploy (ZIP upload or cloud build) creates a versioned snapshot. You can list deployment history and roll back to any of the last 5 versions.
+
+#### List deployments for a page
+```
+GET /api/deployments/page/:pageId
+Authorization: Bearer <token>
+```
+Returns all deployment records for the page, ordered by `version DESC`. Only one will have `is_active: true`.
+
+Example response:
+```json
+[
+  { "id": "...", "version": 2, "is_active": true,  "source": "build", "file_count": 10, ... },
+  { "id": "...", "version": 1, "is_active": false, "source": "build", "file_count": 10, ... }
+]
+```
+
+#### Rollback to a deployment
+```
+POST /api/deployments/:deploymentId/rollback
+Authorization: Bearer <token>
+```
+Restores the snapshot at `cloudisy-snapshots/{site_id}/v{N}/` to the live `cloudisy-sites/{site_id}/` prefix. The target deployment is set `is_active = true`; all others for that page become `false`. The site is live on the old version **immediately** — no restart required.
+
+Returns `{ success: true, message: string, deployment: object }`.
+
+> **Snapshot retention:** Only the last **5 versions** per page are retained. After each new deploy, older snapshots (both MinIO objects and DB rows) are pruned automatically.
 
 ---
 
@@ -420,8 +472,11 @@ cloudisy_server/
 │   ├── queue/
 │   │   ├── jobs/          # BullMQ queue definitions (upload, sync, build)
 │   │   └── workers/       # upload.worker, sync.worker, build.worker
-│   ├── routes/            # Express routers
-│   ├── services/          # Business logic (page, upload, sync, build)
+│   ├── routes/            # Express routers (page, upload, build, deployment)
+│   ├── services/          # Business logic
+│   │   ├── deployment.service.ts  # executeDeploymentFlow, rollback, list
+│   │   ├── upload.service.ts
+│   │   └── build.service.ts
 │   ├── types/
 │   ├── utils/
 │   └── validators/        # Zod schemas (page, build)

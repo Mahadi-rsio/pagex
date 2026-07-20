@@ -7,6 +7,8 @@ export interface UploadJobData {
     path: string;
     // UUID from the `sites` table; used as the key prefix in the shared MinIO bucket.
     site_id: string;
+    page_id: string;
+    tenant_id: string;
 }
 
 export const queue = new Queue<UploadJobData>(UPLOAD_QUEUE, { connection })
