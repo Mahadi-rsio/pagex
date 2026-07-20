@@ -99,7 +99,10 @@ export async function getBuildLogsSSEHandler(req: Request, res: Response) {
 
     // If already terminal, just return current state immediately
     if (build.status === 'completed' || build.status === 'failed') {
-        send({ type: 'done', status: build.status, error: build.error ?? undefined })
+        const durationMs = build.completed_at && build.created_at
+            ? new Date(build.completed_at).getTime() - new Date(build.created_at).getTime()
+            : undefined;
+        send({ type: 'done', status: build.status, error: build.error ?? undefined, durationMs })
         return res.end()
     }
 
@@ -130,7 +133,10 @@ export async function getBuildLogsSSEHandler(req: Request, res: Response) {
 
             // Close stream when terminal
             if (currentBuild.status === 'completed' || currentBuild.status === 'failed') {
-                send({ type: 'done', status: currentBuild.status, error: currentBuild.error ?? undefined })
+                const durationMs = currentBuild.completed_at && currentBuild.created_at
+                    ? new Date(currentBuild.completed_at).getTime() - new Date(currentBuild.created_at).getTime()
+                    : undefined;
+                send({ type: 'done', status: currentBuild.status, error: currentBuild.error ?? undefined, durationMs })
                 clearInterval(interval)
                 res.end()
             }

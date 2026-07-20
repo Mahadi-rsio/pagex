@@ -1,9 +1,7 @@
 const API_BASE = "http://localhost:3000/api";
 
 // ⚠️ Put your token here manually
-const TOKEN = "eyJhbGciOiJFZERTQSIsImtpZCI6ImlNNGg0WXBMOWx0d3docXhwczRKNzV3VmtJZ2c1Q3hDIn0.eyJpYXQiOjE3ODQ1NDY3MjEsImlkIjoiSGp3UHdSRTJqamlUcXVNMTRBVlNQZFFVRjdZN3k1eU4iLCJuYW1lIjoiY2xvdWRpc3kiLCJzdWIiOiJIandQd1JFMmpqaVRxdU0xNEFWU1BkUVVGN1k3eTV5TiIsImV4cCI6MTc4NDU0NzkyMSwiaXNzIjoiaHR0cHM6Ly9hdXRoLmNsb3VkaXN5LmNvbSIsImF1ZCI6Imh0dHBzOi8vYXV0aC5jbG91ZGlzeS5jb20ifQ.yEI8B8mzpft1CIU8n8mmPHLlIeYdc-h072agUK00zJY5oXZKOViTxBAlG7em7LsCPoiIkUAO3fWvNJimQXjaCw" 
-
-
+const TOKEN = "eyJhbGciOiJFZERTQSIsImtpZCI6ImlNNGg0WXBMOWx0d3docXhwczRKNzV3VmtJZ2c1Q3hDIn0.eyJpYXQiOjE3ODQ1NDc2NDMsImlkIjoiSGp3UHdSRTJqamlUcXVNMTRBVlNQZFFVRjdZN3k1eU4iLCJuYW1lIjoiY2xvdWRpc3kiLCJzdWIiOiJIandQd1JFMmpqaVRxdU0xNEFWU1BkUVVGN1k3eTV5TiIsImV4cCI6MTc4NDU0ODg0MywiaXNzIjoiaHR0cHM6Ly9hdXRoLmNsb3VkaXN5LmNvbSIsImF1ZCI6Imh0dHBzOi8vYXV0aC5jbG91ZGlzeS5jb20ifQ.ANHPLArBptOLRmYZpE56XX2AeSEldSRQyhPRgzXDuwW4sbarb4iUFvRPGmwb-TLPMFNtgS1enH6NdeHRRtqwAg" 
 
 
 
@@ -138,7 +136,7 @@ async function main() {
         console.log("2. Triggering cloud build...");
         const build = await triggerBuild({
             pageId: page.id,
-            repoUrl: "https://github.com/Mahadi-rsio/console",
+            repoUrl: "https://github.com/TailAdmin/free-react-tailwind-admin-dashboard",
             gitProvider: "github",
             gitToken: "YOUR_GITHUB_TOKEN",   // ⚠️ Replace if private repo
             framework: "vite",

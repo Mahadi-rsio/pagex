@@ -242,7 +242,7 @@ What happens internally:
 3. Enqueues a BullMQ job on `cloudisy-cloud-builds`
 4. Build worker picks up the job and runs:
    - **Clone** — `git clone --depth=1` with the token injected into the HTTPS URL
-   - **Build** — `docker run cloudisy-build-env:latest` (pnpm pre-installed) with the build command
+   - **Build** — runs `cloudisy-build-env:latest` in a resource-constrained container (limited to **1 GB RAM** max) to execute the build command. Live container resource usage (RAM and Network bandwidth) is streamed directly into the build log.
    - **Detect** — finds the output dir (or uses the specified one)
    - **Deploy** — deletes old MinIO objects, uploads all output files with correct MIME types
    - **Finalize** — sets `builds.status = "completed"` and `completed_at`
@@ -257,7 +257,7 @@ Opens a **Server-Sent Events** stream. Each event is a JSON object:
 
 | `type` | Payload | Description |
 |--------|---------|-------------|
-| `log` | `{ message: string }` | A single line of build output |
+| `log` | `{ message: string }` | A single line of build output or live resource stats: `[Stats] RAM: <used>/1GiB \| Net I/O: <rx>/<tx>` |
 | `progress` | `{ value: number }` | Build progress 0–100% |
 | `status` | `{ status: string }` | Current BullMQ job state |
 | `done` | `{ status, error? }` | Final event — stream closes after this |

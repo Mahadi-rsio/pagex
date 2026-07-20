@@ -29,6 +29,7 @@ const worker = new Worker<CloudBuildJob>(
 
         console.log(`Starting build job ${jobId} for buildId: ${buildId}...`);
 
+        const startTime = Date.now();
         try {
             // Step 1 (10%) — Clone repo
             await job.updateProgress(10);
@@ -176,6 +177,9 @@ const worker = new Worker<CloudBuildJob>(
             // Step 5 (100%) — Update DB + Cleanup
             await job.updateProgress(100);
             await job.log("Step 5: Finalizing build...");
+
+            const durationSeconds = ((Date.now() - startTime) / 1000).toFixed(2);
+            await job.log(`[Stats] Total Build Duration: ${durationSeconds}s`);
 
             await db.update(builds)
                 .set({ status: 'completed', completed_at: new Date() })
