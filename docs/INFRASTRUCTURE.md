@@ -141,7 +141,7 @@ The Caddy `static_s3` plugin (submodule at `plugins/`, image: `ghcr.io/mahadi-rs
 1. **Routing** — resolves `subdomain → site_id` via Redis cache → PostgreSQL
    - Redis key: `site:{subdomain}` (5-min TTL)
    - SQL: `SELECT id FROM sites WHERE subdomain=$1 AND active=true`
-2. **File serving** — streams from MinIO: `{SHARED_BUCKET}/tenant/{site_id}/{path}`
+2. **File serving** — streams from MinIO: `{SHARED_BUCKET}/{site_id}/{path}`
 3. **SPA fallback** — serves `index.html` for unknown paths
 4. **Analytics** — increments `requests:{domain}` and `bandwidth:{domain}` in Redis
 5. **Sync** — Redis counters flushed to `site_daily_stats` every 5 min

@@ -50,11 +50,11 @@ Caddy (static_s3 plugin)
 | Topic | Decision |
 |-------|----------|
 | **Routing** | Caddy `static_s3` plugin resolves `subdomain → UUID → S3 key` at request time. No Caddy admin API calls needed. |
-| **Storage** | Two MinIO prefixes in shared bucket: `{site_id}/` (live files served by Caddy) and `snapshots/{site_id}/v{N}/` (deployment snapshots). |
+| **Storage** | Two MinIO prefixes: `{site_id}/` (live files) and `cloudisy-snapshots/{site_id}/v{N}/` (deployment snapshots). |
 | **Analytics** | The plugin writes `site_daily_stats` rows to PostgreSQL directly (Redis → PG flush every 5 min). |
 | **Auth** | JWT verified via remote JWKS at `https://auth.cloudisy.com/api/auth/jwks`. |
 | **Cloud Builds** | Each build runs in an isolated Docker container (`cloudisy-build-env`) with pnpm pre-installed, limited to 1 GB RAM. Live RAM + Net I/O stats are streamed every 2 s via SSE. Total build time is logged as a final metric. |
-| **Rollbacks** | Before every deploy (ZIP upload or build), live files are server-side copied to `snapshots/{site_id}/v{N}/`. Only the last **5 snapshots** per page are retained — older rows + objects are pruned automatically. |
+| **Rollbacks** | Before every deploy (ZIP upload or build), live files are server-side copied to `cloudisy-snapshots/{site_id}/v{N}/`. Only the last **5 snapshots** per page are retained — older rows + objects are pruned automatically. |
 
 ---
 
@@ -63,14 +63,14 @@ Caddy (static_s3 plugin)
 | Container | Image / Build | Role |
 |-----------|---------------|------|
 | `express_app` | `./Dockerfile` (`runner` stage) | REST API |
-| `caddy_server` | `ghcr.io/mahadi-rsio/cdx_s3` | Reverse proxy + S3 static file server |
-| `minio_server` | `minio/minio` | S3 object storage |
-| `postgres_db` | `postgres:16-alpine` | PostgreSQL database |
-| `redis` | `redis:7-alpine` | Redis cache + BullMQ broker |
+| `caddy_server` | `ghcr.io/mahadi-rsio/cdx_s3` | Caddy + `static_s3` plugin |
+| `minio_server` | `minio/minio` | S3-compatible object storage |
+| `postgres_db` | `postgres:16-alpine` | Primary database |
+| `redis` | `redis:7-alpine` | Cache + BullMQ broker |
 | `upload_w` | `./Dockerfile` (`runner` stage) | Upload queue worker |
-| `sync_w` | `./Dockerfile` (`runner` stage) | Usage sync cron worker |
-| `build_w` | `./Dockerfile` (`build-worker` stage) | Cloud build worker |
-| `build_env` | `./Dockerfile` (`build-env` stage) | Builds base execution image (`cloudisy-build-env:latest`) |
+| `sync_w` | `./Dockerfile` (`runner` stage) | Usage sync worker |
+| `build_w` | `./Dockerfile` (`build-worker` stage) | Cloud build queue worker — has `git` + `docker-cli` |
+| `build_env` | `./Dockerfile` (`build-env` stage) | Builds & tags `cloudisy-build-env:latest` (pnpm pre-installed) used by cloud builds |
 
 ---
 
@@ -212,8 +212,8 @@ POST /api/builds
 ## Rollback System
 
 Every deploy (build or ZIP upload) creates a versioned snapshot in MinIO:
-- Live files: `{site_id}/`
-- Snapshots: `snapshots/{site_id}/v{N}/`
+- Live files: `cloudisy-sites/{site_id}/`
+- Snapshots: `cloudisy-snapshots/{site_id}/v{N}/`
 
 Only the last **5 versions** are retained. Rolling back:
 1. `POST /api/deployments/:id/rollback`

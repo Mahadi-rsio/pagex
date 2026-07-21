@@ -225,7 +225,7 @@ List all deployment versions for a page, newest first. Only one will have `is_ac
     "tenant_id": "...",
     "build_id": "<uuid or null>",
     "version": 2,
-    "snapshot_prefix": "snapshots/<site_id>/v2/",
+    "snapshot_prefix": "cloudisy-snapshots/<site_id>/v2/",
     "is_active": true,
     "source": "build",
     "file_count": 10,

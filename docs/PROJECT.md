@@ -148,16 +148,16 @@ cloudisy-sites/
     index.html
     assets/...
 
-  snapshots/
-    {site_id}/
-      v1/                        ← deployment snapshot (last 5 kept)
-        index.html
-        assets/...
-      v2/
-        ...
+cloudisy-snapshots/
+  {site_id}/
+    v1/                          ← deployment snapshot (last 5 kept)
+      index.html
+      assets/...
+    v2/
+      ...
 ```
 
-Bucket: `cloudisy-sites` (single bucket for live sites `{site_id}/` and `snapshots/{site_id}/` — `SHARED_BUCKET` env var)
+Bucket: `cloudisy-sites` (single bucket for both prefixes — `SHARED_BUCKET` env var)
 
 ---
 

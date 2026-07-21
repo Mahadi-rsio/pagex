@@ -18,7 +18,7 @@ export const minioClient = new Minio.Client({
 });
 
 // The single shared bucket used by all tenants.
-// Files are stored at: {SHARED_BUCKET}/tenant/{site_uuid}/{filepath}
+// Files are stored at: {SHARED_BUCKET}/{site_uuid}/{filepath}
 // Must be set via MINIO_BUCKET env var — no default to avoid accidental bucket naming.
 if (!process.env.MINIO_BUCKET) {
     throw new Error('MINIO_BUCKET environment variable is required')
@@ -48,13 +48,24 @@ export async function ensureSharedBucket(): Promise<void> {
 }
 
 /**
- * Removes all live and snapshot objects under the given `siteId` in the shared bucket.
+ * Removes all objects under the given `siteId` prefix in the shared bucket.
  * Used when deleting a project.
  */
 export async function deleteSiteObjects(siteId: string): Promise<void> {
-    await deleteFolder(`${siteId}/`)
-    await deleteFolder(`snapshots/${siteId}/`)
-    console.log(`🗑️  Removed live and snapshot objects for site ${siteId}`)
+    const prefix = `${siteId}/`
+    const objects: string[] = []
+
+    await new Promise<void>((resolve, reject) => {
+        const stream = minioClient.listObjects(SHARED_BUCKET, prefix, true)
+        stream.on('data', obj => { if (obj.name) objects.push(obj.name) })
+        stream.on('end', resolve)
+        stream.on('error', reject)
+    })
+
+    if (objects.length === 0) return
+
+    await minioClient.removeObjects(SHARED_BUCKET, objects)
+    console.log(`🗑️  Removed ${objects.length} objects for site ${siteId}`)
 }
 
 /**

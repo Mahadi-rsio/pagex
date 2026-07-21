@@ -6,7 +6,7 @@ import { executeDeploymentFlow } from './deployment.service.js'
 
 /**
  * Extracts the uploaded zip and uploads all files into the shared MinIO bucket
- * under the prefix: `tenant/{siteId}/{filepath}` via the executeDeploymentFlow lifecycle.
+ * under the prefix: `{siteId}/{filepath}` via the executeDeploymentFlow lifecycle.
  */
 export async function processUpload(path: string, siteId: string, pageId: string, tenantId: string): Promise<void> {
     await executeDeploymentFlow(

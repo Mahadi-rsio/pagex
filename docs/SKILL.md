@@ -169,7 +169,7 @@ curl -H "Authorization: Bearer <token>" \
 # Using minio mc (if available)
 mc alias set local http://localhost:9000 minioadmin minioadmin
 mc ls local/cloudisy-sites/<siteId>/
-mc ls local/cloudisy-sites/snapshots/<siteId>/
+mc ls local/cloudisy-sites/cloudisy-snapshots/<siteId>/
 
 # Or use the MinIO console: http://localhost:9001
 ```
