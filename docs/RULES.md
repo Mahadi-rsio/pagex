@@ -153,13 +153,13 @@ const worker = new Worker<MyJobData>(MY_QUEUE, async (job) => {
 Always use the shared helpers from `src/infrastructure/storage/minio.ts`:
 - `copyFolder(sourcePrefix, destPrefix)` — server-side copy; returns file count
 - `deleteFolder(prefix)` — bulk delete all objects under prefix
-- `deleteSiteObjects(siteId)` — convenience wrapper for `deleteFolder(`${siteId}/`)`
+- `deleteSiteObjects(siteId)` — deletes both `tenant/${siteId}/` and `snapshots/${siteId}/`
 - `minioClient` — raw MinIO client for custom operations
 - `SHARED_BUCKET` — always use this constant, never hardcode the bucket name
 
 **Key prefix format:**
 - Live files: `{siteId}/` (e.g. `d48da5d0-e96d-441f-980c-d7125490efdc/index.html`)
-- Snapshots: `cloudisy-snapshots/{siteId}/v{version}/`
+- Snapshots: `snapshots/{siteId}/v{version}/`
 
 ---
 

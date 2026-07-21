@@ -111,7 +111,7 @@ tenant_id        TEXT     NOT NULL
 build_id         UUID     FK → builds(id)  -- NULL for ZIP uploads
 version          INTEGER  NOT NULL          -- auto-incremented per page
 snapshot_prefix  TEXT     NOT NULL          -- MinIO prefix of this version's snapshot
-                          -- format: "cloudisy-snapshots/{site_id}/v{version}/"
+                          -- format: "snapshots/{site_id}/v{version}/"
 is_active        BOOLEAN  NOT NULL DEFAULT false
 source           TEXT     NOT NULL  -- 'build' | 'upload'
 file_count       INTEGER  NOT NULL

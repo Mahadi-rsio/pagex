@@ -31,11 +31,11 @@ export async function executeDeploymentFlow(
         .limit(1);
 
     const nextVersion = latestDep ? latestDep.version + 1 : 1;
-    const snapshotPrefix = `cloudisy-snapshots/${siteId}/v${nextVersion}/`;
+    const snapshotPrefix = `snapshots/${siteId}/v${nextVersion}/`;
 
     // Step 1: Copy current live files -> snapshot of the active version (if any)
     if (activeDep) {
-        const activeSnapshotPrefix = `cloudisy-snapshots/${siteId}/v${activeDep.version}/`;
+        const activeSnapshotPrefix = `snapshots/${siteId}/v${activeDep.version}/`;
         await copyFolder(`${siteId}/`, activeSnapshotPrefix);
     }
 
@@ -62,7 +62,7 @@ export async function executeDeploymentFlow(
     // Step 3: Delete old live files
     await deleteFolder(`${siteId}/`);
 
-    // Step 4: Upload new files to cloudisy-sites/{site_id}/
+    // Step 4: Upload new files to {site_id}/
     const fileCount = await uploadFn();
 
     // Step 5: Set new deployment row is_active = true, set all others to false
@@ -137,7 +137,7 @@ export async function rollbackToDeployment(deploymentId: string, tenantId: strin
 
     // 3. Backup current active deployment files to snapshot (if any)
     if (activeDep) {
-        const activeSnapshotPrefix = `cloudisy-snapshots/${siteId}/v${activeDep.version}/`;
+        const activeSnapshotPrefix = `snapshots/${siteId}/v${activeDep.version}/`;
         await copyFolder(`${siteId}/`, activeSnapshotPrefix);
     }
 

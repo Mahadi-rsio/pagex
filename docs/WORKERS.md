@@ -36,7 +36,7 @@ upload.worker.ts
     → executeDeploymentFlow(pageId, tenantId, siteId, 'upload', null, uploadFn)
       1. Find current active deployment (SELECT from deployments)
       2. Get next version number
-      3. SNAPSHOT: copyFolder(siteId/ → cloudisy-snapshots/siteId/vN/)
+      3. SNAPSHOT: copyFolder(siteId/ → snapshots/siteId/vN/)
       4. INSERT deployments row (is_active: false, file_count: 0)
       5. deleteFolder(siteId/)          ← brief 404 window
       6. uploadFn() callback runs:
@@ -167,7 +167,7 @@ executeDeploymentFlow(
 **Steps:**
 1. Find `is_active = true` deployment for this page
 2. Determine `nextVersion = latest.version + 1` (or 1 if none)
-3. `copyFolder(siteId/ → cloudisy-snapshots/siteId/vN/)` if active exists
+3. `copyFolder(siteId/ → snapshots/siteId/vN/)` if active exists
 4. `INSERT deployments` (is_active: false)
 5. `deleteFolder(siteId/)` — deletes live files
 6. `await uploadFn()` — uploads new files, returns count
@@ -178,7 +178,7 @@ executeDeploymentFlow(
 **Rollback (`rollbackToDeployment`):**
 1. Load target deployment (verify tenantId)
 2. Find currently active deployment
-3. Backup current live → `cloudisy-snapshots/siteId/v{active.version}/`
+3. Backup current live → `snapshots/siteId/v{active.version}/`
 4. `deleteFolder(siteId/)`
 5. `copyFolder(snapshot_prefix → siteId/)`
 6. Flip `is_active` flags
@@ -189,7 +189,7 @@ executeDeploymentFlow(
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `deleteSiteObjects(siteId)` | `(string) → void` | Delete all `{siteId}/` objects |
+| `deleteSiteObjects(siteId)` | `(string) → void` | Delete all `tenant/{siteId}/` and `snapshots/{siteId}/` objects |
 | `copyFolder(src, dest)` | `(string, string) → number` | Copy all objects from src prefix to dest prefix. Returns count |
 | `deleteFolder(prefix)` | `(string) → void` | Delete all objects under prefix |
 | `SHARED_BUCKET` | `string` | Env `MINIO_BUCKET` (default: `cloudisy-sites`) |
