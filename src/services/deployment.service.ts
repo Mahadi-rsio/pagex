@@ -1,7 +1,7 @@
 import { db } from '../infrastructure/db/db.js'
 import { deployments } from '../infrastructure/db/schema.js'
 import { eq, and, ne, desc } from 'drizzle-orm'
-import { copyFolder, deleteFolder } from '../infrastructure/storage/minio.js'
+import { copyFolder, deleteFolder, liveSitePrefix, deploymentSnapshotPrefix } from '../infrastructure/storage/minio.js'
 
 export async function executeDeploymentFlow(
     pageId: string,
@@ -31,12 +31,13 @@ export async function executeDeploymentFlow(
         .limit(1);
 
     const nextVersion = latestDep ? latestDep.version + 1 : 1;
-    const snapshotPrefix = `cloudisy-snapshots/${siteId}/v${nextVersion}/`;
+    const livePrefix = liveSitePrefix(siteId);
+    const snapshotPrefix = deploymentSnapshotPrefix(siteId, nextVersion);
 
     // Step 1: Copy current live files -> snapshot of the active version (if any)
     if (activeDep) {
-        const activeSnapshotPrefix = `cloudisy-snapshots/${siteId}/v${activeDep.version}/`;
-        await copyFolder(`${siteId}/`, activeSnapshotPrefix);
+        const activeSnapshotPrefix = deploymentSnapshotPrefix(siteId, activeDep.version);
+        await copyFolder(livePrefix, activeSnapshotPrefix);
     }
 
     // Step 2: Insert a deployments row (source, is_active: false, file_count: 0 placeholder)
@@ -60,9 +61,9 @@ export async function executeDeploymentFlow(
     }
 
     // Step 3: Delete old live files
-    await deleteFolder(`${siteId}/`);
+    await deleteFolder(livePrefix);
 
-    // Step 4: Upload new files to cloudisy-sites/{site_id}/
+    // Step 4: Upload new files to tenant/{site_id}/
     const fileCount = await uploadFn();
 
     // Step 5: Set new deployment row is_active = true, set all others to false
@@ -135,17 +136,19 @@ export async function rollbackToDeployment(deploymentId: string, tenantId: strin
         )
         .limit(1);
 
+    const livePrefix = liveSitePrefix(siteId);
+
     // 3. Backup current active deployment files to snapshot (if any)
     if (activeDep) {
-        const activeSnapshotPrefix = `cloudisy-snapshots/${siteId}/v${activeDep.version}/`;
-        await copyFolder(`${siteId}/`, activeSnapshotPrefix);
+        const activeSnapshotPrefix = deploymentSnapshotPrefix(siteId, activeDep.version);
+        await copyFolder(livePrefix, activeSnapshotPrefix);
     }
 
     // 4. Clean the live folder
-    await deleteFolder(`${siteId}/`);
+    await deleteFolder(livePrefix);
 
     // 5. Restore files from the snapshot of the targeted deployment
-    await copyFolder(dep.snapshot_prefix, `${siteId}/`);
+    await copyFolder(dep.snapshot_prefix, livePrefix);
 
     // 6. Set target deployment active, and set others to inactive
     await db

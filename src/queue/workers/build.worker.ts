@@ -8,7 +8,7 @@ import { lookup } from 'mime-types'
 import { connection } from '../../infrastructure/cache/redis.js'
 import { db } from '../../infrastructure/db/db.js'
 import { builds } from '../../infrastructure/db/schema.js'
-import { deleteSiteObjects, minioClient, SHARED_BUCKET } from '../../infrastructure/storage/minio.js'
+import { deleteSiteObjects, minioClient, SHARED_BUCKET, liveSitePrefix } from '../../infrastructure/storage/minio.js'
 import { CLOUDISY_CLOUD_BUILDS_QUEUE, type CloudBuildJob } from '../jobs/build.queue.js'
 import { executeDeploymentFlow } from '../../services/deployment.service.js'
 
@@ -173,7 +173,7 @@ const worker = new Worker<CloudBuildJob>(
                     const files = await getFilesRecursively(detectedDir)
                     for (const file of files) {
                         const relativePath = path.relative(detectedDir, file)
-                        const s3Key = `${siteId}/${relativePath}`
+                        const s3Key = `${liveSitePrefix(siteId)}${relativePath}`
                         const fileBuffer = await fs.readFile(file)
                         await minioClient.putObject(SHARED_BUCKET, s3Key, fileBuffer, fileBuffer.length, {
                             'Content-Type': lookup(file) || 'application/octet-stream'

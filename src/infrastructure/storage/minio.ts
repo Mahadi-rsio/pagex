@@ -18,12 +18,23 @@ export const minioClient = new Minio.Client({
 });
 
 // The single shared bucket used by all tenants.
-// Files are stored at: {SHARED_BUCKET}/{site_uuid}/{filepath}
+// Live files:  {SHARED_BUCKET}/tenant/{site_uuid}/{filepath}
+// Snapshots:    {SHARED_BUCKET}/snapshot/{site_uuid}/v{N}/{filepath}
 // Must be set via MINIO_BUCKET env var — no default to avoid accidental bucket naming.
 if (!process.env.MINIO_BUCKET) {
     throw new Error('MINIO_BUCKET environment variable is required')
 }
 export const SHARED_BUCKET = process.env.MINIO_BUCKET
+
+/** Live site prefix: tenant/{siteId}/ */
+export function liveSitePrefix(siteId: string): string {
+    return `tenant/${siteId}/`
+}
+
+/** Deployment snapshot prefix: snapshot/{siteId}/v{version}/ */
+export function deploymentSnapshotPrefix(siteId: string, version: number): string {
+    return `snapshot/${siteId}/v${version}/`
+}
 
 /**
  * Ensures the shared bucket exists so Caddy's static_s3 plugin can serve files.
@@ -52,7 +63,7 @@ export async function ensureSharedBucket(): Promise<void> {
  * Used when deleting a project.
  */
 export async function deleteSiteObjects(siteId: string): Promise<void> {
-    const prefix = `${siteId}/`
+    const prefix = liveSitePrefix(siteId)
     const objects: string[] = []
 
     await new Promise<void>((resolve, reject) => {

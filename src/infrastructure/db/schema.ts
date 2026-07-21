@@ -5,7 +5,7 @@ import { bigint, boolean, date, index, pgTable, text, timestamp, uuid, integer }
  * `sites` — one row per deployed project.
  * The caddy static_s3 plugin resolves subdomain → UUID (site_id) by querying
  * this table: SELECT id FROM sites WHERE subdomain = $1 AND active = true
- * The UUID is then used as the S3 key prefix: {site_id}/{filepath}
+ * The UUID is then used in the S3 key prefix: tenant/{site_id}/{filepath}
  */
 export const sites = pgTable("sites", {
     id: uuid("id").primaryKey().notNull().defaultRandom(),
@@ -18,7 +18,7 @@ export const sites = pgTable("sites", {
 
 /**
  * `pages` — tenant project metadata.
- * `site_id` references sites(id); that UUID is the MinIO prefix.
+ * `site_id` references sites(id); live files live at tenant/{site_id}/ in MinIO.
  */
 export const pages = pgTable("pages", {
     id: uuid("id").primaryKey().notNull().defaultRandom(),
