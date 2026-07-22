@@ -1,4 +1,5 @@
 {
+	# Origin / file certs only — do not attempt Let's Encrypt (wildcards need DNS-01).
 	auto_https off
 	order static_s3 before respond
 	admin 0.0.0.0:2019 {
@@ -10,7 +11,9 @@
 # The static_s3 plugin resolves: subdomain → sites.id (PostgreSQL) → S3 key
 # db_dsn and redis_url are intentionally omitted here — the plugin reads
 # DATABASE_URL and REDIS_URL environment variables automatically (plugin.go).
-http://*.{$BASE_DOMAIN:localhost} {
+# TLS: replace certs/ with Cloudflare Origin Certificate in production.
+*.{$BASE_DOMAIN:localhost} {
+	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 
 	# Hashed assets — cache aggressively in browser (immutable)
 	@hashed_assets path *.js *.css *.woff2 *.woff *.ttf
@@ -73,6 +76,7 @@ http://*.{$BASE_DOMAIN:localhost} {
 }
 
 # ── API / Admin server ───────────────────────────────────────────────────────
-http://api.{$BASE_DOMAIN:localhost} {
+api.{$BASE_DOMAIN:localhost} {
+	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 	reverse_proxy app:3000
 }

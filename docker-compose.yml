@@ -119,6 +119,9 @@ services:
       - "2019:2019"
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
+      # Local: dummy self-signed in certs/. Prod: replace with Cloudflare Origin CA files.
+      - ./certs/cert.pem:/etc/caddy/certs/cert.pem:ro
+      - ./certs/key.pem:/etc/caddy/certs/key.pem:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
