@@ -37,6 +37,25 @@ export function blobObjectKey(hash: string): string {
 }
 
 /**
+ * Build MinIO putObject metadata for a live (or blob) object path.
+ * Compressed variants carry Content-Encoding; WebP gets image/webp.
+ */
+export function objectMetaForPath(
+    filePath: string,
+    contentType?: string,
+    contentEncoding?: string
+): Record<string, string> {
+    const meta: Record<string, string> = {}
+    if (contentType) {
+        meta['Content-Type'] = contentType
+    }
+    if (contentEncoding) {
+        meta['Content-Encoding'] = contentEncoding
+    }
+    return meta
+}
+
+/**
  * Ensures the shared bucket exists so Caddy's static_s3 plugin can serve files.
  * Non-fatal: if it fails (e.g. MinIO not ready yet), the app still starts.
  * The bucket can be created manually via the MinIO console at :9001.

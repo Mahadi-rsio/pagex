@@ -121,7 +121,15 @@ Validate the file manifest, check which blobs already exist, and issue a 10-minu
     { "path": "index.html", "hash": "...", "size": 1234 }
   ],
   "filesReused": 2,
-  "filesToUpload": 1
+  "filesToUpload": 1,
+  "summary": {
+    "totalFiles": 3,
+    "totalSize": 1234567,
+    "totalSizeHuman": "1.18 MB",
+    "uploadSize": 500000,
+    "uploadSizeHuman": "488.28 KB",
+    "reusedSize": 734567
+  }
 }
 ```
 
@@ -178,9 +186,29 @@ Verify blobs exist, write `blobs` + `blob_tree_entries`, materialize live files,
     "created_at": "2026-07-23T12:00:00.000Z"
   },
   "filesDeployed": 1,
-  "filesReused": 2
+  "filesReused": 2,
+  "summary": {
+    "totalFiles": 3,
+    "totalSize": 1234567,
+    "totalSizeHuman": "1.18 MB",
+    "filesCompressed": 2,
+    "sizeReduced": 400000,
+    "sizeReducedHuman": "390.63 KB",
+    "sizeReducedPercent": 45.5,
+    "imagesOptimized": 1,
+    "imageOriginalSize": 500000,
+    "imageOptimizedSize": 120000,
+    "imageSizeReduced": 380000,
+    "imageSizeReducedHuman": "371.09 KB",
+    "imageSizeReducedPercent": 76.0,
+    "deployedFiles": 8,
+    "compressedVariants": 4,
+    "webpVariants": 1
+  }
 }
 ```
+
+Compression/WebP savings are computed at commit (after blobs are available). `sizeReduced` uses the best of Brotli/Gzip per text file; `imageSizeReduced` is original − WebP.
 
 | Status | Meaning |
 |--------|---------|

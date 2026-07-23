@@ -1,8 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { promisify } from 'node:util'
+import { brotliCompress, gzip } from 'node:zlib'
 import { and, desc, eq, inArray, ne } from 'drizzle-orm'
 import { lookup } from 'mime-types'
+import sharp from 'sharp'
 import { db } from '../infrastructure/db/db.js'
 import { blobTreeEntries, blobs, deployments, pages, sites } from '../infrastructure/db/schema.js'
 import { usageRedis, redis } from '../infrastructure/cache/redis.js'
@@ -12,7 +15,9 @@ import {
     deleteFolder,
     liveSitePrefix,
     minioClient,
+    objectMetaForPath,
 } from '../infrastructure/storage/minio.js'
+import { CopyDestinationOptions, CopySourceOptions } from 'minio'
 import {
     DEPLOY_TOKEN_TTL_SECONDS,
     DEPLOYMENT_RETENTION,
@@ -20,6 +25,7 @@ import {
     MAX_FILE_SIZE,
     PRESIGN_EXPIRY_SECONDS,
 } from '../constants/index.js'
+import { validateManifest } from '../utils/deployment-validator.js'
 import { validateFile } from '../utils/file-validator.js'
 import { HttpError } from '../utils/http-error.js'
 import type {
@@ -28,6 +34,20 @@ import type {
     PrepareDeployInput,
     PresignDeployInput,
 } from '../validators/deploy.validator.js'
+
+const brotliCompressAsync = promisify(brotliCompress)
+const gzipAsync = promisify(gzip)
+
+/** Text-like assets eligible for Brotli + Gzip variants at commit time. */
+const COMPRESSIBLE_EXTS = new Set(['.html', '.css', '.js', '.json', '.svg', '.xml'])
+
+/** Already-compressed formats — never re-compress. */
+const SKIP_COMPRESS_EXTS = new Set([
+    '.br', '.gz', '.webp', '.woff', '.woff2', '.mp4', '.zip',
+])
+
+/** Raster images converted to WebP (original kept). */
+const WEBP_SOURCE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif'])
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -89,43 +109,343 @@ async function objectExists(key: string): Promise<boolean> {
     }
 }
 
-async function ensureBlobRecord(hash: string, size: number): Promise<'deployed' | 'reused'> {
-    const [existing] = await db.select().from(blobs).where(eq(blobs.hash, hash)).limit(1)
-    if (existing) return 'reused'
-
-    const key = blobObjectKey(hash)
-    if (!(await objectExists(key))) {
-        throw new HttpError(`Missing blob object for hash ${hash}`, 400)
-    }
-
-    await db.insert(blobs).values({ hash, size }).onConflictDoNothing()
-    return 'deployed'
-}
-
 /**
  * Upload a blob from a local buffer if it is not already in the store.
  */
 export async function storeBlobFromBuffer(
     hash: string,
     body: Buffer,
-    contentType = 'application/octet-stream'
+    contentType = 'application/octet-stream',
+    contentEncoding?: string
 ): Promise<'deployed' | 'reused'> {
     const [existing] = await db.select().from(blobs).where(eq(blobs.hash, hash)).limit(1)
     if (existing) return 'reused'
 
     const key = blobObjectKey(hash)
     if (!(await objectExists(key))) {
-        await minioClient.putObject(SHARED_BUCKET, key, body, body.length, {
-            'Content-Type': contentType,
-        })
+        await minioClient.putObject(
+            SHARED_BUCKET,
+            key,
+            body,
+            body.length,
+            objectMetaForPath(key, contentType, contentEncoding)
+        )
     }
 
     await db.insert(blobs).values({ hash, size: body.length }).onConflictDoNothing()
     return 'deployed'
 }
 
+async function readBlobBuffer(hash: string): Promise<Buffer> {
+    try {
+        const stream = await minioClient.getObject(SHARED_BUCKET, blobObjectKey(hash))
+        const chunks: Buffer[] = []
+        for await (const chunk of stream) {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        }
+        return Buffer.concat(chunks)
+    } catch {
+        throw new HttpError(`Missing blob object for hash ${hash}`, 400)
+    }
+}
+
+interface FileVariant {
+    path: string
+    hash: string
+    size: number
+    body: Buffer
+    contentType: string
+    contentEncoding?: string
+}
+
+/** Per-source savings collected while expanding variants. */
+interface VariantExpandStats {
+    /** Original source size in bytes */
+    originalSize: number
+    /** Best of .br/.gz size when compression succeeded; otherwise null */
+    bestCompressedSize: number | null
+    /** Original image size when WebP was produced; otherwise null */
+    imageOriginalSize: number | null
+    /** WebP size when conversion succeeded; otherwise null */
+    imageWebpSize: number | null
+    compressedVariants: number
+    webpVariants: number
+}
+
+export interface DeployOptimizationSummary {
+    totalFiles: number
+    totalSize: number
+    totalSizeHuman: string
+    /** Source files that received at least one .br/.gz variant */
+    filesCompressed: number
+    /** Bytes saved vs best text compression (original − min(br, gz)) */
+    sizeReduced: number
+    sizeReducedHuman: string
+    sizeReducedPercent: number
+    /** Images successfully converted to WebP */
+    imagesOptimized: number
+    imageOriginalSize: number
+    imageOptimizedSize: number
+    /** Bytes saved by WebP vs original images */
+    imageSizeReduced: number
+    imageSizeReducedHuman: string
+    imageSizeReducedPercent: number
+    /** Total tree entries after variants (originals + .br/.gz/.webp) */
+    deployedFiles: number
+    compressedVariants: number
+    webpVariants: number
+}
+
+function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
+function percentSaved(original: number, saved: number): number {
+    if (original <= 0 || saved <= 0) return 0
+    return Math.round((saved / original) * 10000) / 100
+}
+
+function buildOptimizationSummary(
+    sources: Array<{ path: string; body: Buffer }>,
+    fileManifestLength: number,
+    stats: VariantExpandStats[]
+): DeployOptimizationSummary {
+    const totalSize = sources.reduce((sum, s) => sum + s.body.length, 0)
+
+    let sizeReduced = 0
+    let compressibleOriginal = 0
+    let filesCompressed = 0
+    let imagesOptimized = 0
+    let imageOriginalSize = 0
+    let imageOptimizedSize = 0
+    let compressedVariants = 0
+    let webpVariants = 0
+
+    for (const s of stats) {
+        compressedVariants += s.compressedVariants
+        webpVariants += s.webpVariants
+
+        if (s.bestCompressedSize !== null) {
+            filesCompressed++
+            compressibleOriginal += s.originalSize
+            sizeReduced += Math.max(0, s.originalSize - s.bestCompressedSize)
+        }
+        if (s.imageOriginalSize !== null && s.imageWebpSize !== null) {
+            imagesOptimized++
+            imageOriginalSize += s.imageOriginalSize
+            imageOptimizedSize += s.imageWebpSize
+        }
+    }
+
+    const imageSizeReduced = Math.max(0, imageOriginalSize - imageOptimizedSize)
+
+    return {
+        totalFiles: sources.length,
+        totalSize,
+        totalSizeHuman: formatBytes(totalSize),
+        filesCompressed,
+        sizeReduced,
+        sizeReducedHuman: formatBytes(sizeReduced),
+        sizeReducedPercent: percentSaved(compressibleOriginal, sizeReduced),
+        imagesOptimized,
+        imageOriginalSize,
+        imageOptimizedSize,
+        imageSizeReduced,
+        imageSizeReducedHuman: formatBytes(imageSizeReduced),
+        imageSizeReducedPercent: percentSaved(imageOriginalSize, imageSizeReduced),
+        deployedFiles: fileManifestLength,
+        compressedVariants,
+        webpVariants,
+    }
+}
+
+type DeployLogFn = (message: string) => void | Promise<void>
+
+/**
+ * Expand one source file into original + optional Brotli/Gzip/WebP variants.
+ * Compression/conversion failures are logged and skipped — never thrown.
+ */
+async function expandFileVariants(
+    relativePath: string,
+    body: Buffer,
+    log?: DeployLogFn
+): Promise<{ variants: FileVariant[]; stats: VariantExpandStats }> {
+    const ext = path.extname(relativePath).toLowerCase()
+    const contentType = lookup(relativePath) || 'application/octet-stream'
+    const hash = createHash('sha256').update(body).digest('hex')
+
+    const variants: FileVariant[] = [
+        {
+            path: relativePath,
+            hash,
+            size: body.length,
+            body,
+            contentType,
+        },
+    ]
+
+    const stats: VariantExpandStats = {
+        originalSize: body.length,
+        bestCompressedSize: null,
+        imageOriginalSize: null,
+        imageWebpSize: null,
+        compressedVariants: 0,
+        webpVariants: 0,
+    }
+
+    const shouldCompress =
+        COMPRESSIBLE_EXTS.has(ext) && !SKIP_COMPRESS_EXTS.has(ext)
+
+    if (shouldCompress) {
+        const compressedSizes: number[] = []
+
+        try {
+            const brBody = await brotliCompressAsync(body)
+            variants.push({
+                path: `${relativePath}.br`,
+                hash: createHash('sha256').update(brBody).digest('hex'),
+                size: brBody.length,
+                body: brBody,
+                contentType,
+                contentEncoding: 'br',
+            })
+            compressedSizes.push(brBody.length)
+            stats.compressedVariants++
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err)
+            console.warn(`Brotli failed for ${relativePath}:`, message)
+            await log?.(`Skipped .br for ${relativePath}: ${message}`)
+        }
+
+        try {
+            const gzBody = await gzipAsync(body)
+            variants.push({
+                path: `${relativePath}.gz`,
+                hash: createHash('sha256').update(gzBody).digest('hex'),
+                size: gzBody.length,
+                body: gzBody,
+                contentType,
+                contentEncoding: 'gzip',
+            })
+            compressedSizes.push(gzBody.length)
+            stats.compressedVariants++
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err)
+            console.warn(`Gzip failed for ${relativePath}:`, message)
+            await log?.(`Skipped .gz for ${relativePath}: ${message}`)
+        }
+
+        if (compressedSizes.length > 0) {
+            stats.bestCompressedSize = Math.min(...compressedSizes)
+        }
+    }
+
+    if (WEBP_SOURCE_EXTS.has(ext)) {
+        try {
+            const webpBody = await sharp(body).webp().toBuffer()
+            variants.push({
+                path: `${relativePath}.webp`,
+                hash: createHash('sha256').update(webpBody).digest('hex'),
+                size: webpBody.length,
+                body: webpBody,
+                contentType: 'image/webp',
+            })
+            stats.imageOriginalSize = body.length
+            stats.imageWebpSize = webpBody.length
+            stats.webpVariants++
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err)
+            console.warn(`WebP conversion failed for ${relativePath}:`, message)
+            await log?.(`Skipped .webp for ${relativePath}: ${message}`)
+        }
+    }
+
+    return { variants, stats }
+}
+
+/**
+ * Store every variant blob and build the expanded tree manifest.
+ * `filesDeployed` / `filesReused` count each unique variant hash separately.
+ */
+async function storeExpandedVariants(
+    sources: Array<{ path: string; body: Buffer }>,
+    log?: DeployLogFn
+): Promise<{
+    fileManifest: BlobManifestFile[]
+    filesDeployed: number
+    filesReused: number
+    summary: DeployOptimizationSummary
+}> {
+    const fileManifest: BlobManifestFile[] = []
+    const seenHashes = new Set<string>()
+    const claimedPaths = new Set(sources.map((s) => s.path))
+    const allStats: VariantExpandStats[] = []
+    let filesDeployed = 0
+    let filesReused = 0
+
+    for (const source of sources) {
+        const { variants, stats } = await expandFileVariants(
+            source.path,
+            source.body,
+            log
+        )
+        allStats.push(stats)
+
+        for (const variant of variants) {
+            // Don't overwrite a path the client already uploaded (e.g. pre-made .br)
+            if (variant.path !== source.path && claimedPaths.has(variant.path)) {
+                await log?.(
+                    `Skipped ${variant.path}: path already present in deploy manifest`
+                )
+                continue
+            }
+            claimedPaths.add(variant.path)
+
+            fileManifest.push({
+                path: variant.path,
+                hash: variant.hash,
+                size: variant.size,
+            })
+
+            if (seenHashes.has(variant.hash)) continue
+            seenHashes.add(variant.hash)
+
+            const result = await storeBlobFromBuffer(
+                variant.hash,
+                variant.body,
+                variant.contentType,
+                variant.contentEncoding
+            )
+            if (result === 'deployed') {
+                filesDeployed++
+                await log?.(
+                    `Stored blob ${variant.hash.slice(0, 12)}… (${variant.path})`
+                )
+            } else {
+                filesReused++
+                await log?.(
+                    `Reused blob ${variant.hash.slice(0, 12)}… (${variant.path})`
+                )
+            }
+        }
+    }
+
+    const summary = buildOptimizationSummary(sources, fileManifest.length, allStats)
+
+    await log?.(
+        `Summary: ${summary.totalFiles} files, ${summary.totalSizeHuman} total — ` +
+        `text saved ${summary.sizeReducedHuman} (${summary.sizeReducedPercent}%), ` +
+        `${summary.imagesOptimized} images optimized (−${summary.imageSizeReducedHuman})`
+    )
+
+    return { fileManifest, filesDeployed, filesReused, summary }
+}
+
 /**
  * Materialize a deployment's blob tree into the live site prefix.
+ * Applies Content-Type / Content-Encoding from the live path so Caddy can serve variants.
  */
 export async function materializeDeploymentToLive(
     deploymentId: string,
@@ -142,10 +462,43 @@ export async function materializeDeploymentToLive(
     for (const entry of entries) {
         const destKey = `${livePrefix}${entry.path}`
         const srcKey = blobObjectKey(entry.blobHash)
-        await minioClient.copyObject(SHARED_BUCKET, destKey, `/${SHARED_BUCKET}/${srcKey}`)
+        const meta = metaForLivePath(entry.path)
+
+        await minioClient.copyObject(
+            new CopySourceOptions({ Bucket: SHARED_BUCKET, Object: srcKey }),
+            new CopyDestinationOptions({
+                Bucket: SHARED_BUCKET,
+                Object: destKey,
+                Headers: meta,
+                MetadataDirective: 'REPLACE',
+            })
+        )
     }
 
     return entries.length
+}
+
+function metaForLivePath(filePath: string): Record<string, string> {
+    if (filePath.endsWith('.br')) {
+        const original = filePath.slice(0, -3)
+        return objectMetaForPath(
+            filePath,
+            lookup(original) || 'application/octet-stream',
+            'br'
+        )
+    }
+    if (filePath.endsWith('.gz')) {
+        const original = filePath.slice(0, -3)
+        return objectMetaForPath(
+            filePath,
+            lookup(original) || 'application/octet-stream',
+            'gzip'
+        )
+    }
+    if (filePath.endsWith('.webp')) {
+        return objectMetaForPath(filePath, 'image/webp')
+    }
+    return objectMetaForPath(filePath, lookup(filePath) || 'application/octet-stream')
 }
 
 async function activateDeployment(pageId: string, deploymentId: string): Promise<void> {
@@ -259,7 +612,7 @@ export async function commitBlobTreeDeploy(opts: {
 }
 
 /**
- * Cloud-build deploy: hash local output → store blobs/{sha256} → commit tree → live.
+ * Cloud-build deploy: hash local output → store blobs/{sha256} (+ variants) → commit tree → live.
  */
 export async function deployFromLocalDirectory(opts: {
     outputDir: string
@@ -272,10 +625,7 @@ export async function deployFromLocalDirectory(opts: {
     log?: (message: string) => void | Promise<void>
 }) {
     const { outputDir, files, log } = opts
-    const fileManifest: BlobManifestFile[] = []
-    const uploadedHashes = new Set<string>()
-    let filesDeployed = 0
-    let filesReused = 0
+    const sources: Array<{ path: string; body: Buffer }> = []
 
     for (const absolutePath of files) {
         const relativePath = path
@@ -286,23 +636,13 @@ export async function deployFromLocalDirectory(opts: {
         if (!relativePath || relativePath.startsWith('..')) continue
 
         const body = await fs.readFile(absolutePath)
-        const hash = createHash('sha256').update(body).digest('hex')
-        const contentType = lookup(relativePath) || 'application/octet-stream'
-
-        if (!uploadedHashes.has(hash)) {
-            const result = await storeBlobFromBuffer(hash, body, contentType)
-            if (result === 'deployed') {
-                filesDeployed++
-                await log?.(`Stored blob ${hash.slice(0, 12)}… (${relativePath})`)
-            } else {
-                filesReused++
-                await log?.(`Reused blob ${hash.slice(0, 12)}… (${relativePath})`)
-            }
-            uploadedHashes.add(hash)
-        }
-
-        fileManifest.push({ path: relativePath, hash, size: body.length })
+        sources.push({ path: relativePath, body })
     }
+
+    const { fileManifest, filesDeployed, filesReused, summary } = await storeExpandedVariants(
+        sources,
+        log
+    )
 
     await log?.(`Committing blob tree (${fileManifest.length} files)…`)
 
@@ -323,6 +663,7 @@ export async function deployFromLocalDirectory(opts: {
         filesDeployed,
         filesReused,
         fileCount: fileManifest.length,
+        summary,
     }
 }
 
@@ -331,6 +672,13 @@ export async function prepareDeploy(
     tenantId: string
 ) {
     const { page, site } = await resolvePage(input.pageId, tenantId)
+
+    const manifestCheck = validateManifest(
+        input.files.map((f) => ({ path: f.path, size: f.size }))
+    )
+    if (!manifestCheck.valid) {
+        throw new HttpError(manifestCheck.error, 400)
+    }
 
     // Deduplicate paths
     const seenPaths = new Set<string>()
@@ -398,6 +746,18 @@ export async function prepareDeploy(
         uploadRequired,
         filesReused,
         filesToUpload,
+        summary: {
+            totalFiles: input.files.length,
+            totalSize,
+            totalSizeHuman: formatBytes(totalSize),
+            uploadSize: uploadRequired.reduce((sum, f) => sum + f.size, 0),
+            uploadSizeHuman: formatBytes(
+                uploadRequired.reduce((sum, f) => sum + f.size, 0)
+            ),
+            reusedSize: input.files
+                .filter((f) => existingSet.has(f.hash))
+                .reduce((sum, f) => sum + f.size, 0),
+        },
     }
 }
 
@@ -437,19 +797,16 @@ export async function presignDeploy(input: PresignDeployInput, tenantId: string)
 export async function commitDeploy(input: CommitDeployInput, tenantId: string) {
     const payload = await loadDeployToken(input.deploymentToken, tenantId)
 
-    const uniqueByHash = new Map<string, { hash: string; size: number }>()
+    // Load original blob bodies, then expand with Brotli/Gzip/WebP variants
+    const sources: Array<{ path: string; body: Buffer }> = []
     for (const file of payload.fileManifest) {
-        uniqueByHash.set(file.hash, { hash: file.hash, size: file.size })
+        const body = await readBlobBuffer(file.hash)
+        sources.push({ path: file.path, body })
     }
 
-    let filesDeployed = 0
-    let filesReused = 0
-
-    for (const blob of uniqueByHash.values()) {
-        const result = await ensureBlobRecord(blob.hash, blob.size)
-        if (result === 'deployed') filesDeployed++
-        else filesReused++
-    }
+    const { fileManifest, filesDeployed, filesReused, summary } = await storeExpandedVariants(
+        sources
+    )
 
     const deployment = await commitBlobTreeDeploy({
         pageId: payload.pageId,
@@ -458,7 +815,7 @@ export async function commitDeploy(input: CommitDeployInput, tenantId: string) {
         subdomain: payload.subdomain,
         source: 'upload',
         buildId: null,
-        fileManifest: payload.fileManifest,
+        fileManifest,
         filesDeployed,
         filesReused,
     })
@@ -470,5 +827,6 @@ export async function commitDeploy(input: CommitDeployInput, tenantId: string) {
         deployment,
         filesDeployed,
         filesReused,
+        summary,
     }
 }

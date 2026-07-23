@@ -9,6 +9,7 @@ import { db } from '../../infrastructure/db/db.js'
 import { builds, sites } from '../../infrastructure/db/schema.js'
 import { CLOUDISY_CLOUD_BUILDS_QUEUE, type CloudBuildJob } from '../jobs/build.queue.js'
 import { deployFromLocalDirectory } from '../../services/deploy.service.js'
+import { validateOutputDir } from '../../utils/deployment-validator.js'
 
 async function getFilesRecursively(dir: string): Promise<string[]> {
     const dirents = await fs.readdir(dir, { withFileTypes: true });
@@ -159,8 +160,21 @@ const worker = new Worker<CloudBuildJob>(
                 }
             }
 
-            // Step 4 (90%) — Content-addressed blob deploy
+            // Step 4 (90%) — Validate output + content-addressed blob deploy
             await job.updateProgress(90);
+            await job.log("Step 4: Validating build output...");
+
+            const validation = await validateOutputDir(detectedDir)
+            if (!validation.valid) {
+                await job.log(validation.error)
+                await db.update(builds)
+                    .set({ status: 'failed', error: validation.error, completed_at: new Date() })
+                    .where(eq(builds.id, buildId))
+                await fs.rm(cloneDir, { recursive: true, force: true }).catch(() => {})
+                console.error(`Build job ${jobId} failed validation: ${validation.error}`)
+                return
+            }
+
             await job.log("Step 4: Deploying build outputs via blob store...");
 
             const [site] = await db.select().from(sites).where(eq(sites.id, siteId)).limit(1)
@@ -190,6 +204,13 @@ const worker = new Worker<CloudBuildJob>(
                 `Deployed v${result.deployment?.version ?? '?'} — ` +
                 `${result.fileCount} files (new blobs: ${result.filesDeployed}, reused: ${result.filesReused})`
             )
+            if (result.summary) {
+                await job.log(
+                    `[Summary] ${result.summary.totalFiles} files · ${result.summary.totalSizeHuman} total · ` +
+                    `text −${result.summary.sizeReducedHuman} (${result.summary.sizeReducedPercent}%) · ` +
+                    `images ${result.summary.imagesOptimized} optimized (−${result.summary.imageSizeReducedHuman})`
+                )
+            }
 
             // Step 5 (100%) — Update DB + Cleanup
             await job.updateProgress(100);
