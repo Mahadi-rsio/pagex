@@ -53,8 +53,9 @@ Caddy (static_s3 plugin)
 | **Analytics** | The plugin writes `site_daily_stats` rows to PostgreSQL directly (Redis → PG flush every 5 min). |
 | **Auth** | JWT verified via remote JWKS at `https://auth.cloudisy.com/api/auth/jwks`. |
 | **Cloud Builds** | Each build runs in an isolated Docker container (`cloudisy-build-env`) with pnpm pre-installed, limited to 1 GB RAM. Live RAM + Net I/O stats are streamed every 2 s via SSE. |
-| **Deploys** | CLI uses prepare → presign → commit. Magic-byte validation; blob deduplication by SHA256. |
-| **Rollbacks** | Rebuild live prefix from the target deployment’s `blob_tree_entries`. Last **5** deployments retained per page. |
+| **Deploys** | CLI uses prepare → presign → commit. Manifest limits (≤100 files, ≤10 MB each), magic-byte + blocked-extension checks, SHA256 blob dedup. |
+| **Optimization** | At commit/build: Brotli + Gzip for text assets; WebP for PNG/JPEG/GIF. Variants stored in the blob tree with correct `Content-Encoding` / `Content-Type`. |
+| **Rollbacks** | Rebuild live prefix from the target deployment’s `blob_tree_entries` (includes compressed/WebP variants). Last **5** deployments retained per page. |
 
 ---
 
@@ -117,9 +118,9 @@ All protected endpoints require `Authorization: Bearer <JWT>`.
 ### Deploy
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/deploy/prepare` | Validate manifest + issue deploy token |
+| `POST` | `/api/deploy/prepare` | Validate manifest (count/size/types + magic bytes) + issue token + size summary |
 | `POST` | `/api/deploy/presign` | Presigned PUTs for missing blobs |
-| `POST` | `/api/deploy/commit` | Materialize live site from blob tree |
+| `POST` | `/api/deploy/commit` | Compress/WebP variants → blob tree → live site + optimization summary |
 
 ### Builds
 | Method | Path | Description |
@@ -199,9 +200,10 @@ npm run migrate  # apply (also runs automatically on docker compose up)
 
 ```
 POST /api/deploy/prepare
-  → validate magic bytes + extensions
+  → validateManifest: ≤100 files, ≤10 MB each, blocked extensions
+  → validate magic bytes + extension/MIME checks
   → Redis SET deploy:token:{token} (DB3, TTL 10m)
-  → return uploadRequired hashes
+  → return uploadRequired hashes + summary { totalFiles, totalSize, … }
 
 POST /api/deploy/presign
   → presigned PUT urls for blobs/{hash}
@@ -209,11 +211,19 @@ POST /api/deploy/presign
 Client PUTs file bodies to MinIO
 
 POST /api/deploy/commit
-  → insert blobs + blob_tree_entries
-  → materialize tenant/{site_id}/ from blobs
+  → load original blobs
+  → expand variants:
+       .html/.css/.js/.json/.svg/.xml → .br + .gz (zlib)
+       .png/.jpg/.jpeg/.gif → .webp (sharp; original kept)
+  → store variant blobs (SHA256 of compressed/WebP bytes)
+  → insert blob_tree_entries (originals + variants)
+  → materialize tenant/{site_id}/ with Content-Encoding / Content-Type
   → activate deployment, prune to last 5
   → DEL site:{subdomain}
+  → return summary { sizeReduced, imagesOptimized, … }
 ```
+
+**Limits / blocked types** (shared by prepare + build worker): PDF, video, executables, archives (`.zip`/`.tar`/`.gz`/…), `.db`/`.sqlite`/`.log`, etc. See `src/utils/deployment-validator.ts`.
 
 ---
 
@@ -229,9 +239,12 @@ POST /api/builds
          (pnpm install && <buildCommand>)
          → [Stats] logs streamed every 2s via SSE
       3. output dir detected (.next / dist / out / build / public)
-      4. executeDeploymentFlow:
-           delete live → upload new → index blobs/tree → activate → prune
-      5. builds row → status: completed, completed_at set
+      4. validateOutputDir (same count/size/extension rules as prepare)
+         on failure → builds.status=failed, SSE error, return cleanly
+      5. deployFromLocalDirectory:
+           hash files → Brotli/Gzip/WebP variants → blobs + tree → live → prune
+           → [Summary] line in SSE (size reduced / images optimized)
+      6. builds row → status: completed, completed_at set
   → site is live immediately (Caddy reads MinIO per-request)
 ```
 
@@ -258,7 +271,20 @@ Only the last **5 versions** are retained. Rolling back:
 npm run build   # compile TypeScript
 npm run gen     # generate migration
 npm run migrate # apply migration
-node test.js    # end-to-end deploy + rollback test (update TOKEN first)
+
+# End-to-end test (paste JWT into test.js or export CLOUDISY_TOKEN)
+node test.js
+
+# CLI deploy + validation + summary only (skip cloud build)
+SKIP_BUILD=1 node test.js
+```
+
+`test.js` covers: blocked-extension prepare rejection, CLI deploy with Brotli/Gzip/WebP + prepare/commit summaries, blob reuse, rollback, optional cloud build + SSE `[Summary]`.
+
+Rebuild API + workers after local changes:
+
+```bash
+docker compose up --build -d app build_worker
 ```
 
 ---
@@ -267,25 +293,28 @@ node test.js    # end-to-end deploy + rollback test (update TOKEN first)
 
 ```
 src/
-├── app.ts / server.ts          # Express setup + entrypoint
+├── app.ts / server.ts           # Express setup + entrypoint
 ├── constants/index.ts           # Shared constants
 ├── middleware/auth.middleware.ts # JWT verification
 ├── infrastructure/
 │   ├── db/schema.ts             # Drizzle table definitions
 │   ├── cache/redis.ts           # ioredis clients (default + DB3 usage)
-│   └── storage/minio.ts        # MinIO client + helpers
+│   └── storage/minio.ts         # MinIO client + helpers
 ├── controllers/                 # Thin HTTP handlers
 ├── services/                    # Business logic
-│   ├── deploy.service.ts        # prepare / presign / commit
-│   ├── deployment.service.ts    # executeDeploymentFlow + rollback
+│   ├── deploy.service.ts        # prepare / presign / commit + compress/WebP
+│   ├── deployment.service.ts    # list + rollback (blob-tree materialize)
 │   ├── build.service.ts
 │   └── page.service.ts
 ├── queue/
 │   ├── jobs/                    # Queue + job data interfaces
 │   └── workers/                 # build, sync workers
 ├── routes/                      # Express routers
-├── utils/file-validator.ts      # Magic-byte + extension checks
+├── utils/
+│   ├── file-validator.ts        # Magic-byte + extension checks
+│   └── deployment-validator.ts  # File count / size / blocked-type limits
 └── validators/                  # Zod schemas
 docs/                            # AI-optimized codebase documentation
 drizzle/                         # Migration SQL files
+test.js                          # E2E deploy + build smoke test
 ```
