@@ -1,6 +1,13 @@
 export const TOP_LEVEL_DOMAIN = 'localhost'
-export const TEMP_ZIPS_DIR = 'temp_zips'
 export const MAX_FILE_SIZE = 250 * 1024 * 1024
+/** Max size for a single file in a content-addressed deploy */
+export const MAX_DEPLOY_FILE_SIZE = 50 * 1024 * 1024
+/** Redis TTL for deploy:token:{token} (10 minutes) */
+export const DEPLOY_TOKEN_TTL_SECONDS = 10 * 60
+/** Presigned PUT URL lifetime (matches deploy token window) */
+export const PRESIGN_EXPIRY_SECONDS = 10 * 60
+/** Keep this many recent deployments per page */
+export const DEPLOYMENT_RETENTION = 5
 
 export const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
 export const RATE_LIMIT_MAX = 100

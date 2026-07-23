@@ -19,7 +19,7 @@ export const minioClient = new Minio.Client({
 
 // The single shared bucket used by all tenants.
 // Live files:  {SHARED_BUCKET}/tenant/{site_uuid}/{filepath}
-// Snapshots:    {SHARED_BUCKET}/snapshot/{site_uuid}/v{N}/{filepath}
+// Blobs:       {SHARED_BUCKET}/blobs/{sha256}
 // Must be set via MINIO_BUCKET env var — no default to avoid accidental bucket naming.
 if (!process.env.MINIO_BUCKET) {
     throw new Error('MINIO_BUCKET environment variable is required')
@@ -31,9 +31,9 @@ export function liveSitePrefix(siteId: string): string {
     return `tenant/${siteId}/`
 }
 
-/** Deployment snapshot prefix: snapshot/{siteId}/v{version}/ */
-export function deploymentSnapshotPrefix(siteId: string, version: number): string {
-    return `snapshot/${siteId}/v${version}/`
+/** Content-addressed blob object key */
+export function blobObjectKey(hash: string): string {
+    return `blobs/${hash}`
 }
 
 /**

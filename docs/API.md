@@ -82,29 +82,112 @@ Get live + DB-persisted request and bandwidth usage for a domain.
 
 ---
 
-## Uploads
+## Deploy (content-addressed)
 
-### `POST /upload/:pageIdOrName`
-Upload a ZIP file to deploy. Replaces live files after snapshotting.
+Client-side file deploy: **prepare → presign → commit**. Files are validated via magic bytes, stored as SHA256 blobs (`blobs/{hash}`), and assembled into the live prefix from `blob_tree_entries`.
 
-- `:pageIdOrName` can be the page UUID **or** the `project_name`.
-- Form field name: `file`
-- Max file size: 250 MB (`MAX_FILE_SIZE`)
-- Content-Type: `multipart/form-data`
+### `POST /api/deploy/prepare`
+Validate the file manifest, check which blobs already exist, and issue a 10-minute deployment token (Redis DB3: `deploy:token:{token}`).
 
-**Workflow:**
-1. Multer saves ZIP to `temp_zips/`
-2. Enqueues a BullMQ job on `UPLOAD_QUEUE`
-3. Upload worker: snapshot → delete old live → extract ZIP → upload to MinIO → activate deployment
+**Request body:**
+```json
+{
+  "pageId": "<page_uuid or project_name>",
+  "files": [
+    {
+      "path": "index.html",
+      "hash": "<sha256 hex>",
+      "size": 1234,
+      "magicBytes": "<base64 of first 16 bytes>"
+    }
+  ]
+}
+```
+
+| Field | Notes |
+|-------|-------|
+| `pageId` | Page UUID **or** `project_name` |
+| `files[].path` | Relative POSIX path (no `..`, no leading `/`) |
+| `files[].hash` | Lowercase SHA256 hex |
+| `files[].size` | Bytes; per-file max 50 MB; total max 250 MB |
+| `files[].magicBytes` | Base64 of the first 16 bytes (extension + MIME checks) |
+
+**Response `200`:**
+```json
+{
+  "deploymentToken": "<hex>",
+  "expiresIn": 600,
+  "uploadRequired": [
+    { "path": "index.html", "hash": "...", "size": 1234 }
+  ],
+  "filesReused": 2,
+  "filesToUpload": 1
+}
+```
+
+Blocked: `.env`, executables, archives (zip/tar/gz/…), and MIME/extension mismatches.
+
+---
+
+### `POST /api/deploy/presign`
+Return MinIO presigned PUT URLs for blob hashes that still need uploading.
+
+**Request body:**
+```json
+{
+  "deploymentToken": "<token from prepare>",
+  "hashes": ["<sha256 hex>", "..."]
+}
+```
+
+**Response `200`:**
+```json
+{
+  "urls": [
+    { "hash": "...", "url": "https://...", "method": "PUT" }
+  ]
+}
+```
+
+Upload each object to the presigned URL with the raw file body (object key: `blobs/{hash}`). Hashes already in the `blobs` table are omitted.
+
+---
+
+### `POST /api/deploy/commit`
+Verify blobs exist, write `blobs` + `blob_tree_entries`, materialize live files, activate the deployment, invalidate `site:{subdomain}`, and consume the token.
+
+**Request body:**
+```json
+{ "deploymentToken": "<token from prepare>" }
+```
 
 **Response `200`:**
 ```json
 {
   "success": true,
-  "message": "File queued for processing",
-  "jobId": "1"
+  "deployment": {
+    "id": "<uuid>",
+    "page_id": "<uuid>",
+    "site_id": "<uuid>",
+    "version": 1,
+    "is_active": true,
+    "source": "upload",
+    "file_count": 3,
+    "filesDeployed": 1,
+    "filesReused": 2,
+    "created_at": "2026-07-23T12:00:00.000Z"
+  },
+  "filesDeployed": 1,
+  "filesReused": 2
 }
 ```
+
+| Status | Meaning |
+|--------|---------|
+| `200` | Deploy live |
+| `400` | Invalid/expired token, validation failure, or missing blob object |
+| `403` | Tenant does not own the page/token |
+| `404` | Page not found |
 
 ---
 
@@ -225,10 +308,11 @@ List all deployment versions for a page, newest first. Only one will have `is_ac
     "tenant_id": "...",
     "build_id": "<uuid or null>",
     "version": 2,
-    "snapshot_prefix": "cloudisy-snapshots/<site_id>/v2/",
     "is_active": true,
     "source": "build",
     "file_count": 10,
+    "filesDeployed": 3,
+    "filesReused": 7,
     "created_at": "2026-07-20T12:00:00Z"
   },
   {
@@ -236,7 +320,9 @@ List all deployment versions for a page, newest first. Only one will have `is_ac
     "version": 1,
     "is_active": false,
     "source": "upload",
-    ...
+    "file_count": 5,
+    "filesDeployed": 5,
+    "filesReused": 0
   }
 ]
 ```
@@ -244,26 +330,28 @@ List all deployment versions for a page, newest first. Only one will have `is_ac
 ---
 
 ### `POST /api/deployments/:deploymentId/rollback`
-Roll back to any previous deployment snapshot. Site goes live immediately.
+Roll back to a previous deployment using its `blob_tree_entries` (no MinIO snapshots).
 
 **Workflow:**
-1. Copy current live → snapshot of active version (backup)
-2. Delete live files
-3. Copy target snapshot → live prefix
-4. Set `is_active = true` on target; set all others to `false`
+1. Load target deployment’s blob tree
+2. Delete live prefix
+3. Copy each `blobs/{hash}` → `tenant/{site_id}/{path}`
+4. Set `is_active = true` on target; deactivate others
+5. Invalidate Redis `site:{subdomain}`
 
 **Response `200`:**
 ```json
 {
   "success": true,
   "message": "Rollback successful",
-  "deployment": { ...deployment row with is_active: true... }
+  "deployment": { "...": "deployment row with is_active: true" }
 }
 ```
 
 | Status | Meaning |
 |--------|---------|
 | `200` | Rollback complete |
+| `400` | Deployment has no blob tree |
 | `404` | Deployment not found or belongs to another tenant |
 | `500` | MinIO or DB error |
 

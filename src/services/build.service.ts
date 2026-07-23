@@ -8,7 +8,7 @@ export interface TriggerCloudBuildParams {
     tenantId: string;
     repoUrl: string;
     gitProvider: 'github' | 'gitlab';
-    gitToken: string;
+    gitToken?: string | undefined;
     framework: string;
     buildCommand?: string | undefined;
     outputDir?: string | null | undefined;
@@ -72,7 +72,7 @@ export async function triggerCloudBuild(params: TriggerCloudBuildParams) {
         siteId: pageRecord.siteId,
         repoUrl: params.repoUrl,
         gitProvider: params.gitProvider,
-        gitToken: params.gitToken,
+        gitToken: params.gitToken || '',
         framework: params.framework,
         buildCommand: inserted.build_command,
         outputDir: inserted.output_dir,

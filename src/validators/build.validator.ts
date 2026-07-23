@@ -4,7 +4,7 @@ export const triggerBuildSchema = z.object({
     pageId: z.string().uuid(),
     repoUrl: z.string().url(),
     gitProvider: z.enum(['github', 'gitlab']),
-    gitToken: z.string(),
+    gitToken: z.string().optional(),
     framework: z.string(),
     buildCommand: z.string().optional(),
     outputDir: z.string().optional().nullable(),

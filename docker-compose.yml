@@ -42,26 +42,6 @@ services:
       redis:
         condition: service_started
     restart: unless-stopped
-    volumes:
-      - temp_zips:/app/temp_zips
-    networks:
-      - cloudisy_network
-
-  upload_worker:
-    build:
-      context: .
-      target: runner
-    container_name: upload_w
-    env_file: .env
-    command: ["node", "dist/src/queue/workers/upload.worker.js"]
-    depends_on:
-      migrator:
-        condition: service_completed_successfully
-      redis:
-        condition: service_started
-    restart: unless-stopped
-    volumes:
-      - temp_zips:/app/temp_zips
     networks:
       - cloudisy_network
 
@@ -173,7 +153,6 @@ volumes:
   pgdata:
   caddy_data:
   caddy_config:
-  temp_zips:
 
 networks:
   cloudisy_network:

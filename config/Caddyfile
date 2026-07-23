@@ -7,14 +7,8 @@
 	}
 }
 
-# ── Wildcard: all tenant subdomains ─────────────────────────────────────────
-# The static_s3 plugin resolves: subdomain → sites.id (PostgreSQL) → S3 key
-# db_dsn and redis_url are intentionally omitted here — the plugin reads
-# DATABASE_URL and REDIS_URL environment variables automatically (plugin.go).
-# TLS: replace certs/ with Cloudflare Origin Certificate in production.
-*.{$BASE_DOMAIN:localhost} {
-	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
-
+# ── Shared static site handlers (imported by HTTP + HTTPS blocks) ───────────
+(static_site) {
 	# Hashed assets — cache aggressively in browser (immutable)
 	@hashed_assets path *.js *.css *.woff2 *.woff *.ttf
 	# HTML & other assets — must revalidate with server
@@ -75,7 +69,28 @@
 	}
 }
 
-# ── API / Admin server ───────────────────────────────────────────────────────
+# ── Local testing: plain HTTP (no TLS) ──────────────────────────────────────
+# Visit: http://<project>.localhost/  and  http://api.localhost/
+http://*.{$BASE_DOMAIN:localhost} {
+	import static_site
+}
+
+http://api.{$BASE_DOMAIN:localhost} {
+	reverse_proxy app:3000
+}
+
+# Also accept bare localhost API for convenience during local runs
+http://localhost {
+	reverse_proxy app:3000
+}
+
+# ── HTTPS (self-signed / Origin cert) ───────────────────────────────────────
+# Visit: https://<project>.localhost/  (browser will warn on dummy cert)
+*.{$BASE_DOMAIN:localhost} {
+	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
+	import static_site
+}
+
 api.{$BASE_DOMAIN:localhost} {
 	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 	reverse_proxy app:3000

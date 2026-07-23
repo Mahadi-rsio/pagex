@@ -1,192 +1,66 @@
 import { db } from '../infrastructure/db/db.js'
-import { deployments } from '../infrastructure/db/schema.js'
-import { eq, and, ne, desc } from 'drizzle-orm'
-import { copyFolder, deleteFolder, liveSitePrefix, deploymentSnapshotPrefix } from '../infrastructure/storage/minio.js'
+import { blobTreeEntries, deployments, pages } from '../infrastructure/db/schema.js'
+import { and, eq, ne, desc } from 'drizzle-orm'
+import { HttpError } from '../utils/http-error.js'
+import {
+    invalidateSiteCache,
+    materializeDeploymentToLive,
+} from './deploy.service.js'
 
-export async function executeDeploymentFlow(
-    pageId: string,
-    tenantId: string,
-    siteId: string,
-    source: 'build' | 'upload',
-    buildId: string | null,
-    uploadFn: () => Promise<number>
-) {
-    // 1. Get next version and the currently active deployment
-    const [activeDep] = await db
-        .select()
-        .from(deployments)
-        .where(
-            and(
-                eq(deployments.page_id, pageId),
-                eq(deployments.is_active, true)
-            )
-        )
-        .limit(1);
-
-    const [latestDep] = await db
-        .select({ version: deployments.version })
-        .from(deployments)
-        .where(eq(deployments.page_id, pageId))
-        .orderBy(desc(deployments.version))
-        .limit(1);
-
-    const nextVersion = latestDep ? latestDep.version + 1 : 1;
-    const livePrefix = liveSitePrefix(siteId);
-    const snapshotPrefix = deploymentSnapshotPrefix(siteId, nextVersion);
-
-    // Step 1: Copy current live files -> snapshot of the active version (if any)
-    if (activeDep) {
-        const activeSnapshotPrefix = deploymentSnapshotPrefix(siteId, activeDep.version);
-        await copyFolder(livePrefix, activeSnapshotPrefix);
-    }
-
-    // Step 2: Insert a deployments row (source, is_active: false, file_count: 0 placeholder)
-    const [newDep] = await db
-        .insert(deployments)
-        .values({
-            page_id: pageId,
-            site_id: siteId,
-            tenant_id: tenantId,
-            build_id: buildId,
-            version: nextVersion,
-            snapshot_prefix: snapshotPrefix,
-            is_active: false,
-            source,
-            file_count: 0,
-        })
-        .returning();
-
-    if (!newDep) {
-        throw new Error("Failed to create deployment record");
-    }
-
-    // Step 3: Delete old live files
-    await deleteFolder(livePrefix);
-
-    // Step 4: Upload new files to tenant/{site_id}/
-    const fileCount = await uploadFn();
-
-    // Step 5: Set new deployment row is_active = true, set all others to false
-    await db
-        .update(deployments)
-        .set({ is_active: true, file_count: fileCount })
-        .where(eq(deployments.id, newDep.id));
-
-    await db
-        .update(deployments)
-        .set({ is_active: false })
-        .where(
-            and(
-                eq(deployments.page_id, pageId),
-                ne(deployments.id, newDep.id)
-            )
-        );
-
-    // Keep only the last 5 snapshots per page
-    const allDeps = await db
-        .select()
-        .from(deployments)
-        .where(eq(deployments.page_id, pageId))
-        .orderBy(desc(deployments.version));
-
-    if (allDeps.length > 5) {
-        const toDelete = allDeps.slice(5);
-        for (const dep of toDelete) {
-            // Delete MinIO objects
-            await deleteFolder(dep.snapshot_prefix);
-            // Delete DB row
-            await db.delete(deployments).where(eq(deployments.id, dep.id));
-        }
-    }
-
-    return newDep;
-}
-
-export async function rollbackToDeployment(deploymentId: string, tenantId: string) {
-    // 1. Get deployment record
-    const [dep] = await db
-        .select()
-        .from(deployments)
-        .where(
-            and(
-                eq(deployments.id, deploymentId),
-                eq(deployments.tenant_id, tenantId)
-            )
-        )
-        .limit(1);
-
-    if (!dep) {
-        const error = new Error("Deployment not found");
-        (error as any).status = 404;
-        throw error;
-    }
-
-    const pageId = dep.page_id;
-    const siteId = dep.site_id;
-
-    // 2. Find currently active deployment
-    const [activeDep] = await db
-        .select()
-        .from(deployments)
-        .where(
-            and(
-                eq(deployments.page_id, pageId),
-                eq(deployments.is_active, true)
-            )
-        )
-        .limit(1);
-
-    const livePrefix = liveSitePrefix(siteId);
-
-    // 3. Backup current active deployment files to snapshot (if any)
-    if (activeDep) {
-        const activeSnapshotPrefix = deploymentSnapshotPrefix(siteId, activeDep.version);
-        await copyFolder(livePrefix, activeSnapshotPrefix);
-    }
-
-    // 4. Clean the live folder
-    await deleteFolder(livePrefix);
-
-    // 5. Restore files from the snapshot of the targeted deployment
-    await copyFolder(dep.snapshot_prefix, livePrefix);
-
-    // 6. Set target deployment active, and set others to inactive
+async function activateDeployment(pageId: string, deploymentId: string): Promise<void> {
     await db
         .update(deployments)
         .set({ is_active: true })
-        .where(eq(deployments.id, dep.id));
+        .where(eq(deployments.id, deploymentId))
 
     await db
         .update(deployments)
         .set({ is_active: false })
-        .where(
-            and(
-                eq(deployments.page_id, pageId),
-                ne(deployments.id, dep.id)
-            )
-        );
+        .where(and(eq(deployments.page_id, pageId), ne(deployments.id, deploymentId)))
+}
 
-    // Return the updated deployment
+export async function rollbackToDeployment(deploymentId: string, tenantId: string) {
+    const [dep] = await db
+        .select()
+        .from(deployments)
+        .where(and(eq(deployments.id, deploymentId), eq(deployments.tenant_id, tenantId)))
+        .limit(1)
+
+    if (!dep) {
+        throw new HttpError('Deployment not found', 404)
+    }
+
+    const [anyEntry] = await db
+        .select({ id: blobTreeEntries.id })
+        .from(blobTreeEntries)
+        .where(eq(blobTreeEntries.deploymentId, dep.id))
+        .limit(1)
+
+    if (!anyEntry) {
+        throw new HttpError('Deployment has no blob tree; cannot rollback', 400)
+    }
+
+    await materializeDeploymentToLive(dep.id, dep.site_id)
+    await activateDeployment(dep.page_id, dep.id)
+
+    const [page] = await db.select().from(pages).where(eq(pages.id, dep.page_id)).limit(1)
+    if (page) {
+        await invalidateSiteCache(page.project_name)
+    }
+
     const [updated] = await db
         .select()
         .from(deployments)
         .where(eq(deployments.id, dep.id))
-        .limit(1);
+        .limit(1)
 
-    return updated;
+    return updated
 }
 
 export async function listDeployments(pageId: string, tenantId: string) {
-    const list = await db
+    return db
         .select()
         .from(deployments)
-        .where(
-            and(
-                eq(deployments.page_id, pageId),
-                eq(deployments.tenant_id, tenantId)
-            )
-        )
-        .orderBy(desc(deployments.version));
-
-    return list;
+        .where(and(eq(deployments.page_id, pageId), eq(deployments.tenant_id, tenantId)))
+        .orderBy(desc(deployments.version))
 }

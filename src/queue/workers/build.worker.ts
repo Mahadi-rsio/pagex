@@ -4,13 +4,11 @@ import { existsSync } from 'fs'
 import * as path from 'path'
 import { spawn } from 'child_process'
 import { eq } from 'drizzle-orm'
-import { lookup } from 'mime-types'
 import { connection } from '../../infrastructure/cache/redis.js'
 import { db } from '../../infrastructure/db/db.js'
-import { builds } from '../../infrastructure/db/schema.js'
-import { deleteSiteObjects, minioClient, SHARED_BUCKET, liveSitePrefix } from '../../infrastructure/storage/minio.js'
+import { builds, sites } from '../../infrastructure/db/schema.js'
 import { CLOUDISY_CLOUD_BUILDS_QUEUE, type CloudBuildJob } from '../jobs/build.queue.js'
-import { executeDeploymentFlow } from '../../services/deployment.service.js'
+import { deployFromLocalDirectory } from '../../services/deploy.service.js'
 
 async function getFilesRecursively(dir: string): Promise<string[]> {
     const dirents = await fs.readdir(dir, { withFileTypes: true });
@@ -36,13 +34,15 @@ const worker = new Worker<CloudBuildJob>(
             await job.updateProgress(10);
             await job.log("Step 1: Cloning repository...");
 
-            const authedUrl = repoUrl.replace(/^https:\/\//, `https://oauth2:${gitToken}@`);
+            const cloneUrl = gitToken
+                ? repoUrl.replace(/^https:\/\//, `https://oauth2:${gitToken}@`)
+                : repoUrl;
 
             await fs.mkdir('/tmp/cloudisy-builds', { recursive: true });
             await fs.rm(cloneDir, { recursive: true, force: true }).catch(() => {});
 
             await new Promise<void>((resolve, reject) => {
-                const p = spawn('git', ['clone', '--depth=1', authedUrl, cloneDir]);
+                const p = spawn('git', ['clone', '--depth=1', cloneUrl, cloneDir]);
                 p.on('close', (code) => {
                     if (code === 0) resolve();
                     else reject(new Error(`Git clone failed with code ${code}`));
@@ -159,28 +159,36 @@ const worker = new Worker<CloudBuildJob>(
                 }
             }
 
-            // Step 4 (90%) — Upload to MinIO
+            // Step 4 (90%) — Content-addressed blob deploy
             await job.updateProgress(90);
-            await job.log("Step 4: Uploading build outputs to MinIO...");
+            await job.log("Step 4: Deploying build outputs via blob store...");
 
-            await executeDeploymentFlow(
+            const [site] = await db.select().from(sites).where(eq(sites.id, siteId)).limit(1)
+            if (!site) {
+                throw new Error(`Site not found: ${siteId}`)
+            }
+
+            const files = await getFilesRecursively(detectedDir)
+            if (files.length === 0) {
+                throw new Error(`No files found in output directory: ${detectedDir}`)
+            }
+
+            const result = await deployFromLocalDirectory({
+                outputDir: detectedDir,
+                files,
                 pageId,
                 tenantId,
                 siteId,
-                'build',
+                subdomain: site.subdomain,
                 buildId,
-                async () => {
-                    const files = await getFilesRecursively(detectedDir)
-                    for (const file of files) {
-                        const relativePath = path.relative(detectedDir, file)
-                        const s3Key = `${liveSitePrefix(siteId)}${relativePath}`
-                        const fileBuffer = await fs.readFile(file)
-                        await minioClient.putObject(SHARED_BUCKET, s3Key, fileBuffer, fileBuffer.length, {
-                            'Content-Type': lookup(file) || 'application/octet-stream'
-                        })
-                    }
-                    return files.length
-                }
+                log: async (message) => {
+                    await job.log(message)
+                },
+            })
+
+            await job.log(
+                `Deployed v${result.deployment?.version ?? '?'} — ` +
+                `${result.fileCount} files (new blobs: ${result.filesDeployed}, reused: ${result.filesReused})`
             )
 
             // Step 5 (100%) — Update DB + Cleanup

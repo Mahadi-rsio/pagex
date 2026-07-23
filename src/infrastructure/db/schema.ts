@@ -1,4 +1,4 @@
-import { bigint, boolean, date, index, pgTable, text, timestamp, uuid, integer } from "drizzle-orm/pg-core";
+import { bigint, boolean, date, index, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 
 /**
@@ -94,7 +94,16 @@ export const builds = pgTable("builds", {
 }));
 
 /**
- * `deployments` — snapshots and active deployment history.
+ * `blobs` — content-addressed blob store (SHA256 → MinIO object).
+ */
+export const blobs = pgTable('blobs', {
+    hash: text('hash').primaryKey(),
+    size: integer('size').notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
+
+/**
+ * `deployments` — active deployment history (file trees via blob_tree_entries).
  */
 export const deployments = pgTable("deployments", {
     id: uuid("id").primaryKey().notNull().defaultRandom(),
@@ -103,10 +112,27 @@ export const deployments = pgTable("deployments", {
     tenant_id: text("tenant_id").notNull(),
     build_id: uuid("build_id").references(() => builds.id),
     version: integer("version").notNull(),
-    snapshot_prefix: text("snapshot_prefix").notNull(),
     is_active: boolean("is_active").default(false).notNull(),
     source: text("source").notNull(), // "build" | "upload"
     file_count: integer("file_count").notNull(),
+    filesDeployed: integer('files_deployed'),
+    filesReused: integer('files_reused'),
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * `blob_tree_entries` — file tree per deployment (path → blob hash).
+ */
+export const blobTreeEntries = pgTable('blob_tree_entries', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    deploymentId: uuid('deployment_id')
+        .notNull()
+        .references(() => deployments.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    blobHash: text('blob_hash')
+        .notNull()
+        .references(() => blobs.hash),
+}, (t) => ({
+    uniqueDeploymentPath: unique('blob_tree_entries_deployment_path_uid').on(t.deploymentId, t.path),
+    deploymentIdx: index('idx_blob_tree_entries_deployment').on(t.deploymentId),
+}));

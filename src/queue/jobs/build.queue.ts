@@ -10,7 +10,7 @@ export interface CloudBuildJob {
     siteId: string;
     repoUrl: string;
     gitProvider: "github" | "gitlab";
-    gitToken: string;
+    gitToken?: string;
     framework: string;
     buildCommand: string;
     outputDir: string | null;

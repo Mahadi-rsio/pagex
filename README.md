@@ -1,6 +1,6 @@
 # Cloudisy Server
 
-Backend API and infrastructure for **Cloudisy** — a multi-tenant static-site hosting platform. Each user project is served as a subdomain (`mysite.cloudisy.com`) directly from MinIO object storage via a custom Caddy plugin, with zero per-tenant configuration. Supports cloud builds from Git, versioned deployments, and instant rollback.
+Backend API and infrastructure for **Cloudisy** — a multi-tenant static-site hosting platform. Each user project is served as a subdomain (`mysite.cloudisy.com`) directly from MinIO object storage via a custom Caddy plugin, with zero per-tenant configuration. Supports cloud builds from Git, content-addressed file deploys, versioned deployments, and instant rollback.
 
 ---
 
@@ -13,7 +13,7 @@ For AI assistants working on this codebase, a dense reference is in `docs/`:
 | [docs/SKILL.md](./docs/SKILL.md) | **Start here** — quick orientation + common task recipes |
 | [docs/PROJECT.md](./docs/PROJECT.md) | Full file tree, entry points, constants, MinIO/Redis layout |
 | [docs/API.md](./docs/API.md) | All HTTP endpoints with request/response shapes |
-| [docs/SCHEMA.md](./docs/SCHEMA.md) | All 5 DB tables + Drizzle query patterns + Redis keys |
+| [docs/SCHEMA.md](./docs/SCHEMA.md) | All DB tables + Drizzle query patterns + Redis keys |
 | [docs/WORKERS.md](./docs/WORKERS.md) | BullMQ job data shapes + worker step-by-step logic |
 | [docs/RULES.md](./docs/RULES.md) | Coding conventions, patterns, what NOT to do |
 | [docs/INFRASTRUCTURE.md](./docs/INFRASTRUCTURE.md) | Docker services, volumes, ports, Caddy plugin |
@@ -30,18 +30,17 @@ Caddy (static_s3 plugin)
   │  1. Extract subdomain from Host header
   │  2. Redis GET "site:{subdomain}"  →  UUID (5 min TTL)
   │       miss → SELECT id FROM sites WHERE subdomain=$1 AND active=true
-  │  3. Stream file from MinIO:  cloudisy-sites/{UUID}/{path}
+  │  3. Stream file from MinIO:  cloudisy-sites/tenant/{UUID}/{path}
   │
-  ├──▶ MinIO  (object storage — live files + deployment snapshots)
+  ├──▶ MinIO  (live files + content-addressed blobs)
   │
-  └──▶ Express API  (site management, uploads, cloud builds, rollbacks, analytics)
+  └──▶ Express API  (site management, deploys, cloud builds, rollbacks, analytics)
             │
-            ├── PostgreSQL  (sites, pages, site_daily_stats, builds, deployments)
-            ├── Redis       (tenant UUID cache, usage counters, BullMQ queues)
+            ├── PostgreSQL  (sites, pages, site_daily_stats, builds, deployments, blobs, blob_tree_entries)
+            ├── Redis       (DB2 BullMQ · DB3 deploy tokens / usage · site cache)
             └── BullMQ Workers
-                    ├── upload  — snapshot → extract zip → deploy to MinIO
                     ├── sync    — flush Redis usage counters → PostgreSQL
-                    └── build   — git clone → docker build → snapshot → deploy
+                    └── build   — git clone → docker build → index blobs → deploy
                                   (1 GB RAM limit · live stats via SSE · build time metric)
 ```
 
@@ -50,11 +49,12 @@ Caddy (static_s3 plugin)
 | Topic | Decision |
 |-------|----------|
 | **Routing** | Caddy `static_s3` plugin resolves `subdomain → UUID → S3 key` at request time. No Caddy admin API calls needed. |
-| **Storage** | Two MinIO prefixes: `{site_id}/` (live files) and `cloudisy-snapshots/{site_id}/v{N}/` (deployment snapshots). |
+| **Storage** | Live files at `tenant/{site_id}/`. Immutable blobs at `blobs/{sha256}`. Deployment trees in `blob_tree_entries`. |
 | **Analytics** | The plugin writes `site_daily_stats` rows to PostgreSQL directly (Redis → PG flush every 5 min). |
 | **Auth** | JWT verified via remote JWKS at `https://auth.cloudisy.com/api/auth/jwks`. |
-| **Cloud Builds** | Each build runs in an isolated Docker container (`cloudisy-build-env`) with pnpm pre-installed, limited to 1 GB RAM. Live RAM + Net I/O stats are streamed every 2 s via SSE. Total build time is logged as a final metric. |
-| **Rollbacks** | Before every deploy (ZIP upload or build), live files are server-side copied to `cloudisy-snapshots/{site_id}/v{N}/`. Only the last **5 snapshots** per page are retained — older rows + objects are pruned automatically. |
+| **Cloud Builds** | Each build runs in an isolated Docker container (`cloudisy-build-env`) with pnpm pre-installed, limited to 1 GB RAM. Live RAM + Net I/O stats are streamed every 2 s via SSE. |
+| **Deploys** | CLI uses prepare → presign → commit. Magic-byte validation; blob deduplication by SHA256. |
+| **Rollbacks** | Rebuild live prefix from the target deployment’s `blob_tree_entries`. Last **5** deployments retained per page. |
 
 ---
 
@@ -67,7 +67,6 @@ Caddy (static_s3 plugin)
 | `minio_server` | `minio/minio` | S3-compatible object storage |
 | `postgres_db` | `postgres:16-alpine` | Primary database |
 | `redis` | `redis:7-alpine` | Cache + BullMQ broker |
-| `upload_w` | `./Dockerfile` (`runner` stage) | Upload queue worker |
 | `sync_w` | `./Dockerfile` (`runner` stage) | Usage sync worker |
 | `build_w` | `./Dockerfile` (`build-worker` stage) | Cloud build queue worker — has `git` + `docker-cli` |
 | `build_env` | `./Dockerfile` (`build-env` stage) | Builds & tags `cloudisy-build-env:latest` (pnpm pre-installed) used by cloud builds |
@@ -92,8 +91,14 @@ Daily analytics written by Caddy plugin. `site_id` FK → sites.
 ### `builds`
 One row per triggered cloud build. Statuses: `queued → active → completed/failed`.
 
+### `blobs`
+Content-addressed store. PK = SHA256 hex. Object at `blobs/{hash}` in MinIO.
+
+### `blob_tree_entries`
+Per-deployment file tree: `(deployment_id, path) → blob_hash`.
+
 ### `deployments`
-Snapshot and deployment history per page. `is_active = true` marks the live version. `snapshot_prefix` is the MinIO path of this version's file backup.
+Deployment history per page. `is_active = true` marks the live version. `files_deployed` / `files_reused` track blob dedup stats.
 
 ---
 
@@ -109,10 +114,12 @@ All protected endpoints require `Authorization: Bearer <JWT>`.
 | `DELETE` | `/api/pages/:id` | Delete page + MinIO files |
 | `GET` | `/api/pages/usage/:domain` | Live + DB request/bandwidth usage |
 
-### Uploads
+### Deploy
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/upload/:pageIdOrName` | Upload ZIP file to deploy |
+| `POST` | `/api/deploy/prepare` | Validate manifest + issue deploy token |
+| `POST` | `/api/deploy/presign` | Presigned PUTs for missing blobs |
+| `POST` | `/api/deploy/commit` | Materialize live site from blob tree |
 
 ### Builds
 | Method | Path | Description |
@@ -126,7 +133,7 @@ All protected endpoints require `Authorization: Bearer <JWT>`.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/deployments/page/:pageId` | List deployment history |
-| `POST` | `/api/deployments/:deploymentId/rollback` | Instant rollback to any version |
+| `POST` | `/api/deployments/:deploymentId/rollback` | Instant rollback via blob tree |
 
 > See [docs/API.md](./docs/API.md) for full request/response shapes.
 
@@ -188,6 +195,28 @@ npm run migrate  # apply (also runs automatically on docker compose up)
 
 ---
 
+## Deploy Pipeline (CLI)
+
+```
+POST /api/deploy/prepare
+  → validate magic bytes + extensions
+  → Redis SET deploy:token:{token} (DB3, TTL 10m)
+  → return uploadRequired hashes
+
+POST /api/deploy/presign
+  → presigned PUT urls for blobs/{hash}
+
+Client PUTs file bodies to MinIO
+
+POST /api/deploy/commit
+  → insert blobs + blob_tree_entries
+  → materialize tenant/{site_id}/ from blobs
+  → activate deployment, prune to last 5
+  → DEL site:{subdomain}
+```
+
+---
+
 ## Build Pipeline (step by step)
 
 ```
@@ -201,9 +230,8 @@ POST /api/builds
          → [Stats] logs streamed every 2s via SSE
       3. output dir detected (.next / dist / out / build / public)
       4. executeDeploymentFlow:
-           snapshot current live → delete live → upload new → activate → prune
+           delete live → upload new → index blobs/tree → activate → prune
       5. builds row → status: completed, completed_at set
-         [Stats] Total Build Duration: N.NNs logged
   → site is live immediately (Caddy reads MinIO per-request)
 ```
 
@@ -211,15 +239,15 @@ POST /api/builds
 
 ## Rollback System
 
-Every deploy (build or ZIP upload) creates a versioned snapshot in MinIO:
-- Live files: `cloudisy-sites/{site_id}/`
-- Snapshots: `cloudisy-snapshots/{site_id}/v{N}/`
+Every deploy (CLI or build) records a blob tree:
+- Live files: `cloudisy-sites/tenant/{site_id}/`
+- Blobs: `cloudisy-sites/blobs/{sha256}`
 
 Only the last **5 versions** are retained. Rolling back:
 1. `POST /api/deployments/:id/rollback`
-2. Current live → backed up to active version's snapshot path
-3. Target snapshot → copied to live prefix
-4. `is_active` flags flipped in DB
+2. Materialize target `blob_tree_entries` → live prefix
+3. `is_active` flags flipped in DB
+4. Invalidate `site:{subdomain}`
 5. Site live immediately — no restart
 
 ---
@@ -230,7 +258,7 @@ Only the last **5 versions** are retained. Rolling back:
 npm run build   # compile TypeScript
 npm run gen     # generate migration
 npm run migrate # apply migration
-node test.js    # end-to-end test (update TOKEN constant first)
+node test.js    # end-to-end deploy + rollback test (update TOKEN first)
 ```
 
 ---
@@ -243,19 +271,20 @@ src/
 ├── constants/index.ts           # Shared constants
 ├── middleware/auth.middleware.ts # JWT verification
 ├── infrastructure/
-│   ├── db/schema.ts             # 5 Drizzle table definitions
-│   ├── cache/redis.ts           # ioredis client
-│   └── storage/minio.ts        # MinIO client + copy/delete helpers
+│   ├── db/schema.ts             # Drizzle table definitions
+│   ├── cache/redis.ts           # ioredis clients (default + DB3 usage)
+│   └── storage/minio.ts        # MinIO client + helpers
 ├── controllers/                 # Thin HTTP handlers
 ├── services/                    # Business logic
+│   ├── deploy.service.ts        # prepare / presign / commit
 │   ├── deployment.service.ts    # executeDeploymentFlow + rollback
 │   ├── build.service.ts
-│   ├── page.service.ts
-│   └── upload.service.ts
+│   └── page.service.ts
 ├── queue/
 │   ├── jobs/                    # Queue + job data interfaces
-│   └── workers/                 # build, upload, sync workers
+│   └── workers/                 # build, sync workers
 ├── routes/                      # Express routers
+├── utils/file-validator.ts      # Magic-byte + extension checks
 └── validators/                  # Zod schemas
 docs/                            # AI-optimized codebase documentation
 drizzle/                         # Migration SQL files
