@@ -1,6 +1,6 @@
 # Cloudisy Server
 
-Backend API and infrastructure for **Cloudisy** — a multi-tenant static-site hosting platform. Each user project is served as a subdomain (`mysite.cloudisy.com`) directly from MinIO object storage via a custom Caddy plugin, with zero per-tenant configuration. Supports cloud builds from Git, content-addressed file deploys, versioned deployments, and instant rollback.
+Backend API and infrastructure for **Cloudisy** — a multi-tenant static-site hosting platform. Each user project is served as a subdomain (`mysite.cloudisy.com`) from content-addressed MinIO blobs via a custom Caddy plugin, with zero per-tenant configuration. Supports cloud builds from Git, CLI blob deploys, versioned deployments, and instant rollback.
 
 ---
 
@@ -28,34 +28,40 @@ Client
   ▼
 Caddy (static_s3 plugin)
   │  1. Extract subdomain from Host header
-  │  2. Redis GET "site:{subdomain}"  →  UUID (5 min TTL)
+  │  2. Redis GET "site:{subdomain}"  →  site UUID (short TTL)
   │       miss → SELECT id FROM sites WHERE subdomain=$1 AND active=true
-  │  3. Stream file from MinIO:  cloudisy-sites/tenant/{UUID}/{path}
+  │  3. Redis HGET "site_files:{site_id}" "{path}"  →  blob SHA256
+  │  4. Stream object from MinIO:  {bucket}/blobs/{sha256}
   │
-  ├──▶ MinIO  (live files + content-addressed blobs)
+  ├──▶ MinIO  (content-addressed blobs only — external / not in Compose)
   │
   └──▶ Express API  (site management, deploys, cloud builds, rollbacks, analytics)
             │
             ├── PostgreSQL  (sites, pages, site_daily_stats, builds, deployments, blobs, blob_tree_entries)
-            ├── Redis       (DB2 BullMQ · DB3 deploy tokens / usage · site cache)
+            ├── Redis
+            │     DB0  site:{subdomain}, site_files:{site_id}
+            │     DB2  BullMQ
+            │     DB3  deploy:token:*, usage counters, db_cache:*
             └── BullMQ Workers
                     ├── sync    — flush Redis usage counters → PostgreSQL
-                    └── build   — git clone → docker build → index blobs → deploy
-                                  (1 GB RAM limit · live stats via SSE · build time metric)
+                    └── build   — git clone → docker build → blobs + Redis map
+                                  (1 GB RAM limit · live stats via SSE)
 ```
 
 ### Key design decisions
 
 | Topic | Decision |
 |-------|----------|
-| **Routing** | Caddy `static_s3` plugin resolves `subdomain → UUID → S3 key` at request time. No Caddy admin API calls needed. |
-| **Storage** | Live files at `tenant/{site_id}/`. Immutable blobs at `blobs/{sha256}`. Deployment trees in `blob_tree_entries`. |
-| **Analytics** | The plugin writes `site_daily_stats` rows to PostgreSQL directly (Redis → PG flush every 5 min). |
+| **Routing** | Caddy resolves `subdomain → site_id → path→blob hash → blobs/{hash}` at request time. No per-tenant Caddy config. |
+| **Storage** | Immutable objects at `blobs/{sha256}` only. No `tenant/{site_id}/` live copy — commit is DB + Redis map. |
+| **Redis map** | `site_files:{site_id}` hash (path → SHA256, TTL 24h). Rebuilt on every commit/rollback; deleted on page delete. |
+| **Analytics** | The plugin writes `site_daily_stats` rows to PostgreSQL (Redis → PG flush on a cron). |
 | **Auth** | JWT verified via remote JWKS at `https://auth.cloudisy.com/api/auth/jwks`. |
-| **Cloud Builds** | Each build runs in an isolated Docker container (`cloudisy-build-env`) with pnpm pre-installed, limited to 1 GB RAM. Live RAM + Net I/O stats are streamed every 2 s via SSE. |
-| **Deploys** | CLI uses prepare → presign → commit. Manifest limits (≤100 files, ≤10 MB each), magic-byte + blocked-extension checks, SHA256 blob dedup. |
-| **Optimization** | At commit/build: Brotli + Gzip for text assets; WebP for PNG/JPEG/GIF. Variants stored in the blob tree with correct `Content-Encoding` / `Content-Type`. |
-| **Rollbacks** | Rebuild live prefix from the target deployment’s `blob_tree_entries` (includes compressed/WebP variants). Last **5** deployments retained per page. |
+| **Cloud Builds** | Isolated Docker container (`cloudisy-build-env`) with pnpm, 1 GB RAM. Live RAM + Net I/O via SSE. |
+| **Deploys** | CLI: prepare → presign → commit. Limits: ≤100 files, ≤10 MB each; magic-byte + blocked-extension checks; SHA256 dedup. |
+| **Optimization** | At commit/build: Brotli + Gzip for text; WebP for PNG/JPEG/GIF. Variants are separate blob tree entries with `Content-Encoding` / `Content-Type` on the blob object. |
+| **Rollbacks** | Flip `is_active` + rebuild `site_files:{site_id}` from the target deployment’s tree. Last **5** deployments retained (DB rows only — MinIO blobs are never deleted). |
+| **Redis host** | Compose sets `IN_DOCKER_COMPOSE=1` so `REDIS_URL=redis://redis:6379` works in containers. Host scripts remap `redis` → `localhost` (port `6379` published). |
 
 ---
 
@@ -63,14 +69,16 @@ Caddy (static_s3 plugin)
 
 | Container | Image / Build | Role |
 |-----------|---------------|------|
-| `express_app` | `./Dockerfile` (`runner` stage) | REST API |
+| `express_app` | `./Dockerfile` (`runner`) | REST API |
 | `caddy_server` | `ghcr.io/mahadi-rsio/cdx_s3` | Caddy + `static_s3` plugin |
-| `minio_server` | `minio/minio` | S3-compatible object storage |
 | `postgres_db` | `postgres:16-alpine` | Primary database |
-| `redis` | `redis:7-alpine` | Cache + BullMQ broker |
-| `sync_w` | `./Dockerfile` (`runner` stage) | Usage sync worker |
-| `build_w` | `./Dockerfile` (`build-worker` stage) | Cloud build queue worker — has `git` + `docker-cli` |
-| `build_env` | `./Dockerfile` (`build-env` stage) | Builds & tags `cloudisy-build-env:latest` (pnpm pre-installed) used by cloud builds |
+| `redis` | `redis:7-alpine` | Cache + BullMQ + `site_files` map (`6379` published for host scripts) |
+| `sync_w` | `./Dockerfile` (`runner`) | Usage sync worker |
+| `build_w` | `./Dockerfile` (`build-worker`) | Cloud build queue worker — `git` + `docker-cli` |
+| `build_env` | `./Dockerfile` (`build-env`) | Tags `cloudisy-build-env:latest` (pnpm) for cloud builds |
+| `drizzle_migrator` | `./Dockerfile` (`migrator`) | One-shot schema migrations |
+
+MinIO is **external** (configure `MINIO_ENDPOINT_URL` / credentials in `.env`). There is no `upload_w` — ZIP upload was removed in favor of blob-direct CLI deploys.
 
 ---
 
@@ -79,7 +87,7 @@ Caddy (static_s3 plugin)
 ### `sites`
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | UUID PK | MinIO key prefix |
+| `id` | UUID PK | Site id used in Redis `site_files:{id}` |
 | `subdomain` | TEXT UNIQUE | e.g. `mysite` |
 | `active` | BOOLEAN | Caddy filters on this |
 
@@ -93,7 +101,7 @@ Daily analytics written by Caddy plugin. `site_id` FK → sites.
 One row per triggered cloud build. Statuses: `queued → active → completed/failed`.
 
 ### `blobs`
-Content-addressed store. PK = SHA256 hex. Object at `blobs/{hash}` in MinIO.
+Content-addressed store. PK = SHA256 hex. Object at `blobs/{hash}` in MinIO (immutable).
 
 ### `blob_tree_entries`
 Per-deployment file tree: `(deployment_id, path) → blob_hash`.
@@ -112,15 +120,15 @@ All protected endpoints require `Authorization: Bearer <JWT>`.
 |--------|------|-------------|
 | `POST` | `/api/pages/create` | Create new page/site |
 | `GET` | `/api/pages` | List tenant's pages |
-| `DELETE` | `/api/pages/:id` | Delete page + MinIO files |
+| `DELETE` | `/api/pages/:id` | Delete page + Redis maps (blobs left in MinIO) |
 | `GET` | `/api/pages/usage/:domain` | Live + DB request/bandwidth usage |
 
 ### Deploy
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/deploy/prepare` | Validate manifest (count/size/types + magic bytes) + issue token + size summary |
+| `POST` | `/api/deploy/prepare` | Validate manifest + issue token + size summary |
 | `POST` | `/api/deploy/presign` | Presigned PUTs for missing blobs |
-| `POST` | `/api/deploy/commit` | Compress/WebP variants → blob tree → live site + optimization summary |
+| `POST` | `/api/deploy/commit` | Compress/WebP → blob tree → Redis map (5 min timeout) |
 
 ### Builds
 | Method | Path | Description |
@@ -134,7 +142,7 @@ All protected endpoints require `Authorization: Bearer <JWT>`.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/deployments/page/:pageId` | List deployment history |
-| `POST` | `/api/deployments/:deploymentId/rollback` | Instant rollback via blob tree |
+| `POST` | `/api/deployments/:deploymentId/rollback` | Instant rollback via Redis map rebuild |
 
 > See [docs/API.md](./docs/API.md) for full request/response shapes.
 
@@ -146,16 +154,19 @@ Copy `env` to `.env` before starting.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DB` | — | PostgreSQL DSN (used by the app) |
-| `DRIZZLE_CONNECTION` | — | PostgreSQL DSN for Drizzle Kit migrations |
-| `REDIS_URL` | `redis://redis:6379` | Redis connection URL |
-| `MINIO_ENDPOINT` | `minio_server` | MinIO hostname |
+| `DB` | — | PostgreSQL DSN (app / Compose network host `db`) |
+| `DRIZZLE_CONNECTION` | — | PostgreSQL DSN for Drizzle Kit (host-side often `localhost`) |
+| `REDIS_URL` | `redis://redis:6379` | Redis URL. Compose services keep hostname `redis` via `IN_DOCKER_COMPOSE=1`. Host scripts auto-remap to `localhost`. |
+| `MINIO_ENDPOINT` | — | MinIO hostname |
 | `MINIO_PORT` | `9000` | MinIO port |
-| `S3_ACCESS_KEY` | `minioadmin` | MinIO access key |
-| `S3_SECRET_KEY` | `minioadmin` | MinIO secret key |
-| `MINIO_BUCKET` | `cloudisy-sites` | Shared bucket name |
+| `MINIO_ENDPOINT_URL` | — | Full MinIO base URL (used by Caddy) |
+| `MINIO_USE_SSL` | — | `true` / `false` |
+| `S3_ACCESS_KEY` | — | MinIO access key |
+| `S3_SECRET_KEY` | — | MinIO secret key |
+| `MINIO_BUCKET` | — | Shared bucket name |
 | `BASE_DOMAIN` | `localhost` | Base domain for subdomain routing |
 | `POSTGRES_USER/PASSWORD/DB` | — | PostgreSQL init vars |
+| `IN_DOCKER_COMPOSE` | — | Set to `1` by Compose for app/workers (do not set on host) |
 
 ---
 
@@ -163,6 +174,7 @@ Copy `env` to `.env` before starting.
 
 ### Prerequisites
 - Docker + Docker Compose
+- Reachable MinIO bucket (`MINIO_BUCKET`)
 
 ### Steps
 
@@ -173,18 +185,26 @@ cd pagex
 
 # 2. Configure
 cp env .env
-# Edit BASE_DOMAIN, DB credentials, MinIO keys, etc.
+# Edit BASE_DOMAIN, DB credentials, MinIO keys / endpoint, REDIS_URL, etc.
 
 # 3. Create shared build workspace (DinD requirement)
 mkdir -p /tmp/cloudisy-builds
 
-# 4. Start
-docker compose up --build
+# 4. Start (remove any leftover upload_w orphans)
+docker compose up --build --remove-orphans
 ```
 
 > **First run:** Builds `cloudisy-build-env:latest` (pnpm base image). Migrations run automatically via `drizzle_migrator`.
 
 > **DinD note:** `build_w` mounts `/var/run/docker.sock` and `/tmp/cloudisy-builds`. The host path must exist for volume mounts in build containers to resolve correctly.
+
+### One-time: purge legacy `tenant/` objects
+
+If you previously served from `tenant/{site_id}/`, clear those objects once (blobs are untouched):
+
+```bash
+npx tsx src/scripts/migrate-to-blob-serving.ts
+```
 
 ### Migrations
 
@@ -203,27 +223,27 @@ POST /api/deploy/prepare
   → validateManifest: ≤100 files, ≤10 MB each, blocked extensions
   → validate magic bytes + extension/MIME checks
   → Redis SET deploy:token:{token} (DB3, TTL 10m)
-  → return uploadRequired hashes + summary { totalFiles, totalSize, … }
+  → return uploadRequired hashes + summary
 
 POST /api/deploy/presign
   → presigned PUT urls for blobs/{hash}
 
 Client PUTs file bodies to MinIO
 
-POST /api/deploy/commit
+POST /api/deploy/commit  (request timeout 5 minutes)
   → load original blobs
   → expand variants:
-       .html/.css/.js/.json/.svg/.xml → .br + .gz (zlib)
-       .png/.jpg/.jpeg/.gif → .webp (sharp; original kept)
+       .html/.css/.js/.json/.svg/.xml → .br + .gz
+       .png/.jpg/.jpeg/.gif → .webp (original kept)
   → store variant blobs (SHA256 of compressed/WebP bytes)
   → insert blob_tree_entries (originals + variants)
-  → materialize tenant/{site_id}/ with Content-Encoding / Content-Type
-  → activate deployment, prune to last 5
+  → activate deployment, prune DB to last 5 (no MinIO deletes)
+  → rebuild Redis site_files:{site_id} (DEL → HSET → EXPIRE 24h)
   → DEL site:{subdomain}
   → return summary { sizeReduced, imagesOptimized, … }
 ```
 
-**Limits / blocked types** (shared by prepare + build worker): PDF, video, executables, archives (`.zip`/`.tar`/`.gz`/…), `.db`/`.sqlite`/`.log`, etc. See `src/utils/deployment-validator.ts`.
+**Limits / blocked types** (shared by prepare + build worker): PDF, video, executables, archives (`.zip`/`.tar`/…), `.db`/`.sqlite`/`.log`, etc. See `src/utils/deployment-validator.ts`.
 
 ---
 
@@ -242,26 +262,28 @@ POST /api/builds
       4. validateOutputDir (same count/size/extension rules as prepare)
          on failure → builds.status=failed, SSE error, return cleanly
       5. deployFromLocalDirectory:
-           hash files → Brotli/Gzip/WebP variants → blobs + tree → live → prune
-           → [Summary] line in SSE (size reduced / images optimized)
+           hash → Brotli/Gzip/WebP → blobs + tree → Redis map → prune
+           → [Summary] line in SSE
       6. builds row → status: completed, completed_at set
-  → site is live immediately (Caddy reads MinIO per-request)
+  → site is live immediately (Caddy reads blobs via Redis map)
 ```
 
 ---
 
 ## Rollback System
 
-Every deploy (CLI or build) records a blob tree:
-- Live files: `cloudisy-sites/tenant/{site_id}/`
-- Blobs: `cloudisy-sites/blobs/{sha256}`
+Every deploy (CLI or build) records a blob tree in PostgreSQL. Serving uses:
 
-Only the last **5 versions** are retained. Rolling back:
+- Blobs: `{bucket}/blobs/{sha256}`
+- Map: Redis `site_files:{site_id}` → path → hash
+
+Only the last **5 versions** are retained in the DB. Rolling back:
+
 1. `POST /api/deployments/:id/rollback`
-2. Materialize target `blob_tree_entries` → live prefix
-3. `is_active` flags flipped in DB
+2. Flip `is_active` flags
+3. Rebuild `site_files:{site_id}` from the target tree
 4. Invalidate `site:{subdomain}`
-5. Site live immediately — no restart
+5. Site live immediately — no MinIO copy, no restart
 
 ---
 
@@ -284,7 +306,7 @@ SKIP_BUILD=1 node test.js
 Rebuild API + workers after local changes:
 
 ```bash
-docker compose up --build -d app build_worker
+docker compose up --build -d --remove-orphans app build_worker sync_worker
 ```
 
 ---
@@ -298,18 +320,20 @@ src/
 ├── middleware/auth.middleware.ts # JWT verification
 ├── infrastructure/
 │   ├── db/schema.ts             # Drizzle table definitions
-│   ├── cache/redis.ts           # ioredis clients (default + DB3 usage)
-│   └── storage/minio.ts         # MinIO client + helpers
+│   ├── cache/redis.ts           # ioredis (DB0 site/site_files, DB2 BullMQ, DB3 usage)
+│   └── storage/minio.ts         # MinIO client + blob helpers
 ├── controllers/                 # Thin HTTP handlers
 ├── services/                    # Business logic
-│   ├── deploy.service.ts        # prepare / presign / commit + compress/WebP
-│   ├── deployment.service.ts    # list + rollback (blob-tree materialize)
+│   ├── deploy.service.ts        # prepare / presign / commit + compress/WebP + Redis map
+│   ├── deployment.service.ts    # list + rollback
 │   ├── build.service.ts
 │   └── page.service.ts
 ├── queue/
 │   ├── jobs/                    # Queue + job data interfaces
-│   └── workers/                 # build, sync workers
+│   └── workers/                 # build.worker, sync.worker
 ├── routes/                      # Express routers
+├── scripts/
+│   └── migrate-to-blob-serving.ts  # one-off delete of legacy tenant/ objects
 ├── utils/
 │   ├── file-validator.ts        # Magic-byte + extension checks
 │   └── deployment-validator.ts  # File count / size / blocked-type limits

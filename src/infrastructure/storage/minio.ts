@@ -18,15 +18,16 @@ export const minioClient = new Minio.Client({
 });
 
 // The single shared bucket used by all tenants.
-// Live files:  {SHARED_BUCKET}/tenant/{site_uuid}/{filepath}
+// Live serving: Caddy resolves path → blob via Redis site_files:{siteId}, then reads blobs/{sha256}
 // Blobs:       {SHARED_BUCKET}/blobs/{sha256}
+// Legacy:      {SHARED_BUCKET}/tenant/{site_uuid}/{filepath} (removed by migrate-to-blob-serving)
 // Must be set via MINIO_BUCKET env var — no default to avoid accidental bucket naming.
 if (!process.env.MINIO_BUCKET) {
     throw new Error('MINIO_BUCKET environment variable is required')
 }
 export const SHARED_BUCKET = process.env.MINIO_BUCKET
 
-/** Live site prefix: tenant/{siteId}/ */
+/** Legacy live site prefix: tenant/{siteId}/ — retained for one-off migration scripts. */
 export function liveSitePrefix(siteId: string): string {
     return `tenant/${siteId}/`
 }
@@ -37,7 +38,7 @@ export function blobObjectKey(hash: string): string {
 }
 
 /**
- * Build MinIO putObject metadata for a live (or blob) object path.
+ * Build MinIO putObject metadata for a blob object.
  * Compressed variants carry Content-Encoding; WebP gets image/webp.
  */
 export function objectMetaForPath(
@@ -75,64 +76,4 @@ export async function ensureSharedBucket(): Promise<void> {
         console.warn(`⚠️  Could not ensure bucket "${SHARED_BUCKET}": ${err?.message ?? err}`)
         console.warn('   Create it manually via the MinIO console at http://localhost:9001')
     }
-}
-
-/**
- * Removes all objects under the given `siteId` prefix in the shared bucket.
- * Used when deleting a project.
- */
-export async function deleteSiteObjects(siteId: string): Promise<void> {
-    const prefix = liveSitePrefix(siteId)
-    const objects: string[] = []
-
-    await new Promise<void>((resolve, reject) => {
-        const stream = minioClient.listObjects(SHARED_BUCKET, prefix, true)
-        stream.on('data', obj => { if (obj.name) objects.push(obj.name) })
-        stream.on('end', resolve)
-        stream.on('error', reject)
-    })
-
-    if (objects.length === 0) return
-
-    await minioClient.removeObjects(SHARED_BUCKET, objects)
-    console.log(`🗑️  Removed ${objects.length} objects for site ${siteId}`)
-}
-
-/**
- * Server-side copy of all files under a source prefix to a destination prefix.
- */
-export async function copyFolder(sourcePrefix: string, destPrefix: string): Promise<number> {
-    const objects: string[] = []
-    await new Promise<void>((resolve, reject) => {
-        const stream = minioClient.listObjects(SHARED_BUCKET, sourcePrefix, true)
-        stream.on('data', obj => { if (obj.name) objects.push(obj.name) })
-        stream.on('end', resolve)
-        stream.on('error', reject)
-    })
-
-    let count = 0
-    for (const objName of objects) {
-        const relativePath = objName.substring(sourcePrefix.length)
-        const destKey = `${destPrefix}${relativePath}`
-        await minioClient.copyObject(SHARED_BUCKET, destKey, `/${SHARED_BUCKET}/${objName}`)
-        count++
-    }
-    return count
-}
-
-/**
- * Removes all objects under the given prefix in the shared bucket.
- */
-export async function deleteFolder(prefix: string): Promise<void> {
-    const objects: string[] = []
-    await new Promise<void>((resolve, reject) => {
-        const stream = minioClient.listObjects(SHARED_BUCKET, prefix, true)
-        stream.on('data', obj => { if (obj.name) objects.push(obj.name) })
-        stream.on('end', resolve)
-        stream.on('error', reject)
-    })
-
-    if (objects.length === 0) return
-
-    await minioClient.removeObjects(SHARED_BUCKET, objects)
 }

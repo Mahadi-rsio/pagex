@@ -1,7 +1,18 @@
+# Cloudisy — Docker Compose
+#
+# Services: app API, build/sync workers, Postgres, Redis, Caddy (static_s3).
+# MinIO is external (MINIO_ENDPOINT_URL) — not run in this compose file.
+# ZIP upload_worker was removed; deploys are content-addressed blobs only.
+#
+# Serving path (blob-direct):
+#   Caddy → Redis site:{subdomain} → site_files:{site_id} path→hash → MinIO blobs/{hash}
+#
+# Host-side scripts (tsx / test.js): Redis is published on localhost:6379.
+# Compose services set IN_DOCKER_COMPOSE=1 so REDIS_URL keeps hostname `redis`.
+
 services:
   # Pre-builds the pnpm image used by the build worker for cloud builds.
-  # Running `docker compose up --build` will tag cloudisy-build-env:latest
-  # on the host, which build_w can then use via the mounted Docker socket.
+  # `docker compose up --build` tags cloudisy-build-env:latest on the host.
   build_env:
     build:
       context: .
@@ -32,6 +43,9 @@ services:
       target: runner
     container_name: express_app
     env_file: .env
+    environment:
+      # Keep REDIS_URL hostname `redis` (do not remap to localhost)
+      IN_DOCKER_COMPOSE: "1"
     expose:
       - "3000"
     ports:
@@ -40,7 +54,7 @@ services:
       migrator:
         condition: service_completed_successfully
       redis:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - cloudisy_network
@@ -51,12 +65,14 @@ services:
       target: runner
     container_name: sync_w
     env_file: .env
+    environment:
+      IN_DOCKER_COMPOSE: "1"
     command: ["node", "dist/src/queue/workers/sync.worker.js"]
     depends_on:
       migrator:
         condition: service_completed_successfully
       redis:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - cloudisy_network
@@ -67,11 +83,15 @@ services:
       target: build-worker
     container_name: build_w
     env_file: .env
+    environment:
+      IN_DOCKER_COMPOSE: "1"
     depends_on:
       migrator:
         condition: service_completed_successfully
       redis:
-        condition: service_started
+        condition: service_healthy
+      build_env:
+        condition: service_completed_successfully
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -108,7 +128,7 @@ services:
       db:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       app:
         condition: service_started
     restart: unless-stopped
@@ -142,8 +162,14 @@ services:
     image: redis:7-alpine
     container_name: redis
     command: redis-server
-    expose:
-      - "6379"
+    ports:
+      # Host scripts (npx tsx, test.js) use localhost:6379
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
     networks:
       - cloudisy_network

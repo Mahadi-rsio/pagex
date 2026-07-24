@@ -8,6 +8,12 @@ export const DEPLOY_TOKEN_TTL_SECONDS = 10 * 60
 export const PRESIGN_EXPIRY_SECONDS = 10 * 60
 /** Keep this many recent deployments per page */
 export const DEPLOYMENT_RETENTION = 5
+/** Redis TTL for site_files:{siteId} path→blob map (24 hours) */
+export const SITE_FILES_TTL_SECONDS = 24 * 60 * 60
+/** Commit endpoint request timeout (5 minutes) */
+export const COMMIT_TIMEOUT_MS = 5 * 60 * 1000
+/** Concurrency limit for parallel blob I/O */
+export const BLOB_IO_CONCURRENCY = 10
 
 export const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
 export const RATE_LIMIT_MAX = 100

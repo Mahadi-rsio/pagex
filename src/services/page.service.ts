@@ -2,9 +2,9 @@ import { db } from '../infrastructure/db/db.js'
 import { pages, sites } from '../infrastructure/db/schema.js'
 import { eq } from 'drizzle-orm'
 import { customAlphabet } from 'nanoid'
-import { minioClient, SHARED_BUCKET, deleteSiteObjects } from '../infrastructure/storage/minio.js'
 import { redis } from '../infrastructure/cache/redis.js'
 import { TOP_LEVEL_DOMAIN } from '../constants/index.js'
+import { clearSiteFilesMap } from './deploy.service.js'
 import type { CreatePageInput } from '../validators/page.validator.js'
 
 export async function createPage(
@@ -46,9 +46,8 @@ export async function createPage(
 
     if (!page) throw new Error('Failed to create page record')
 
-    // 3. The caddy static_s3 plugin now handles routing automatically —
-    //    no Caddy admin API call needed. Files will be served from:
-    //    {SHARED_BUCKET}/{site.id}/{filepath}
+    // 3. The caddy static_s3 plugin routes via Redis site_files:{site_id}
+    //    → blobs/{sha256}. No per-tenant Caddy config or tenant/ prefix needed.
 
     console.log(`✅ Created project "${project_name}" → site_id: ${site.id}`)
 
@@ -129,15 +128,10 @@ export async function deletePage(pageId: string, tenantId: string) {
 
     const page = existing[0]!
 
-    // 1. Remove all files from the shared bucket under this site's prefix
-    await deleteSiteObjects(page.site_id).catch(err =>
-        console.error('MinIO object deletion failed:', err)
-    )
-
-    // 2. Delete pages row (cascades will also delete from site_daily_stats)
+    // 1. Delete pages row (cascades deployments / blob_tree_entries / builds)
     await db.delete(pages).where(eq(pages.id, pageId))
 
-    // 3. Deactivate the site in the `sites` table and invalidate Redis cache
+    // 2. Deactivate the site in the `sites` table and invalidate Redis caches
     //    so the caddy plugin immediately stops routing this subdomain.
     await db
         .update(sites)
@@ -145,8 +139,9 @@ export async function deletePage(pageId: string, tenantId: string) {
         .where(eq(sites.id, page.site_id))
 
     await redis.del(`site:${page.project_name}`)
+    await clearSiteFilesMap(page.site_id)
 
-    // 4. Clear usage caches
+    // 3. Clear usage caches
     await redis.del(`db_cache:${page.domain}`)
     await redis.del(`requests:${page.domain}`)
     await redis.del(`bandwidth:${page.domain}`)

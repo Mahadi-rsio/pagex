@@ -12,7 +12,7 @@ const BLOCKED_EXTENSIONS = new Set([
     // Executable
     '.exe', '.bat', '.sh', '.bin', '.apk', '.msi', '.dmg', '.elf',
     // Non-standard
-    '.iso', '.tar', '.gz', '.zip', '.rar', '.7z', '.db', '.sqlite', '.log',
+    '.iso', '.tar', '.zip', '.rar', '.7z', '.db', '.sqlite', '.log',
 ])
 
 export type ValidationResult =

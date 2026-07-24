@@ -1,3 +1,15 @@
+# Cloudisy multi-stage Dockerfile
+#
+# Stages:
+#   build-env     → cloudisy-build-env:latest (pnpm base for cloud builds)
+#   deps          → npm install (shared)
+#   migrator      → one-shot drizzle-kit migrate
+#   builder       → tsc → dist/
+#   runner        → Express API + sync worker (production deps)
+#   build-worker  → cloud build queue worker (git + docker CLI)
+#
+# No upload worker — deploys are CLI prepare/presign/commit or cloud build → blobs.
+
 # ---- build-env (reusable image for cloud build jobs — pnpm pre-installed) ----
 FROM node:20-alpine AS build-env
 RUN npm install -g pnpm --silent
@@ -18,7 +30,7 @@ COPY drizzle ./drizzle
 
 CMD ["npx", "drizzle-kit", "migrate"]
 
-# ---- builder (compile TS) ----
+# ---- builder (compile TypeScript → dist/) ----
 FROM node:20-alpine AS builder
 WORKDIR /app
 
@@ -30,7 +42,7 @@ COPY . .
 
 RUN npm run build
 
-# ---- runner (production only) ----
+# ---- runner (API server + sync worker) ----
 FROM node:20-alpine AS runner
 WORKDIR /app
 
@@ -39,14 +51,15 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-# Copy compiled output
+# Compiled output (API, sync worker, deploy/scripts)
 COPY --from=builder /app/dist ./dist
 
 EXPOSE 3000
 
+# Default: Express API. Override command for sync_worker in compose.
 CMD ["node", "dist/src/server.js"]
 
-# ---- build-worker (needs git + docker CLI to run cloud builds) ----
+# ---- build-worker (git + docker CLI for cloud builds) ----
 FROM node:20-alpine AS build-worker
 WORKDIR /app
 
@@ -57,8 +70,6 @@ RUN apk add --no-cache git docker-cli
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-# Copy compiled output
 COPY --from=builder /app/dist ./dist
 
 CMD ["node", "dist/src/queue/workers/build.worker.js"]
-

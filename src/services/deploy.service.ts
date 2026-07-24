@@ -5,6 +5,7 @@ import { promisify } from 'node:util'
 import { brotliCompress, gzip } from 'node:zlib'
 import { and, desc, eq, inArray, ne } from 'drizzle-orm'
 import { lookup } from 'mime-types'
+import pLimit from 'p-limit'
 import sharp from 'sharp'
 import { db } from '../infrastructure/db/db.js'
 import { blobTreeEntries, blobs, deployments, pages, sites } from '../infrastructure/db/schema.js'
@@ -12,18 +13,17 @@ import { usageRedis, redis } from '../infrastructure/cache/redis.js'
 import {
     SHARED_BUCKET,
     blobObjectKey,
-    deleteFolder,
-    liveSitePrefix,
     minioClient,
     objectMetaForPath,
 } from '../infrastructure/storage/minio.js'
-import { CopyDestinationOptions, CopySourceOptions } from 'minio'
 import {
+    BLOB_IO_CONCURRENCY,
     DEPLOY_TOKEN_TTL_SECONDS,
     DEPLOYMENT_RETENTION,
     MAX_DEPLOY_FILE_SIZE,
     MAX_FILE_SIZE,
     PRESIGN_EXPIRY_SECONDS,
+    SITE_FILES_TTL_SECONDS,
 } from '../constants/index.js'
 import { validateManifest } from '../utils/deployment-validator.js'
 import { validateFile } from '../utils/file-validator.js'
@@ -378,6 +378,7 @@ async function storeExpandedVariants(
     filesReused: number
     summary: DeployOptimizationSummary
 }> {
+    const limit = pLimit(BLOB_IO_CONCURRENCY)
     const fileManifest: BlobManifestFile[] = []
     const seenHashes = new Set<string>()
     const claimedPaths = new Set(sources.map((s) => s.path))
@@ -385,17 +386,25 @@ async function storeExpandedVariants(
     let filesDeployed = 0
     let filesReused = 0
 
-    for (const source of sources) {
-        const { variants, stats } = await expandFileVariants(
-            source.path,
-            source.body,
-            log
+    // Expand variants in parallel (CPU-bound compression / WebP)
+    const expanded = await Promise.all(
+        sources.map((source) =>
+            limit(async () => {
+                const result = await expandFileVariants(source.path, source.body, log)
+                return { sourcePath: source.path, ...result }
+            })
         )
+    )
+
+    // Claim paths + build manifest sequentially (deterministic overwrite rules)
+    const toStore: FileVariant[] = []
+
+    for (const { sourcePath, variants, stats } of expanded) {
         allStats.push(stats)
 
         for (const variant of variants) {
             // Don't overwrite a path the client already uploaded (e.g. pre-made .br)
-            if (variant.path !== source.path && claimedPaths.has(variant.path)) {
+            if (variant.path !== sourcePath && claimedPaths.has(variant.path)) {
                 await log?.(
                     `Skipped ${variant.path}: path already present in deploy manifest`
                 )
@@ -411,25 +420,37 @@ async function storeExpandedVariants(
 
             if (seenHashes.has(variant.hash)) continue
             seenHashes.add(variant.hash)
-
-            const result = await storeBlobFromBuffer(
-                variant.hash,
-                variant.body,
-                variant.contentType,
-                variant.contentEncoding
-            )
-            if (result === 'deployed') {
-                filesDeployed++
-                await log?.(
-                    `Stored blob ${variant.hash.slice(0, 12)}… (${variant.path})`
-                )
-            } else {
-                filesReused++
-                await log?.(
-                    `Reused blob ${variant.hash.slice(0, 12)}… (${variant.path})`
-                )
-            }
+            toStore.push(variant)
         }
+    }
+
+    // Upload unique blobs in parallel
+    const storeResults = await Promise.all(
+        toStore.map((variant) =>
+            limit(async () => {
+                const result = await storeBlobFromBuffer(
+                    variant.hash,
+                    variant.body,
+                    variant.contentType,
+                    variant.contentEncoding
+                )
+                if (result === 'deployed') {
+                    await log?.(
+                        `Stored blob ${variant.hash.slice(0, 12)}… (${variant.path})`
+                    )
+                } else {
+                    await log?.(
+                        `Reused blob ${variant.hash.slice(0, 12)}… (${variant.path})`
+                    )
+                }
+                return result
+            })
+        )
+    )
+
+    for (const result of storeResults) {
+        if (result === 'deployed') filesDeployed++
+        else filesReused++
     }
 
     const summary = buildOptimizationSummary(sources, fileManifest.length, allStats)
@@ -443,62 +464,45 @@ async function storeExpandedVariants(
     return { fileManifest, filesDeployed, filesReused, summary }
 }
 
+function siteFilesKey(siteId: string): string {
+    return `site_files:${siteId}`
+}
+
 /**
- * Materialize a deployment's blob tree into the live site prefix.
- * Applies Content-Type / Content-Encoding from the live path so Caddy can serve variants.
+ * Atomically rebuild the Redis path→blob map for a site.
+ * Pipeline: DEL → HSET → EXPIRE (same Redis DB as site:{subdomain}).
  */
-export async function materializeDeploymentToLive(
-    deploymentId: string,
-    siteId: string
-): Promise<number> {
+export async function rebuildSiteFilesMap(
+    siteId: string,
+    deploymentId: string
+): Promise<void> {
     const entries = await db
-        .select()
+        .select({
+            path: blobTreeEntries.path,
+            blobHash: blobTreeEntries.blobHash,
+        })
         .from(blobTreeEntries)
         .where(eq(blobTreeEntries.deploymentId, deploymentId))
 
-    const livePrefix = liveSitePrefix(siteId)
-    await deleteFolder(livePrefix)
+    const key = siteFilesKey(siteId)
+    const pipeline = redis.pipeline()
+    pipeline.del(key)
 
-    for (const entry of entries) {
-        const destKey = `${livePrefix}${entry.path}`
-        const srcKey = blobObjectKey(entry.blobHash)
-        const meta = metaForLivePath(entry.path)
-
-        await minioClient.copyObject(
-            new CopySourceOptions({ Bucket: SHARED_BUCKET, Object: srcKey }),
-            new CopyDestinationOptions({
-                Bucket: SHARED_BUCKET,
-                Object: destKey,
-                Headers: meta,
-                MetadataDirective: 'REPLACE',
-            })
-        )
+    if (entries.length > 0) {
+        const fields: Record<string, string> = {}
+        for (const entry of entries) {
+            fields[entry.path] = entry.blobHash
+        }
+        pipeline.hset(key, fields)
     }
 
-    return entries.length
+    pipeline.expire(key, SITE_FILES_TTL_SECONDS)
+    await pipeline.exec()
 }
 
-function metaForLivePath(filePath: string): Record<string, string> {
-    if (filePath.endsWith('.br')) {
-        const original = filePath.slice(0, -3)
-        return objectMetaForPath(
-            filePath,
-            lookup(original) || 'application/octet-stream',
-            'br'
-        )
-    }
-    if (filePath.endsWith('.gz')) {
-        const original = filePath.slice(0, -3)
-        return objectMetaForPath(
-            filePath,
-            lookup(original) || 'application/octet-stream',
-            'gzip'
-        )
-    }
-    if (filePath.endsWith('.webp')) {
-        return objectMetaForPath(filePath, 'image/webp')
-    }
-    return objectMetaForPath(filePath, lookup(filePath) || 'application/octet-stream')
+/** Remove the path→blob map when a page is deleted. */
+export async function clearSiteFilesMap(siteId: string): Promise<void> {
+    await redis.del(siteFilesKey(siteId))
 }
 
 async function activateDeployment(pageId: string, deploymentId: string): Promise<void> {
@@ -523,8 +527,32 @@ async function pruneOldDeployments(pageId: string): Promise<void> {
     if (allDeps.length <= DEPLOYMENT_RETENTION) return
 
     const toDelete = allDeps.slice(DEPLOYMENT_RETENTION)
-    for (const dep of toDelete) {
-        await db.delete(deployments).where(eq(deployments.id, dep.id))
+    const deletedIds = toDelete.map((d) => d.id)
+
+    // Collect blob hashes before cascade removes blob_tree_entries
+    const entries = await db
+        .select({ blobHash: blobTreeEntries.blobHash })
+        .from(blobTreeEntries)
+        .where(inArray(blobTreeEntries.deploymentId, deletedIds))
+
+    const candidateHashes = [...new Set(entries.map((e) => e.blobHash))]
+
+    // Cascades to blob_tree_entries — never delete MinIO blob objects
+    await db.delete(deployments).where(inArray(deployments.id, deletedIds))
+
+    if (candidateHashes.length === 0) return
+
+    const stillReferenced = await db
+        .selectDistinct({ blobHash: blobTreeEntries.blobHash })
+        .from(blobTreeEntries)
+        .where(inArray(blobTreeEntries.blobHash, candidateHashes))
+
+    const stillSet = new Set(stillReferenced.map((r) => r.blobHash))
+    const orphans = candidateHashes.filter((h) => !stillSet.has(h))
+
+    if (orphans.length > 0) {
+        // DB rows only — blobs/{hash} objects are immutable and left in MinIO
+        await db.delete(blobs).where(inArray(blobs.hash, orphans))
     }
 }
 
@@ -552,7 +580,8 @@ export interface BlobManifestFile {
 
 /**
  * Shared commit path for CLI and cloud builds:
- * blobs already in MinIO → write tree → materialize live → activate.
+ * blobs already in MinIO → write tree → Redis map → activate.
+ * No tenant/ copy — Caddy serves directly from blobs/{hash}.
  */
 export async function commitBlobTreeDeploy(opts: {
     pageId: string
@@ -597,9 +626,9 @@ export async function commitBlobTreeDeploy(opts: {
         }))
     )
 
-    await materializeDeploymentToLive(newDep.id, opts.siteId)
     await activateDeployment(opts.pageId, newDep.id)
     await pruneOldDeployments(opts.pageId)
+    await rebuildSiteFilesMap(opts.siteId, newDep.id)
     await invalidateSiteCache(opts.subdomain)
 
     const [updated] = await db
@@ -797,12 +826,16 @@ export async function presignDeploy(input: PresignDeployInput, tenantId: string)
 export async function commitDeploy(input: CommitDeployInput, tenantId: string) {
     const payload = await loadDeployToken(input.deploymentToken, tenantId)
 
-    // Load original blob bodies, then expand with Brotli/Gzip/WebP variants
-    const sources: Array<{ path: string; body: Buffer }> = []
-    for (const file of payload.fileManifest) {
-        const body = await readBlobBuffer(file.hash)
-        sources.push({ path: file.path, body })
-    }
+    // Load original blob bodies in parallel, then expand with Brotli/Gzip/WebP variants
+    const limit = pLimit(BLOB_IO_CONCURRENCY)
+    const sources = await Promise.all(
+        payload.fileManifest.map((file) =>
+            limit(async () => {
+                const body = await readBlobBuffer(file.hash)
+                return { path: file.path, body }
+            })
+        )
+    )
 
     const { fileManifest, filesDeployed, filesReused, summary } = await storeExpandedVariants(
         sources

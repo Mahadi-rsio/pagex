@@ -4,7 +4,7 @@ import { and, eq, ne, desc } from 'drizzle-orm'
 import { HttpError } from '../utils/http-error.js'
 import {
     invalidateSiteCache,
-    materializeDeploymentToLive,
+    rebuildSiteFilesMap,
 } from './deploy.service.js'
 
 async function activateDeployment(pageId: string, deploymentId: string): Promise<void> {
@@ -40,8 +40,8 @@ export async function rollbackToDeployment(deploymentId: string, tenantId: strin
         throw new HttpError('Deployment has no blob tree; cannot rollback', 400)
     }
 
-    await materializeDeploymentToLive(dep.id, dep.site_id)
     await activateDeployment(dep.page_id, dep.id)
+    await rebuildSiteFilesMap(dep.site_id, dep.id)
 
     const [page] = await db.select().from(pages).where(eq(pages.id, dep.page_id)).limit(1)
     if (page) {
