@@ -19,12 +19,12 @@ import {
 import {
     BLOB_IO_CONCURRENCY,
     DEPLOY_TOKEN_TTL_SECONDS,
-    DEPLOYMENT_RETENTION,
     MAX_DEPLOY_FILE_SIZE,
     MAX_FILE_SIZE,
     PRESIGN_EXPIRY_SECONDS,
     SITE_FILES_TTL_SECONDS,
 } from '../constants/index.js'
+import { runDeploymentGC } from './gc.service.js'
 import { validateManifest } from '../utils/deployment-validator.js'
 import { validateFile } from '../utils/file-validator.js'
 import { HttpError } from '../utils/http-error.js'
@@ -517,45 +517,6 @@ async function activateDeployment(pageId: string, deploymentId: string): Promise
         .where(and(eq(deployments.page_id, pageId), ne(deployments.id, deploymentId)))
 }
 
-async function pruneOldDeployments(pageId: string): Promise<void> {
-    const allDeps = await db
-        .select({ id: deployments.id })
-        .from(deployments)
-        .where(eq(deployments.page_id, pageId))
-        .orderBy(desc(deployments.version))
-
-    if (allDeps.length <= DEPLOYMENT_RETENTION) return
-
-    const toDelete = allDeps.slice(DEPLOYMENT_RETENTION)
-    const deletedIds = toDelete.map((d) => d.id)
-
-    // Collect blob hashes before cascade removes blob_tree_entries
-    const entries = await db
-        .select({ blobHash: blobTreeEntries.blobHash })
-        .from(blobTreeEntries)
-        .where(inArray(blobTreeEntries.deploymentId, deletedIds))
-
-    const candidateHashes = [...new Set(entries.map((e) => e.blobHash))]
-
-    // Cascades to blob_tree_entries — never delete MinIO blob objects
-    await db.delete(deployments).where(inArray(deployments.id, deletedIds))
-
-    if (candidateHashes.length === 0) return
-
-    const stillReferenced = await db
-        .selectDistinct({ blobHash: blobTreeEntries.blobHash })
-        .from(blobTreeEntries)
-        .where(inArray(blobTreeEntries.blobHash, candidateHashes))
-
-    const stillSet = new Set(stillReferenced.map((r) => r.blobHash))
-    const orphans = candidateHashes.filter((h) => !stillSet.has(h))
-
-    if (orphans.length > 0) {
-        // DB rows only — blobs/{hash} objects are immutable and left in MinIO
-        await db.delete(blobs).where(inArray(blobs.hash, orphans))
-    }
-}
-
 async function nextVersion(pageId: string): Promise<number> {
     const [latest] = await db
         .select({ version: deployments.version })
@@ -627,7 +588,6 @@ export async function commitBlobTreeDeploy(opts: {
     )
 
     await activateDeployment(opts.pageId, newDep.id)
-    await pruneOldDeployments(opts.pageId)
     await rebuildSiteFilesMap(opts.siteId, newDep.id)
     await invalidateSiteCache(opts.subdomain)
 
@@ -636,6 +596,11 @@ export async function commitBlobTreeDeploy(opts: {
         .from(deployments)
         .where(eq(deployments.id, newDep.id))
         .limit(1)
+
+    // fire and forget — never await
+    runDeploymentGC(opts.pageId, opts.siteId).catch((err) =>
+        console.error('GC failed silently', err)
+    )
 
     return updated
 }

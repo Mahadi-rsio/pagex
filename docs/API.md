@@ -162,7 +162,9 @@ Upload each object to the presigned URL with the raw file body (object key: `blo
 ---
 
 ### `POST /api/deploy/commit`
-Verify blobs exist, write `blobs` + `blob_tree_entries`, materialize live files, activate the deployment, invalidate `site:{subdomain}`, and consume the token.
+Load blobs, expand Brotli/Gzip/WebP variants, write `blob_tree_entries`, activate deployment, rebuild Redis `site_files:{site_id}`, invalidate `site:{subdomain}`, fire-and-forget GC, and consume the token. Request timeout: **5 minutes**.
+
+No MinIO `tenant/` materialization — Caddy serves `blobs/{hash}` via the Redis map.
 
 **Request body:**
 ```json
@@ -324,7 +326,7 @@ List the last 20 builds for a page, newest first.
 ## Deployments & Rollbacks
 
 ### `GET /api/deployments/page/:pageId`
-List all deployment versions for a page, newest first. Only one will have `is_active: true`.
+List all deployment versions for a **page** UUID (not a deployment UUID), newest first. Only one has `is_active: true`. Filtered by JWT `tenant_id` — wrong tenant returns `[]`. Retention steady state: ≤ 11 rows (1 active + 10 inactive).
 
 **Response `200`:**
 ```json
@@ -358,14 +360,14 @@ List all deployment versions for a page, newest first. Only one will have `is_ac
 ---
 
 ### `POST /api/deployments/:deploymentId/rollback`
-Roll back to a previous deployment using its `blob_tree_entries` (no MinIO snapshots).
+Roll back to a previous deployment using its `blob_tree_entries` (blob-direct; no MinIO live copy).
 
 **Workflow:**
-1. Load target deployment’s blob tree
-2. Delete live prefix
-3. Copy each `blobs/{hash}` → `tenant/{site_id}/{path}`
-4. Set `is_active = true` on target; deactivate others
-5. Invalidate Redis `site:{subdomain}`
+1. Load target deployment’s blob tree (tenant-scoped)
+2. Set `is_active = true` on target; deactivate others
+3. Rebuild Redis `site_files:{site_id}` from the target tree
+4. Invalidate Redis `site:{subdomain}`
+5. Fire-and-forget `runDeploymentGC` (retention: 10 inactive)
 
 **Response `200`:**
 ```json
@@ -381,7 +383,7 @@ Roll back to a previous deployment using its `blob_tree_entries` (no MinIO snaps
 | `200` | Rollback complete |
 | `400` | Deployment has no blob tree |
 | `404` | Deployment not found or belongs to another tenant |
-| `500` | MinIO or DB error |
+| `500` | DB / Redis error |
 
 ---
 

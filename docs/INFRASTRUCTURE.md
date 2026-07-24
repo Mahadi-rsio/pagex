@@ -6,27 +6,33 @@
 
 | Service | Container | Image/Stage | Role |
 |---------|-----------|-------------|------|
-| `app` | `express_app` | `Dockerfile` → `runner` stage | REST API (port 3000) |
-| `caddy_server` | `caddy_server` | `ghcr.io/mahadi-rsio/cdx_s3` | Caddy + static_s3 plugin |
-| `minio_server` | `minio_server` | `minio/minio` | S3-compatible object storage |
-| `postgres_db` | `postgres_db` | `postgres:16-alpine` | PostgreSQL database |
-| `redis` | `redis` | `redis:7-alpine` | Cache + BullMQ broker |
-| `upload_worker` | `upload_w` | `Dockerfile` → `runner` stage | Upload queue worker |
-| `sync_worker` | `sync_w` | `Dockerfile` → `runner` stage | Usage sync cron worker |
-| `build_worker` | `build_w` | `Dockerfile` → `build-worker` stage | Cloud build worker (has `git` + `docker-cli`) |
-| `build_env` | `build_env` | `Dockerfile` → `build-env` stage | Builds `cloudisy-build-env:latest` (pnpm base image) |
-| `migrator` | `drizzle_migrator` | `Dockerfile` → `migrator` stage | One-shot Drizzle migrations |
+| `app` | `express_app` | `Dockerfile` → `runner` | REST API (port 3000) |
+| `caddy` | `caddy_server` | `ghcr.io/mahadi-rsio/cdx_s3` | Caddy + static_s3 (blob-direct) |
+| `db` | `postgres_db` | `postgres:16-alpine` | PostgreSQL |
+| `redis` | `redis` | `redis:7-alpine` | Cache + BullMQ + `site_files` (port **6379** published) |
+| `sync_worker` | `sync_w` | `Dockerfile` → `runner` | Usage sync cron |
+| `build_worker` | `build_w` | `Dockerfile` → `build-worker` | Cloud builds (`git` + `docker-cli`) |
+| `build_env` | (one-shot) | `Dockerfile` → `build-env` | Tags `cloudisy-build-env:latest` |
+| `migrator` | `drizzle_migrator` | `Dockerfile` → `migrator` | One-shot Drizzle migrations |
+
+**Not in Compose:** MinIO is external (`MINIO_ENDPOINT_URL`).  
+**Removed:** `upload_worker` / `upload_w` (ZIP path deleted). Use `--remove-orphans` if an old container lingers.
+
+App / sync / build workers set `IN_DOCKER_COMPOSE=1` so `REDIS_URL=redis://redis:6379` keeps the Compose hostname. Host scripts remap `redis` → `localhost`.
+
+Redis and Postgres use healthchecks; workers/app wait on `redis: service_healthy` and migrator success. `build_worker` also waits on `build_env` completing.
 
 ---
 
 ## Dockerfile Stages
 
 ```
-FROM node:22-alpine AS builder      # compile TypeScript → dist/
-FROM node:22-alpine AS runner        # API + upload/sync workers
-FROM node:22-alpine AS build-worker  # runner + git + docker-cli
-FROM node:22-slim   AS build-env     # pnpm pre-installed (used as build container)
-FROM node:22-alpine AS migrator      # runs drizzle-kit migrate
+FROM node:20-alpine AS build-env     # pnpm pre-installed → cloudisy-build-env:latest
+FROM node:20-alpine AS deps          # npm install
+FROM deps AS migrator                # drizzle-kit migrate
+FROM node:20-alpine AS builder       # tsc → dist/
+FROM node:20-alpine AS runner        # API + sync worker (default: server.js)
+FROM node:20-alpine AS build-worker  # git + docker-cli → build.worker.js
 ```
 
 ---
@@ -34,31 +40,26 @@ FROM node:22-alpine AS migrator      # runs drizzle-kit migrate
 ## Service Dependencies (startup order)
 
 ```
-postgres_db  ──┐
-redis        ──┤──► drizzle_migrator ──► express_app
-               │                     └► upload_w
-               │                     └► sync_w
-               │                     └► build_w
-               └──► minio_server ──► caddy_server
+postgres_db (healthy) ──► drizzle_migrator ──► express_app
+redis (healthy)       ──┤                  └► sync_w
+                        │                  └► build_w  ← also waits on build_env
+                        └► caddy_server (also needs app started)
 ```
-
-Healthchecks ensure `postgres_db` is ready before dependents start.
 
 ---
 
 ## Volumes
 
-| Volume | Mount | Purpose |
-|--------|-------|---------|
-| `postgres_data` | `/var/lib/postgresql/data` | Persistent PG data |
-| `minio_data` | `/data` | Persistent MinIO objects |
-| `/tmp/cloudisy-builds` | `build_w:/tmp/cloudisy-builds` | Build clone directory (host path — required for DinD) |
-| `/var/run/docker.sock` | `build_w:/var/run/docker.sock` | Docker socket for spawning sibling containers |
+| Volume / bind | Mount | Purpose |
+|---------------|-------|---------|
+| `pgdata` | `/var/lib/postgresql/data` | Postgres |
+| `caddy_data` / `caddy_config` | Caddy state | TLS / config |
+| `/tmp/cloudisy-builds` | `build_w:/tmp/cloudisy-builds` | DinD build clones (host path required) |
+| `/var/run/docker.sock` | `build_w` | Spawn sibling build containers |
 
-> **DinD note:** Build containers are launched via Docker socket. The host daemon resolves volume paths. `/tmp/cloudisy-builds` **must exist on the host** before starting:
-> ```bash
-> mkdir -p /tmp/cloudisy-builds
-> ```
+```bash
+mkdir -p /tmp/cloudisy-builds
+```
 
 ---
 
@@ -67,58 +68,33 @@ Healthchecks ensure `postgres_db` is ready before dependents start.
 | Service | Port |
 |---------|------|
 | `express_app` | `3000:3000` |
-| `minio_server` API | `9000:9000` |
-| `minio_server` Console | `9001:9001` |
 | `postgres_db` | `5432:5432` |
 | `redis` | `6379:6379` |
-| `caddy_server` | `80:80`, `443:443` |
+| `caddy_server` | `80`, `443`, `2019` |
 
 ---
 
 ## Build Container (`cloudisy-build-env:latest`)
 
-The `build_env` service builds and tags this image at compose startup. It is used by the build worker to run user builds.
+Built by the `build_env` service at compose startup.
 
-- Base: `node:22-slim`
-- pnpm installed globally (`npm install -g pnpm`)
-- No app code — purely an execution environment
-
-**Build worker run flags:**
-```bash
-docker run \
-  --rm \
-  --name cloudisy-build-{jobId} \
-  --memory 1g \
-  -v /tmp/cloudisy-builds/{jobId}:/app \
-  -w /app \
-  --env KEY=VALUE \
-  cloudisy-build-env:latest \
-  sh -c "(pnpm install --frozen-lockfile 2>/dev/null || pnpm install) && pnpm build"
-```
+- Base: `node:20-alpine` + global pnpm
+- Used by build worker with `--memory 1g` and host-mounted clone dir
 
 ---
 
 ## Getting Started
 
 ```bash
-# 1. Clone
-git clone --recurse-submodules <repo-url>
-cd pagex
-
-# 2. Configure
 cp env .env
-# Edit: DB, DRIZZLE_CONNECTION, REDIS_URL, MINIO_*, BASE_DOMAIN
-
-# 3. Create build workspace (DinD requirement)
 mkdir -p /tmp/cloudisy-builds
+docker compose up --build --remove-orphans
+```
 
-# 4. Start everything
-docker compose up --build
+Optional one-time cleanup of legacy live prefixes:
 
-# First run builds:
-#  - cloudisy-build-env:latest (pnpm base image)
-#  - Caddy with static_s3 plugin (pre-built image)
-# Migrations run automatically via drizzle_migrator service
+```bash
+npx tsx src/scripts/migrate-to-blob-serving.ts
 ```
 
 ---
@@ -128,29 +104,20 @@ docker compose up --build
 | Script | Command | Usage |
 |--------|---------|-------|
 | `npm run build` | `tsc` | Compile TypeScript |
-| `npm run gen` | `drizzle-kit generate` | Generate migration from schema changes |
-| `npm run migrate` | `drizzle-kit migrate` | Apply pending migrations |
-| `npm run push` | `drizzle-kit push` | Push schema directly (dev only) |
+| `npm run gen` | `drizzle-kit generate` | Generate migration |
+| `npm run migrate` | `drizzle-kit migrate` | Apply migrations |
+| `npm run push` | `drizzle-kit push` | Dev-only schema push |
 
 ---
 
-## Caddy Plugin
+## Caddy Plugin (blob-direct)
 
-The Caddy `static_s3` plugin (submodule at `plugins/`, image: `ghcr.io/mahadi-rsio/cdx_s3`) handles:
+Image: `ghcr.io/mahadi-rsio/cdx_s3`. Config: `config/Caddyfile`.
 
-1. **Routing** — resolves `subdomain → site_id` via Redis cache → PostgreSQL
-   - Redis key: `site:{subdomain}` (5-min TTL)
-   - SQL: `SELECT id FROM sites WHERE subdomain=$1 AND active=true`
-2. **File serving** — streams from MinIO: `{SHARED_BUCKET}/{site_id}/{path}`
-3. **SPA fallback** — serves `index.html` for unknown paths
-4. **Analytics** — increments `requests:{domain}` and `bandwidth:{domain}` in Redis
-5. **Sync** — Redis counters flushed to `site_daily_stats` every 5 min
+1. **Routing** — `subdomain → site_id` via Redis `site:{subdomain}` → Postgres `sites`
+2. **Path map** — Redis `site_files:{site_id}` field = path → value = blob SHA256
+3. **File serving** — stream / redirect from MinIO `blobs/{sha256}` (with Content-Encoding when set)
+4. **Analytics** — `requests:{domain}` / `bandwidth:{domain}` counters
+5. **API reverse proxy** — `api.{BASE_DOMAIN}` → `app:3000`
 
-Config template in `config/Caddyfile`:
-```
-*.{$BASE_DOMAIN} {
-    static_s3 { ... }
-}
-```
-
-No Caddy admin API is used. A new site is live the moment `sites` row is inserted with `active=true`.
+No per-tenant Caddy config. A site is live once `sites.active=true` and `site_files` is populated by a deploy.

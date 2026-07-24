@@ -1,4 +1,5 @@
 import * as Minio from 'minio';
+import pLimit from 'p-limit'
 import 'dotenv/config'
 
 
@@ -35,6 +36,61 @@ export function liveSitePrefix(siteId: string): string {
 /** Content-addressed blob object key */
 export function blobObjectKey(hash: string): string {
     return `blobs/${hash}`
+}
+
+const BLOB_DELETE_BATCH_SIZE = 100
+const BLOB_DELETE_CONCURRENCY = 10
+
+/**
+ * Bulk-delete content-addressed blob objects (`blobs/{hash}`).
+ * Batches of 100, concurrency 10 via p-limit.
+ * Returns only hashes whose MinIO delete succeeded (failed batches/hashes are omitted).
+ */
+export async function deleteBlobObjects(hashes: string[]): Promise<string[]> {
+    if (hashes.length === 0) return []
+
+    const batches: string[][] = []
+    for (let i = 0; i < hashes.length; i += BLOB_DELETE_BATCH_SIZE) {
+        batches.push(hashes.slice(i, i + BLOB_DELETE_BATCH_SIZE))
+    }
+
+    const limit = pLimit(BLOB_DELETE_CONCURRENCY)
+    const succeeded: string[] = []
+
+    await Promise.all(
+        batches.map((batch) =>
+            limit(async () => {
+                try {
+                    const keys = batch.map((h) => blobObjectKey(h))
+                    const results = await minioClient.removeObjects(SHARED_BUCKET, keys)
+                    const failedKeys = new Set<string>()
+                    for (const result of results ?? []) {
+                        // Parser returns DeleteResult.Error entries directly ({ Key, Message, ... });
+                        // typings also allow a nested { Error: { Key } } shape — handle both.
+                        const err =
+                            result && typeof result === 'object' && 'Error' in result && result.Error
+                                ? result.Error
+                                : (result as { Key?: string; Message?: string } | null | undefined)
+                        const key = err?.Key
+                        if (key) {
+                            failedKeys.add(key)
+                            console.error(`MinIO delete failed for ${key}: ${err?.Message ?? 'unknown'}`)
+                        }
+                    }
+                    for (const hash of batch) {
+                        if (!failedKeys.has(blobObjectKey(hash))) {
+                            succeeded.push(hash)
+                        }
+                    }
+                } catch (err) {
+                    console.error('MinIO batch delete failed:', err)
+                    // Do not mark any hash in this batch as succeeded
+                }
+            })
+        )
+    )
+
+    return succeeded
 }
 
 /**

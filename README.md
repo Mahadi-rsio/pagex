@@ -1,6 +1,6 @@
 # Cloudisy Server
 
-Backend API and infrastructure for **Cloudisy** — a multi-tenant static-site hosting platform. Each user project is served as a subdomain (`mysite.cloudisy.com`) from content-addressed MinIO blobs via a custom Caddy plugin, with zero per-tenant configuration. Supports cloud builds from Git, CLI blob deploys, versioned deployments, and instant rollback.
+Backend API and infrastructure for **Cloudisy** — a multi-tenant static-site hosting platform. Each user project is served as a subdomain (`mysite.cloudisy.com`) from content-addressed MinIO blobs via a custom Caddy plugin, with zero per-tenant configuration. Supports cloud builds from Git, CLI blob deploys, versioned deployments, instant rollback, and background blob GC.
 
 ---
 
@@ -55,12 +55,13 @@ Caddy (static_s3 plugin)
 | **Routing** | Caddy resolves `subdomain → site_id → path→blob hash → blobs/{hash}` at request time. No per-tenant Caddy config. |
 | **Storage** | Immutable objects at `blobs/{sha256}` only. No `tenant/{site_id}/` live copy — commit is DB + Redis map. |
 | **Redis map** | `site_files:{site_id}` hash (path → SHA256, TTL 24h). Rebuilt on every commit/rollback; deleted on page delete. |
+| **GC** | After commit/rollback, fire-and-forget `runDeploymentGC`. Keeps **1 active + 10 inactive** (`DEPLOYMENT_RETENTION=10`). Deletes expired deployment rows and truly orphaned MinIO blobs. Never blocks the HTTP response. |
 | **Analytics** | The plugin writes `site_daily_stats` rows to PostgreSQL (Redis → PG flush on a cron). |
 | **Auth** | JWT verified via remote JWKS at `https://auth.cloudisy.com/api/auth/jwks`. |
 | **Cloud Builds** | Isolated Docker container (`cloudisy-build-env`) with pnpm, 1 GB RAM. Live RAM + Net I/O via SSE. |
 | **Deploys** | CLI: prepare → presign → commit. Limits: ≤100 files, ≤10 MB each; magic-byte + blocked-extension checks; SHA256 dedup. |
 | **Optimization** | At commit/build: Brotli + Gzip for text; WebP for PNG/JPEG/GIF. Variants are separate blob tree entries with `Content-Encoding` / `Content-Type` on the blob object. |
-| **Rollbacks** | Flip `is_active` + rebuild `site_files:{site_id}` from the target deployment’s tree. Last **5** deployments retained (DB rows only — MinIO blobs are never deleted). |
+| **Rollbacks** | Flip `is_active` + rebuild `site_files:{site_id}` from the target deployment’s tree, then fire GC. |
 | **Redis host** | Compose sets `IN_DOCKER_COMPOSE=1` so `REDIS_URL=redis://redis:6379` works in containers. Host scripts remap `redis` → `localhost` (port `6379` published). |
 
 ---
@@ -101,13 +102,15 @@ Daily analytics written by Caddy plugin. `site_id` FK → sites.
 One row per triggered cloud build. Statuses: `queued → active → completed/failed`.
 
 ### `blobs`
-Content-addressed store. PK = SHA256 hex. Object at `blobs/{hash}` in MinIO (immutable).
+Content-addressed store. PK = SHA256 hex. Object at `blobs/{hash}` in MinIO.
 
 ### `blob_tree_entries`
 Per-deployment file tree: `(deployment_id, path) → blob_hash`.
 
 ### `deployments`
 Deployment history per page. `is_active = true` marks the live version. `files_deployed` / `files_reused` track blob dedup stats.
+
+**Retention:** up to **11** rows per page (1 active + 10 inactive). Older inactive rows and orphaned blobs are removed by background GC.
 
 ---
 
@@ -120,7 +123,7 @@ All protected endpoints require `Authorization: Bearer <JWT>`.
 |--------|------|-------------|
 | `POST` | `/api/pages/create` | Create new page/site |
 | `GET` | `/api/pages` | List tenant's pages |
-| `DELETE` | `/api/pages/:id` | Delete page + Redis maps (blobs left in MinIO) |
+| `DELETE` | `/api/pages/:id` | Delete page + Redis maps (blobs left until GC / orphan cleanup) |
 | `GET` | `/api/pages/usage/:domain` | Live + DB request/bandwidth usage |
 
 ### Deploy
@@ -128,7 +131,7 @@ All protected endpoints require `Authorization: Bearer <JWT>`.
 |--------|------|-------------|
 | `POST` | `/api/deploy/prepare` | Validate manifest + issue token + size summary |
 | `POST` | `/api/deploy/presign` | Presigned PUTs for missing blobs |
-| `POST` | `/api/deploy/commit` | Compress/WebP → blob tree → Redis map (5 min timeout) |
+| `POST` | `/api/deploy/commit` | Compress/WebP → blob tree → Redis map → fire GC (5 min timeout) |
 
 ### Builds
 | Method | Path | Description |
@@ -141,8 +144,8 @@ All protected endpoints require `Authorization: Bearer <JWT>`.
 ### Deployments
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/deployments/page/:pageId` | List deployment history |
-| `POST` | `/api/deployments/:deploymentId/rollback` | Instant rollback via Redis map rebuild |
+| `GET` | `/api/deployments/page/:pageId` | List deployment history (**page** UUID, not deployment UUID) |
+| `POST` | `/api/deployments/:deploymentId/rollback` | Instant rollback via Redis map rebuild + fire GC |
 
 > See [docs/API.md](./docs/API.md) for full request/response shapes.
 
@@ -237,11 +240,25 @@ POST /api/deploy/commit  (request timeout 5 minutes)
        .png/.jpg/.jpeg/.gif → .webp (original kept)
   → store variant blobs (SHA256 of compressed/WebP bytes)
   → insert blob_tree_entries (originals + variants)
-  → activate deployment, prune DB to last 5 (no MinIO deletes)
+  → activate deployment
   → rebuild Redis site_files:{site_id} (DEL → HSET → EXPIRE 24h)
   → DEL site:{subdomain}
   → return summary { sizeReduced, imagesOptimized, … }
+  → fire-and-forget runDeploymentGC(pageId, siteId)
 ```
+
+### Background GC (`runDeploymentGC`)
+
+Runs after every successful commit and rollback. Never awaited by the HTTP handler.
+
+1. Select inactive deployments ordered by `created_at DESC` with `OFFSET 10` (`DEPLOYMENT_RETENTION`)
+2. Collect candidate blob hashes from those deployments
+3. Cross-check: drop hashes still referenced by non-expired deployments
+4. Delete orphaned objects from MinIO (`blobs/{hash}`), batches of 100, concurrency 10
+5. In a DB transaction: delete `blob_tree_entries` → `deployments` → successfully deleted `blobs` rows
+6. Log: `GC complete: N deployments cleaned, M blobs deleted, X.Y MB freed`
+
+Steady state per page: **≤ 11 deployments** (1 active + 10 inactive).
 
 **Limits / blocked types** (shared by prepare + build worker): PDF, video, executables, archives (`.zip`/`.tar`/…), `.db`/`.sqlite`/`.log`, etc. See `src/utils/deployment-validator.ts`.
 
@@ -262,7 +279,7 @@ POST /api/builds
       4. validateOutputDir (same count/size/extension rules as prepare)
          on failure → builds.status=failed, SSE error, return cleanly
       5. deployFromLocalDirectory:
-           hash → Brotli/Gzip/WebP → blobs + tree → Redis map → prune
+           hash → Brotli/Gzip/WebP → blobs + tree → Redis map → fire GC
            → [Summary] line in SSE
       6. builds row → status: completed, completed_at set
   → site is live immediately (Caddy reads blobs via Redis map)
@@ -277,13 +294,14 @@ Every deploy (CLI or build) records a blob tree in PostgreSQL. Serving uses:
 - Blobs: `{bucket}/blobs/{sha256}`
 - Map: Redis `site_files:{site_id}` → path → hash
 
-Only the last **5 versions** are retained in the DB. Rolling back:
+Rolling back:
 
 1. `POST /api/deployments/:id/rollback`
 2. Flip `is_active` flags
 3. Rebuild `site_files:{site_id}` from the target tree
 4. Invalidate `site:{subdomain}`
-5. Site live immediately — no MinIO copy, no restart
+5. Fire-and-forget GC
+6. Site live immediately — no MinIO copy, no restart
 
 ---
 
@@ -316,16 +334,17 @@ docker compose up --build -d --remove-orphans app build_worker sync_worker
 ```
 src/
 ├── app.ts / server.ts           # Express setup + entrypoint
-├── constants/index.ts           # Shared constants
+├── constants/index.ts           # Shared constants (incl. DEPLOYMENT_RETENTION=10)
 ├── middleware/auth.middleware.ts # JWT verification
 ├── infrastructure/
 │   ├── db/schema.ts             # Drizzle table definitions
 │   ├── cache/redis.ts           # ioredis (DB0 site/site_files, DB2 BullMQ, DB3 usage)
-│   └── storage/minio.ts         # MinIO client + blob helpers
+│   └── storage/minio.ts         # MinIO client + blob helpers + deleteBlobObjects
 ├── controllers/                 # Thin HTTP handlers
 ├── services/                    # Business logic
 │   ├── deploy.service.ts        # prepare / presign / commit + compress/WebP + Redis map
 │   ├── deployment.service.ts    # list + rollback
+│   ├── gc.service.ts            # background deployment + blob GC
 │   ├── build.service.ts
 │   └── page.service.ts
 ├── queue/

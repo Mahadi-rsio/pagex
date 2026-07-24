@@ -6,6 +6,7 @@ import {
     invalidateSiteCache,
     rebuildSiteFilesMap,
 } from './deploy.service.js'
+import { runDeploymentGC } from './gc.service.js'
 
 async function activateDeployment(pageId: string, deploymentId: string): Promise<void> {
     await db
@@ -53,6 +54,11 @@ export async function rollbackToDeployment(deploymentId: string, tenantId: strin
         .from(deployments)
         .where(eq(deployments.id, dep.id))
         .limit(1)
+
+    // fire and forget — never await
+    runDeploymentGC(dep.page_id, dep.site_id).catch((err) =>
+        console.error('GC failed silently', err)
+    )
 
     return updated
 }

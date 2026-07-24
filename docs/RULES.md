@@ -150,16 +150,16 @@ const worker = new Worker<MyJobData>(MY_QUEUE, async (job) => {
 
 ## MinIO Access
 
-Always use the shared helpers from `src/infrastructure/storage/minio.ts`:
-- `copyFolder(sourcePrefix, destPrefix)` — server-side copy; returns file count
-- `deleteFolder(prefix)` — bulk delete all objects under prefix
-- `deleteSiteObjects(siteId)` — convenience wrapper for `deleteFolder(`${siteId}/`)`
-- `minioClient` — raw MinIO client for custom operations
-- `SHARED_BUCKET` — always use this constant, never hardcode the bucket name
+Always use helpers from `src/infrastructure/storage/minio.ts`:
+- `blobObjectKey(hash)` — `blobs/{hash}`
+- `objectMetaForPath(path, contentType?, contentEncoding?)` — putObject metadata
+- `deleteBlobObjects(hashes)` — GC batch delete; returns successfully deleted hashes
+- `ensureSharedBucket()` — idempotent bucket create
+- `minioClient` / `SHARED_BUCKET` — raw client + env bucket (never hardcode the name)
 
-**Key prefix format:**
-- Live files: `{siteId}/` (e.g. `d48da5d0-e96d-441f-980c-d7125490efdc/index.html`)
-- Snapshots: `cloudisy-snapshots/{siteId}/v{version}/`
+**Key layout:**
+- Live serving: `blobs/{sha256}` only (via Redis `site_files` map)
+- Legacy `tenant/{siteId}/` — do not write; one-off purge via `migrate-to-blob-serving.ts`
 
 ---
 
@@ -172,12 +172,15 @@ Loaded via `dotenv`. All env access should use `process.env.VAR_NAME`.
 | `DB` | `infrastructure/db/db.ts` |
 | `DRIZZLE_CONNECTION` | `drizzle.config.ts` |
 | `REDIS_URL` | `infrastructure/cache/redis.ts` |
+| `IN_DOCKER_COMPOSE` | `redis.ts` (Compose sets `1`; host scripts omit) |
 | `MINIO_ENDPOINT` | `infrastructure/storage/minio.ts` |
 | `MINIO_PORT` | `infrastructure/storage/minio.ts` |
+| `MINIO_ENDPOINT_URL` | Caddy / compose |
+| `MINIO_USE_SSL` | `infrastructure/storage/minio.ts` |
 | `S3_ACCESS_KEY` | `infrastructure/storage/minio.ts` |
 | `S3_SECRET_KEY` | `infrastructure/storage/minio.ts` |
 | `MINIO_BUCKET` | `infrastructure/storage/minio.ts` |
-| `BASE_DOMAIN` | (referenced in docker-compose / Caddy config) |
+| `BASE_DOMAIN` | docker-compose / Caddy |
 
 ---
 
@@ -189,7 +192,7 @@ Loaded via `dotenv`. All env access should use `process.env.VAR_NAME`.
 4. **Controller**: create `src/controllers/<name>.controller.ts` — thin, calls service
 5. **Routes**: create `src/routes/<name>.routes.ts`, mount in `src/routes/index.ts`
 6. **Build & test**: `npm run build`, then test with `node test.js` or curl
-7. **Redeploy**: `docker compose up --build -d app` (or relevant service)
+7. **Redeploy**: `docker compose up --build -d --remove-orphans app` (or relevant service)
 8. **Update docs**: update `docs/API.md`, `docs/SCHEMA.md`, `docs/WORKERS.md` as needed
 
 ---
@@ -200,6 +203,8 @@ Loaded via `dotenv`. All env access should use `process.env.VAR_NAME`.
 - ❌ Do not skip the `.js` extension on local imports
 - ❌ Do not put business logic in controllers
 - ❌ Do not hardcode bucket names, queue names, or domain strings — use constants
-- ❌ Do not call `deleteSiteObjects` directly in workers — use `executeDeploymentFlow`
+- ❌ Do not copy blobs into `tenant/{siteId}/` — blob-direct serving only
+- ❌ Do not `await runDeploymentGC(...)` in commit/rollback — fire-and-forget only
+- ❌ Do not delete MinIO `blobs/{hash}` except via GC after cross-check
 - ❌ Do not run two simultaneous builds for the same page (no deploy lock yet)
 - ❌ Do not edit `drizzle/` migration files manually after they've been applied

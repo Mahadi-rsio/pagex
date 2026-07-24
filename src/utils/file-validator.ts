@@ -53,6 +53,9 @@ const EXT_ALIASES: Record<string, readonly string[]> = {
     tiff: ['tif', 'tiff'],
     htm: ['htm', 'html'],
     html: ['htm', 'html'],
+    // SVGs often start with <?xml …> so file-type reports "xml"
+    xml: ['xml', 'svg', 'xhtml'],
+    svg: ['svg', 'xml'],
 }
 
 function extractExtension(filename: string): string {

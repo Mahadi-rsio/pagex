@@ -7,7 +7,7 @@ export const DEPLOY_TOKEN_TTL_SECONDS = 10 * 60
 /** Presigned PUT URL lifetime (matches deploy token window) */
 export const PRESIGN_EXPIRY_SECONDS = 10 * 60
 /** Keep this many recent deployments per page */
-export const DEPLOYMENT_RETENTION = 5
+export const DEPLOYMENT_RETENTION = 10
 /** Redis TTL for site_files:{siteId} path→blob map (24 hours) */
 export const SITE_FILES_TTL_SECONDS = 24 * 60 * 60
 /** Commit endpoint request timeout (5 minutes) */

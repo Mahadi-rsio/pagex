@@ -5,7 +5,7 @@
 ## PostgreSQL Tables
 
 ### `sites`
-One row per project. The Caddy `static_s3` plugin reads this table to resolve subdomain → site UUID.
+One row per project. Caddy resolves subdomain → site UUID.
 
 ```sql
 id          UUID        PRIMARY KEY DEFAULT gen_random_uuid()
@@ -21,7 +21,7 @@ INDEX: idx_sites_subdomain ON (subdomain)
 ---
 
 ### `pages`
-Tenant project metadata. `site_id` is the MinIO key prefix.
+Tenant project metadata. `site_id` keys Redis `site_files:{site_id}`.
 
 ```sql
 id               UUID     PRIMARY KEY
@@ -50,22 +50,7 @@ Per-site daily analytics written by the Caddy plugin.
 id                  UUID    PRIMARY KEY
 site_id             UUID    FK → sites(id) ON DELETE CASCADE
 date                DATE    NOT NULL
-
-requests            BIGINT  DEFAULT 0
-bandwidth           BIGINT  DEFAULT 0
-
-requests_2xx        BIGINT  DEFAULT 0
-requests_3xx        BIGINT  DEFAULT 0
-requests_4xx        BIGINT  DEFAULT 0
-requests_5xx        BIGINT  DEFAULT 0
-
-humans              BIGINT  DEFAULT 0
-bots                BIGINT  DEFAULT 0
-unique_ips          BIGINT  DEFAULT 0
-
-peak_hour           TEXT    -- "YYYY-MM-DD:HH"
-peak_hour_requests  BIGINT  DEFAULT 0
-
+requests / bandwidth / status-class / humans / bots / unique_ips / peak_* …
 updated_at          TIMESTAMP DEFAULT now()
 
 INDEX: idx_site_daily_stats_site_date ON (site_id, date)
@@ -80,45 +65,67 @@ Build job records. One row per triggered build.
 id            UUID      PRIMARY KEY
 page_id       UUID      FK → pages(id) ON DELETE CASCADE
 tenant_id     TEXT      NOT NULL
-job_id        TEXT      -- BullMQ job ID (set after enqueue)
+job_id        TEXT      -- BullMQ job ID
 status        TEXT      NOT NULL DEFAULT 'queued'
-              -- values: queued | active | completed | failed
-
-repo_url      TEXT      NOT NULL
-git_provider  TEXT      NOT NULL  -- github | gitlab
-framework     TEXT      NOT NULL
-build_command TEXT      NOT NULL DEFAULT 'pnpm build'
-output_dir    TEXT      -- nullable; auto-detected if null
-error         TEXT      -- populated on failure
-triggered_by  TEXT      NOT NULL DEFAULT 'cli'
-
+              -- queued | active | completed | failed
+repo_url / git_provider / framework / build_command / output_dir / error / triggered_by
 created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-completed_at  TIMESTAMPTZ -- set by worker on finish
+completed_at  TIMESTAMPTZ
 
 INDEX: idx_builds_page_tenant_status ON (page_id, tenant_id, status)
 ```
 
 ---
 
+### `blobs`
+Content-addressed blob store (SHA256 → MinIO object `blobs/{hash}`).
+
+```sql
+hash         TEXT     PRIMARY KEY   -- SHA256 hex
+size         INTEGER  NOT NULL
+created_at   TIMESTAMP DEFAULT now()
+```
+
+---
+
 ### `deployments`
-Snapshot and deployment history. One row per deploy event. Only one per page has `is_active = true` at any time.
+Deployment history. Exactly one row per page has `is_active = true`.
 
 ```sql
 id               UUID     PRIMARY KEY
 page_id          UUID     FK → pages(id) ON DELETE CASCADE
 site_id          UUID     FK → sites(id)
 tenant_id        TEXT     NOT NULL
-build_id         UUID     FK → builds(id)  -- NULL for ZIP uploads
-version          INTEGER  NOT NULL          -- auto-incremented per page
-snapshot_prefix  TEXT     NOT NULL          -- MinIO prefix of this version's snapshot
-                          -- format: "cloudisy-snapshots/{site_id}/v{version}/"
+build_id         UUID     FK → builds(id)  -- NULL for CLI uploads
+version          INTEGER  NOT NULL
 is_active        BOOLEAN  NOT NULL DEFAULT false
 source           TEXT     NOT NULL  -- 'build' | 'upload'
 file_count       INTEGER  NOT NULL
+files_deployed   INTEGER
+files_reused     INTEGER
 created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 ```
 
-**Retention policy:** After each deploy, versions beyond the last 5 are deleted from both MinIO and this table.
+**Retention / GC** (`DEPLOYMENT_RETENTION = 10`):
+- Keep the active deployment + up to **10** most recent inactive deployments
+- Steady state ≤ **11** rows per page
+- Background `runDeploymentGC` (after commit/rollback) deletes older inactive rows, their `blob_tree_entries`, and orphaned `blobs` rows **after** successful MinIO deletes
+- Active deployment is never a GC target (`is_active = false` filter)
+
+---
+
+### `blob_tree_entries`
+File tree per deployment (path → blob hash), including compressed/WebP variants.
+
+```sql
+id              UUID  PRIMARY KEY
+deployment_id   UUID  FK → deployments(id) ON DELETE CASCADE
+path            TEXT  NOT NULL   -- e.g. index.html, index.html.br, photo.png.webp
+blob_hash       TEXT  FK → blobs(hash)
+
+UNIQUE (deployment_id, path)
+INDEX idx_blob_tree_entries_deployment ON (deployment_id)
+```
 
 ---
 
@@ -126,55 +133,43 @@ created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 
 | File | Contents |
 |------|----------|
-| `drizzle/0000_powerful_switch.sql` | Initial schema (sites, pages, site_daily_stats) |
-| `drizzle/0001_same_valeria_richards.sql` | Added builds table |
-| `drizzle/0002_tough_madame_hydra.sql` | Added deployments table |
+| `drizzle/0000_*.sql` | Initial schema (sites, pages, site_daily_stats) |
+| `drizzle/0001_*.sql` | builds table |
+| `drizzle/0002_*.sql` | deployments table |
+| later | blobs / blob_tree_entries / column tweaks |
 
-**Generate new migration:**
 ```bash
-npm run gen   # runs: drizzle-kit generate
-```
-
-**Apply migrations:**
-```bash
-npm run migrate  # runs: drizzle-kit migrate
+npm run gen       # drizzle-kit generate
+npm run migrate   # drizzle-kit migrate (also on compose up)
 ```
 
 ---
 
 ## Redis Key Reference
 
-| Key pattern | Type | TTL | Written by | Read by |
-|------------|------|-----|-----------|---------|
-| `site:{subdomain}` | String (UUID) | 5 min | Caddy plugin | Caddy plugin |
-| `requests:{domain}` | String (int counter) | — | Caddy plugin | sync.worker, page.service |
-| `bandwidth:{domain}` | String (int counter) | — | Caddy plugin | sync.worker, page.service |
-| `db_cache:{domain}` | JSON `{request, bandwidth_usage}` | 15 min | page.service | page.service |
+| Key pattern | DB | Type | TTL | Written by | Read by |
+|------------|----|------|-----|-----------|---------|
+| `site:{subdomain}` | 0 | String (UUID) | short | Caddy / API invalidation | Caddy |
+| `site_files:{site_id}` | 0 | Hash `path → sha256` | 24 h | deploy / rollback | Caddy |
+| `deploy:token:{token}` | 3 | JSON | 10 min | prepareDeploy | presign / commit |
+| `requests:{domain}` | 3 | counter | — | Caddy | sync / page.service |
+| `bandwidth:{domain}` | 3 | counter | — | Caddy | sync / page.service |
+| `db_cache:{domain}` | 3 | JSON | 15 min | page.service | page.service |
 
-**BullMQ internal keys** (managed automatically by BullMQ):
-- Queue names: `UPLOAD_QUEUE`, `CLOUDISY_CLOUD_BUILDS_QUEUE`, `SYNC_QUEUE`
-- Job logs stored per job ID; accessed via `buildQueue.getJobLogs(jobId, start)`
+**BullMQ (DB2):** queue `cloudisy-cloud-builds`, `SYNC_QUEUE`.
 
 ---
 
 ## ORM Import Pattern
 
 ```typescript
-// Always import table objects from schema
-import { pages, sites, builds, deployments } from '../infrastructure/db/schema.js'
+import { pages, sites, builds, deployments, blobs, blobTreeEntries } from '../infrastructure/db/schema.js'
 import { db } from '../infrastructure/db/db.js'
-import { eq, and, desc, ne } from 'drizzle-orm'
+import { eq, and, desc, ne, inArray, notInArray } from 'drizzle-orm'
 
-// Example select
 const [record] = await db
     .select()
     .from(pages)
     .where(and(eq(pages.id, pageId), eq(pages.tenant_id, tenantId)))
     .limit(1)
-
-// Example update
-await db
-    .update(builds)
-    .set({ status: 'completed', completed_at: new Date() })
-    .where(eq(builds.id, buildId))
 ```

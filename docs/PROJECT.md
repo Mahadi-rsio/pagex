@@ -6,7 +6,7 @@
 
 ## What This Is
 
-**Cloudisy** is a multi-tenant static-site hosting platform. Each user project ("page") is served as a subdomain (`project.cloudisy.com`) directly from MinIO object storage via a custom Caddy plugin. Zero per-tenant Caddy config changes are needed.
+**Cloudisy** is a multi-tenant static-site hosting platform. Each user project ("page") is served as a subdomain (`project.cloudisy.com`) from content-addressed MinIO blobs via a custom Caddy plugin and a Redis `site_files` path→hash map. Zero per-tenant Caddy config changes are needed.
 
 ---
 
@@ -17,13 +17,15 @@
 | Runtime | Node.js (ESM, TypeScript compiled to `dist/`) |
 | HTTP Framework | Express 5 |
 | Database | PostgreSQL via Drizzle ORM |
-| Queue / Worker | BullMQ (backed by Redis) |
-| Cache | Redis (ioredis) |
-| Object Storage | MinIO (S3-compatible) |
+| Queue / Worker | BullMQ (backed by Redis DB2) |
+| Cache | Redis (ioredis) — DB0 site/site_files, DB3 tokens/usage |
+| Object Storage | MinIO (S3-compatible) — external |
 | Auth | JOSE — remote JWKS from `https://auth.cloudisy.com/api/auth/jwks` |
-| Build containers | Docker — `cloudisy-build-env:latest` image (pnpm pre-installed, 1 GB RAM limit) |
-| Validation | Zod |
+| Build containers | Docker — `cloudisy-build-env:latest` (pnpm, 1 GB RAM) |
+| Image / compress | `sharp` (WebP), Node `zlib` (Brotli/Gzip) |
+| Validation | Zod + `file-type` magic bytes |
 | Rate limiting | express-rate-limit + rate-limit-redis |
+| Concurrency | `p-limit` (blob I/O + GC deletes, concurrency 10) |
 
 ---
 
@@ -31,76 +33,38 @@
 
 ```
 pagex/
-├── src/                   # TypeScript source (compiled → dist/)
-│   ├── app.ts             # Express app factory (rate-limit, JSON, routes)
-│   ├── server.ts          # Entrypoint: creates app, ensures MinIO bucket, starts server
-│   ├── dns-settings.ts    # Cloudflare DNS helper (unused in main flow)
-│   ├── constants/
-│   │   └── index.ts       # TOP_LEVEL_DOMAIN, RATE_LIMIT_*, SYNC_CRON_PATTERN, MAX_FILE_SIZE
-│   ├── middleware/
-│   │   └── auth.middleware.ts   # JWT verify via JWKS; sets req.id, req.name
+├── src/
+│   ├── app.ts / server.ts
+│   ├── constants/index.ts          # DEPLOYMENT_RETENTION=10, SITE_FILES_TTL, COMMIT_TIMEOUT, …
+│   ├── middleware/auth.middleware.ts
 │   ├── infrastructure/
-│   │   ├── db/
-│   │   │   ├── db.ts       # Drizzle client (postgres-js)
-│   │   │   └── schema.ts   # All table definitions (5 tables)
-│   │   ├── cache/
-│   │   │   └── redis.ts    # ioredis client + BullMQ connection config
-│   │   └── storage/
-│   │       └── minio.ts    # MinIO client, SHARED_BUCKET, helpers:
-│   │                       #   ensureBucket, deleteSiteObjects, copyFolder, deleteFolder
-│   ├── controllers/
-│   │   ├── page.controller.ts        # create, list, delete, usage
-│   │   ├── upload.controller.ts      # multipart ZIP upload → BullMQ
-│   │   ├── build.controller.ts       # trigger, status, list, SSE logs
-│   │   └── deployment.controller.ts  # list deployments, rollback
+│   │   ├── db/db.ts, schema.ts     # sites, pages, stats, builds, deployments, blobs, blob_tree_entries
+│   │   ├── cache/redis.ts          # redis (DB0), usageRedis (DB3), BullMQ connection (DB2)
+│   │   └── storage/minio.ts        # blobObjectKey, objectMetaForPath, deleteBlobObjects
+│   ├── controllers/                # page, deploy, build, deployment
 │   ├── services/
-│   │   ├── page.service.ts           # createPage, deletePage, getListPages, getPageUsage
-│   │   ├── upload.service.ts         # processUpload (wraps executeDeploymentFlow)
-│   │   ├── build.service.ts          # triggerCloudBuild, getBuildStatus, listBuilds
-│   │   ├── deployment.service.ts     # executeDeploymentFlow, rollbackToDeployment, listDeployments
-│   │   └── sync.service.ts           # flushes Redis counters → PostgreSQL
+│   │   ├── deploy.service.ts       # prepare / presign / commitBlobTreeDeploy / Redis map / variants
+│   │   ├── deployment.service.ts   # listDeployments, rollbackToDeployment
+│   │   ├── gc.service.ts           # runDeploymentGC (fire-and-forget)
+│   │   ├── build.service.ts
+│   │   ├── page.service.ts
+│   │   └── sync.service.ts
 │   ├── queue/
-│   │   ├── jobs/
-│   │   │   ├── upload.job.ts   # UPLOAD_QUEUE + UploadJobData interface
-│   │   │   ├── build.queue.ts  # CLOUDISY_CLOUD_BUILDS_QUEUE + CloudBuildJob interface
-│   │   │   └── sync.job.ts     # SYNC_QUEUE + scheduler
-│   │   └── workers/
-│   │       ├── upload.worker.ts  # Processes upload jobs (extract zip → deploy)
-│   │       ├── build.worker.ts   # Processes build jobs (clone → docker → deploy)
-│   │       └── sync.worker.ts    # Cron: flushes Redis counters to PostgreSQL
-│   ├── routes/
-│   │   ├── index.ts           # Mounts all routers + /health
-│   │   ├── page.routes.ts     # /api/pages/*
-│   │   ├── upload.routes.ts   # /upload/* (multer middleware)
-│   │   ├── build.routes.ts    # /api/builds/*
-│   │   └── deployment.routes.ts # /api/deployments/*
-│   ├── types/
-│   │   └── index.d.ts         # Express augmentations (req.id, req.name)
+│   │   ├── jobs/build.queue.ts, sync.job.ts
+│   │   └── workers/build.worker.ts, sync.worker.ts
+│   ├── routes/                     # page, deploy, build, deployment (+ /health)
+│   ├── scripts/migrate-to-blob-serving.ts
 │   ├── utils/
-│   │   ├── pipeline.ts        # Unused pipeline helper
-│   │   └── emptyBucket.ts     # One-off utility to empty a MinIO bucket
-│   └── validators/
-│       ├── page.validator.ts   # createPageSchema (project_name: string min 3)
-│       └── build.validator.ts  # triggerBuildSchema (pageId, repoUrl, gitProvider, etc.)
-├── drizzle/               # Migration SQL files (auto-generated, committed)
-│   ├── 0000_powerful_switch.sql
-│   ├── 0001_same_valeria_richards.sql
-│   └── 0002_tough_madame_hydra.sql   ← adds deployments table
-├── docker-compose.yml     # All services (see INFRASTRUCTURE.md)
-├── Dockerfile             # Multi-stage: builder → runner, build-worker, build-env
-├── drizzle.config.ts      # Points to src/infrastructure/db/schema.ts
-├── package.json
-├── tsconfig.json
-├── test.js                # End-to-end test script (Node, no test runner)
-├── README.md              # Human-facing docs
-└── docs/                  # AI-optimized documentation (this folder)
-    ├── PROJECT.md         ← you are here
-    ├── ARCHITECTURE.md    ← data flow diagrams
-    ├── API.md             ← all endpoints with request/response shapes
-    ├── WORKERS.md         ← queue job data shapes + worker step-by-step logic
-    ├── SCHEMA.md          ← full DB schema + Redis key reference
-    ├── RULES.md           ← coding conventions & patterns used in this repo
-    └── SKILL.md           ← how to perform common development tasks
+│   │   ├── deployment-validator.ts # ≤100 files, ≤10 MB, blocked extensions
+│   │   ├── file-validator.ts       # magic bytes + EXT_ALIASES (svg↔xml)
+│   │   └── http-error.ts
+│   └── validators/                 # page, build, deploy
+├── drizzle/                        # committed migrations
+├── docker-compose.yml
+├── Dockerfile                      # build-env, deps, migrator, builder, runner, build-worker
+├── docs/                           # AI docs (this folder)
+├── README.md
+└── test.js
 ```
 
 ---
@@ -109,11 +73,12 @@ pagex/
 
 | Process | File | Started by |
 |---------|------|-----------|
-| API server | `dist/src/server.js` | `express_app` Docker service |
-| Upload worker | `dist/src/queue/workers/upload.worker.js` | `upload_w` Docker service |
-| Build worker | `dist/src/queue/workers/build.worker.js` | `build_w` Docker service |
-| Sync worker | `dist/src/queue/workers/sync.worker.js` | `sync_w` Docker service |
-| Migrations | `drizzle-kit migrate` | `drizzle_migrator` Docker service (one-shot) |
+| API server | `dist/src/server.js` | `express_app` |
+| Build worker | `dist/src/queue/workers/build.worker.js` | `build_w` |
+| Sync worker | `dist/src/queue/workers/sync.worker.js` | `sync_w` |
+| Migrations | `drizzle-kit migrate` | `drizzle_migrator` (one-shot) |
+
+No upload worker — CLI blob deploy replaced ZIP uploads.
 
 ---
 
@@ -122,51 +87,59 @@ pagex/
 | Constant | Value | Usage |
 |----------|-------|-------|
 | `TOP_LEVEL_DOMAIN` | `'localhost'` | Domain suffix for new pages |
-| `TEMP_ZIPS_DIR` | `'temp_zips'` | Multer upload destination |
-| `MAX_FILE_SIZE` | `250 MB` | Multer upload limit |
-| `RATE_LIMIT_WINDOW_MS` | 15 min | Rate limiter window |
-| `RATE_LIMIT_MAX` | 100 | Requests per window |
-| `SYNC_CRON_PATTERN` | `'0 */2 * * * *'` | Every 2 minutes |
+| `MAX_FILE_SIZE` | 250 MB | Total deploy size cap (prepare) |
+| `MAX_DEPLOY_FILE_SIZE` | 50 MB | Per-file magic-byte path (validator also enforces 10 MB) |
+| `DEPLOY_TOKEN_TTL_SECONDS` | 10 min | `deploy:token:*` |
+| `PRESIGN_EXPIRY_SECONDS` | 10 min | Presigned PUT lifetime |
+| `DEPLOYMENT_RETENTION` | **10** | Keep this many **inactive** deployments; GC deletes the rest |
+| `SITE_FILES_TTL_SECONDS` | 24 h | Redis `site_files:{siteId}` |
+| `COMMIT_TIMEOUT_MS` | 5 min | `/api/deploy/commit` only |
+| `BLOB_IO_CONCURRENCY` | 10 | `p-limit` for blob I/O + GC |
+| `RATE_LIMIT_*` | 100 / 15 min | Express rate limit |
+| `SYNC_CRON_PATTERN` | every 2 min | Usage flush |
 
 ---
 
 ## Authentication
 
-Every protected endpoint uses `authMiddleware` (`src/middleware/auth.middleware.ts`):
-- Expects `Authorization: Bearer <JWT>` header
-- Verifies with JWKS at `https://auth.cloudisy.com/api/auth/jwks`
-- Sets `req.id = payload.id` (tenant ID) and `req.name = payload.name` (tenant name)
-- On failure: `401 { error: "Invalid or expired token" }`
+Every protected endpoint uses `authMiddleware`:
+- `Authorization: Bearer <JWT>`
+- JWKS: `https://auth.cloudisy.com/api/auth/jwks`
+- Sets `req.id` = tenant ID, `req.name` = tenant name
+- List/rollback filter by `tenant_id` — wrong tenant → empty list or 404, not a cross-tenant leak
 
 ---
 
 ## MinIO Storage Layout
 
 ```
-cloudisy-sites/
-  {site_id}/                     ← live files served by Caddy
-    index.html
-    assets/...
-
-cloudisy-snapshots/
-  {site_id}/
-    v1/                          ← deployment snapshot (last 5 kept)
-      index.html
-      assets/...
-    v2/
-      ...
+{MINIO_BUCKET}/
+  blobs/{sha256}          ← only live serving path (immutable objects)
+  tenant/{site_id}/...    ← LEGACY — removed by migrate-to-blob-serving.ts
 ```
 
-Bucket: `cloudisy-sites` (single bucket for both prefixes — `SHARED_BUCKET` env var)
+Caddy never reads `tenant/`. It resolves `site_files:{site_id}` → hash → `blobs/{hash}`.
+
+Blob objects may carry `Content-Type` and `Content-Encoding` (`br` / `gzip`) for precompressed variants.
 
 ---
 
 ## Redis Key Reference
 
-| Key pattern | Type | TTL | Written by |
-|------------|------|-----|-----------|
-| `site:{subdomain}` | String (UUID) | 5 min | Caddy plugin |
-| `requests:{domain}` | String (counter) | none | Caddy plugin |
-| `bandwidth:{domain}` | String (counter) | none | Caddy plugin |
-| `db_cache:{domain}` | JSON string | 15 min | page.service.ts |
-| BullMQ internal keys | Hash/List | BullMQ managed | BullMQ |
+| Key pattern | Redis DB | Type | TTL | Written by |
+|------------|----------|------|-----|-----------|
+| `site:{subdomain}` | 0 | String (UUID) | short | Caddy / invalidated by API |
+| `site_files:{site_id}` | 0 | Hash path→SHA256 | 24 h | deploy / rollback / cleared on page delete |
+| `deploy:token:{token}` | 3 | JSON | 10 min | prepareDeploy |
+| `requests:{domain}` | 3* | counter | — | Caddy |
+| `bandwidth:{domain}` | 3* | counter | — | Caddy |
+| `db_cache:{domain}` | 3* | JSON | 15 min | page.service |
+| BullMQ keys | 2 | — | — | BullMQ |
+
+\* Usage keys use the `usageRedis` client (DB3). Compose sets `IN_DOCKER_COMPOSE=1` so hostname `redis` is kept inside containers; host scripts remap to `localhost`.
+
+---
+
+## Deploy / GC flow (one-liner)
+
+`commitBlobTreeDeploy` / rollback → activate + rebuild `site_files` + invalidate `site:` → **fire-and-forget** `runDeploymentGC(pageId, siteId)` (never await).
