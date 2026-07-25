@@ -2,7 +2,7 @@
 
 > All endpoints are prefixed with the server root (default: `http://localhost:3000`).
 > All protected endpoints require: `Authorization: Bearer <JWT>`
-> The JWT is issued by `https://auth.cloudisy.com`. The payload must contain `id` (tenant ID) and `name` (tenant name).
+> The JWT is issued by next-web Better Auth (console on `:3080`). The payload must contain `id` (tenant ID) and `name` (tenant name). Express verifies via `AUTH_JWKS_URL` (Compose: `http://next_web:3000/api/auth/jwks`).
 
 ---
 

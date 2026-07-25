@@ -20,7 +20,7 @@
 | Queue / Worker | BullMQ (backed by Redis DB2) |
 | Cache | Redis (ioredis) — DB0 site/site_files, DB3 tokens/usage |
 | Object Storage | MinIO (S3-compatible) — external |
-| Auth | JOSE — remote JWKS from `https://auth.cloudisy.com/api/auth/jwks` |
+| Auth | JOSE — JWKS from next-web (`AUTH_JWKS_URL`) |
 | Build containers | Docker — `cloudisy-build-env:latest` (pnpm, 1 GB RAM) |
 | Image / compress | `sharp` (WebP), Node `zlib` (Brotli/Gzip) |
 | Validation | Zod + `file-type` magic bytes |
@@ -104,7 +104,7 @@ No upload worker — CLI blob deploy replaced ZIP uploads.
 
 Every protected endpoint uses `authMiddleware`:
 - `Authorization: Bearer <JWT>`
-- JWKS: `https://auth.cloudisy.com/api/auth/jwks`
+- JWKS: `AUTH_JWKS_URL` (Compose: `http://next_web:3000/api/auth/jwks`; host default `http://localhost:3080/api/auth/jwks`)
 - Sets `req.id` = tenant ID, `req.name` = tenant name
 - List/rollback filter by `tenant_id` — wrong tenant → empty list or 404, not a cross-tenant leak
 

@@ -7,6 +7,10 @@
 	}
 }
 
+# next-web console route snippets (static export UI + /api → next_web)
+import caddy/snippets.caddy
+import caddy/routes.caddy
+
 # ── Shared static site handlers (imported by HTTP + HTTPS blocks) ───────────
 (static_site) {
 	# Hashed assets — cache aggressively in browser (immutable)
@@ -67,6 +71,13 @@
 		}
 		format json
 	}
+}
+
+# ── next-web console (same caddy_server, dedicated port) ────────────────────
+# Static UI from next_web_static volume (/srv); /api/* → next_web:3000
+:3080 {
+	encode gzip zstd
+	import app_routes
 }
 
 # ── Local testing: plain HTTP (no TLS) ──────────────────────────────────────

@@ -1,7 +1,13 @@
 import type { Request, Response, NextFunction } from 'express'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 
-const JWKS = createRemoteJWKSet(new URL('https://auth.cloudisy.com/api/auth/jwks'))
+/**
+ * JWKS from next-web Better Auth.
+ * Compose sets AUTH_JWKS_URL=http://next_web:3000/api/auth/jwks (in-network).
+ * Host / local default: console Caddy on :3080.
+ */
+const JWKS_URL = process.env.AUTH_JWKS_URL || 'http://localhost:3080/api/auth/jwks'
+const JWKS = createRemoteJWKSet(new URL(JWKS_URL))
 
 export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
     const authHeader = req.headers.authorization

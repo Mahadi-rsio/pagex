@@ -1,0 +1,11 @@
+{
+  "name": "next-web-auth-migrator",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "drizzle-kit": "^0.31.10",
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.16.3"
+  }
+}

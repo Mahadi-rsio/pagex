@@ -57,7 +57,7 @@ Caddy (static_s3 plugin)
 | **Redis map** | `site_files:{site_id}` hash (path → SHA256, TTL 24h). Rebuilt on every commit/rollback; deleted on page delete. |
 | **GC** | After commit/rollback, fire-and-forget `runDeploymentGC`. Keeps **1 active + 10 inactive** (`DEPLOYMENT_RETENTION=10`). Deletes expired deployment rows and truly orphaned MinIO blobs. Never blocks the HTTP response. |
 | **Analytics** | The plugin writes `site_daily_stats` rows to PostgreSQL (Redis → PG flush on a cron). |
-| **Auth** | JWT verified via remote JWKS at `https://auth.cloudisy.com/api/auth/jwks`. |
+| **Auth** | JWT verified via JWKS from next-web (`AUTH_JWKS_URL`, default local console `:3080`). |
 | **Cloud Builds** | Isolated Docker container (`cloudisy-build-env`) with pnpm, 1 GB RAM. Live RAM + Net I/O via SSE. |
 | **Deploys** | CLI: prepare → presign → commit. Limits: ≤100 files, ≤10 MB each; magic-byte + blocked-extension checks; SHA256 dedup. |
 | **Optimization** | At commit/build: Brotli + Gzip for text; WebP for PNG/JPEG/GIF. Variants are separate blob tree entries with `Content-Encoding` / `Content-Type` on the blob object. |
@@ -71,15 +71,21 @@ Caddy (static_s3 plugin)
 | Container | Image / Build | Role |
 |-----------|---------------|------|
 | `express_app` | `./Dockerfile` (`runner`) | REST API |
-| `caddy_server` | `ghcr.io/mahadi-rsio/cdx_s3` | Caddy + `static_s3` plugin |
+| `caddy_server` | `ghcr.io/mahadi-rsio/cdx_s3` | Caddy + `static_s3` + console on `:3080` |
 | `postgres_db` | `postgres:16-alpine` | Primary database |
 | `redis` | `redis:7-alpine` | Cache + BullMQ + `site_files` map (`6379` published for host scripts) |
 | `sync_w` | `./Dockerfile` (`runner`) | Usage sync worker |
 | `build_w` | `./Dockerfile` (`build-worker`) | Cloud build queue worker — `git` + `docker-cli` |
 | `build_env` | `./Dockerfile` (`build-env`) | Tags `cloudisy-build-env:latest` (pnpm) for cloud builds |
 | `drizzle_migrator` | `./Dockerfile` (`migrator`) | One-shot schema migrations |
+| `next_web` | `ghcr.io/mahadi-rsio/next-web` | Console API + syncs static UI into volume |
+| `next_web_migrator` | `config/next-web/Dockerfile.migrator` | One-shot Better Auth schema migrations |
 
 MinIO is **external** (configure `MINIO_ENDPOINT_URL` / credentials in `.env`). There is no `upload_w` — ZIP upload was removed in favor of blob-direct CLI deploys.
+
+**next-web auth DB:** `next_web_migrator` applies Better Auth tables (`user`, `session`, `jwks`, …) into the same Postgres before `next_web` starts (tracked in `next_web_drizzle_migrations`).
+
+**Console UI:** same `caddy_server` listens on **:3080**, serves static from `next_web_static`, proxies `/api/*` → `next_web` (snippets under `config/next-web/caddy/`).
 
 ---
 
@@ -170,6 +176,14 @@ Copy `env` to `.env` before starting.
 | `BASE_DOMAIN` | `localhost` | Base domain for subdomain routing |
 | `POSTGRES_USER/PASSWORD/DB` | — | PostgreSQL init vars |
 | `IN_DOCKER_COMPOSE` | — | Set to `1` by Compose for app/workers (do not set on host) |
+| `BETTER_AUTH_URL` | `http://localhost:3080` | Public URL of the next-web console (Caddy) |
+| `BETTER_AUTH_TRUSTED_ORIGINS` | `http://localhost:3080` | Better Auth trusted origins |
+| `PUBLIC_URL` | `http://localhost:3080` | Public console origin (must match browser URL) |
+| `NEXT_WEB_DATABASE_URL` | (falls back to `DIRECT_DB`) | Optional separate DSN for next-web |
+| `BETTER_AUTH_SECRET` | — | Required by next-web (set a long random secret) |
+| `ENABLE_EMAIL_PASSWORD` / `NEXT_PUBLIC_ENABLE_EMAIL_PASSWORD` | `true` | Email/password login gates |
+| `GITHUB_*` / `GOOGLE_*` / `SMTP_*` / `SENDER` / `BREVO_API_KEY` / `SMS_TOKEN` | — | Optional OAuth / email / SMS |
+| `AUTH_JWKS_URL` | `http://localhost:3080/api/auth/jwks` | JWKS for Express JWT verify. Compose overrides to `http://next_web:3000/api/auth/jwks`. |
 
 ---
 
@@ -200,6 +214,18 @@ docker compose up --build --remove-orphans
 > **First run:** Builds `cloudisy-build-env:latest` (pnpm base image). Migrations run automatically via `drizzle_migrator`.
 
 > **DinD note:** `build_w` mounts `/var/run/docker.sock` and `/tmp/cloudisy-builds`. The host path must exist for volume mounts in build containers to resolve correctly.
+
+### Console (next-web)
+
+After Compose is up:
+
+| Check | URL / command |
+|-------|----------------|
+| Console UI | http://localhost:3080 |
+| Login | http://localhost:3080/login/ |
+| Health | `curl -sS http://localhost:3080/api/health` |
+
+Caddy config: site serving in `config/Caddyfile`; console routes imported from `config/next-web/caddy/`. Set `BETTER_AUTH_SECRET` (and any OAuth/SMTP vars) in `.env`. Auth tables are created by `next_web_migrator` on `docker compose up`.
 
 ### One-time: purge legacy `tenant/` objects
 

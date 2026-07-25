@@ -1,10 +1,15 @@
 # Cloudisy — Docker Compose
 #
-# Services: app API, build/sync workers, Postgres, Redis, Caddy (static_s3).
+# Services: app API, build/sync workers, Postgres, Redis, Caddy (static_s3 + console),
+# next-web console API (GHCR image; static UI served by the same Caddy on :3080).
 # MinIO is external (MINIO_ENDPOINT_URL) — not run in this compose file.
 #
 # Serving path (blob-direct):
 #   Caddy → Redis site:{subdomain} → site_files:{site_id} path→hash → MinIO blobs/{hash}
+#
+# Console (next-web):
+#   next_web_migrator → Better Auth tables; caddy_server :3080 → static + /api/* → next_web
+#   Express verifies JWTs via AUTH_JWKS_URL → next_web:3000/api/auth/jwks
 #
 # Host-side scripts (tsx / test.js): Redis is published on localhost:6379.
 # Compose services set IN_DOCKER_COMPOSE=1 so REDIS_URL keeps hostname `redis`.
@@ -44,6 +49,7 @@ services:
     env_file: .env
     environment:
       IN_DOCKER_COMPOSE: "1"
+      AUTH_JWKS_URL: ${AUTH_JWKS_URL:-http://next_web:3000/api/auth/jwks}
     expose:
       - "3000"
     ports:
@@ -65,6 +71,7 @@ services:
     env_file: .env
     environment:
       IN_DOCKER_COMPOSE: "1"
+      AUTH_JWKS_URL: ${AUTH_JWKS_URL:-http://next_web:3000/api/auth/jwks}
     command: ["node", "dist/src/queue/workers/sync.worker.js"]
     depends_on:
       migrator:
@@ -83,6 +90,7 @@ services:
     env_file: .env
     environment:
       IN_DOCKER_COMPOSE: "1"
+      AUTH_JWKS_URL: ${AUTH_JWKS_URL:-http://next_web:3000/api/auth/jwks}
     depends_on:
       migrator:
         condition: service_completed_successfully
@@ -112,11 +120,14 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "3080:3080"
       - "2019:2019"
     volumes:
-      - ./config/Caddyfile:/etc/caddy/Caddyfile
+      - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./config/next-web/caddy:/etc/caddy/caddy:ro
       - ./certs/cert.pem:/etc/caddy/certs/cert.pem:ro
       - ./certs/key.pem:/etc/caddy/certs/key.pem:ro
+      - next_web_static:/srv
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
@@ -125,6 +136,8 @@ services:
       redis:
         condition: service_healthy
       app:
+        condition: service_started
+      next_web:
         condition: service_started
     restart: unless-stopped
     logging:
@@ -199,10 +212,58 @@ services:
     networks:
       - cloudisy_network
 
+  # next-web Better Auth schema (user, session, jwks, …). Separate migrations table.
+  next_web_migrator:
+    build:
+      context: ./config/next-web
+      dockerfile: Dockerfile.migrator
+    container_name: next_web_migrator
+    environment:
+      DATABASE_URL: ${NEXT_WEB_DATABASE_URL:-${DIRECT_DB}}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    restart: "no"
+    networks:
+      - cloudisy_network
+
+  # next-web console (static UI + Better Auth API). Image: runner stage only.
+  next_web:
+    image: ghcr.io/mahadi-rsio/next-web:latest
+    container_name: next_web
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${NEXT_WEB_DATABASE_URL:-${DIRECT_DB}}
+      REDIS_URL: redis://redis:6379
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3080}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3080}
+      BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-http://localhost:3080}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+      ENABLE_EMAIL_PASSWORD: ${ENABLE_EMAIL_PASSWORD:-true}
+      NEXT_PUBLIC_ENABLE_EMAIL_PASSWORD: ${NEXT_PUBLIC_ENABLE_EMAIL_PASSWORD:-true}
+    volumes:
+      - next_web_static:/shared/static
+    expose:
+      - "3000"
+    depends_on:
+      next_web_migrator:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - cloudisy_network
+
 volumes:
   pgdata:
   caddy_data:
   caddy_config:
+  next_web_static:
 
 networks:
   cloudisy_network:

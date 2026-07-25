@@ -33,3 +33,26 @@ MINIO_BUCKET=
 # Base domain used by caddy static_s3 plugin for subdomain extraction.
 # e.g. BASE_DOMAIN=cloudisy.com → "mysite.cloudisy.com" extracts subdomain "mysite"
 BASE_DOMAIN=localhost
+
+# ── next-web console (same Caddy on :3080 → next_web) ───────────────────────
+# Public URLs must match the browser origin (Caddy :3080), not next_web:3000.
+# Optional DB override; defaults to DIRECT_DB (same Postgres as Cloudisy).
+# NEXT_WEB_DATABASE_URL=postgresql://postgres:postgres@db:5432/mydb
+PUBLIC_URL=http://localhost:3080
+BETTER_AUTH_URL=http://localhost:3080
+BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:3080
+BETTER_AUTH_SECRET=replace-with-a-long-random-secret
+# Set either to "false" to disable email/password login (OAuth still works).
+ENABLE_EMAIL_PASSWORD=true
+NEXT_PUBLIC_ENABLE_EMAIL_PASSWORD=true
+# In-compose JWKS (Express verifies console JWTs). Host scripts use localhost:3080.
+# AUTH_JWKS_URL=http://next_web:3000/api/auth/jwks
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+SMTP_HOST=
+SMTP_PORT=587
+SENDER=
+BREVO_API_KEY=
+SMS_TOKEN=
