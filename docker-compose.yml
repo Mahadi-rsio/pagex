@@ -2,7 +2,6 @@
 #
 # Services: app API, build/sync workers, Postgres, Redis, Caddy (static_s3).
 # MinIO is external (MINIO_ENDPOINT_URL) — not run in this compose file.
-# ZIP upload_worker was removed; deploys are content-addressed blobs only.
 #
 # Serving path (blob-direct):
 #   Caddy → Redis site:{subdomain} → site_files:{site_id} path→hash → MinIO blobs/{hash}
@@ -29,7 +28,7 @@ services:
     env_file: .env
     environment:
       # Use the in-network DB host (not localhost from host-side DRIZZLE_CONNECTION)
-      DRIZZLE_CONNECTION: ${DB}
+      DRIZZLE_CONNECTION: ${DIRECT_DB}
     depends_on:
       db:
         condition: service_healthy
@@ -44,7 +43,6 @@ services:
     container_name: express_app
     env_file: .env
     environment:
-      # Keep REDIS_URL hostname `redis` (do not remap to localhost)
       IN_DOCKER_COMPOSE: "1"
     expose:
       - "3000"
@@ -95,8 +93,6 @@ services:
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      # Shared with the host so `docker run -v /tmp/cloudisy-builds/...` works
-      # (Docker socket connects to the host daemon, which needs to see these paths)
       - /tmp/cloudisy-builds:/tmp/cloudisy-builds
     networks:
       - cloudisy_network
@@ -119,7 +115,6 @@ services:
       - "2019:2019"
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
-      # Local: dummy self-signed in certs/. Prod: replace with Cloudflare Origin CA files.
       - ./certs/cert.pem:/etc/caddy/certs/cert.pem:ro
       - ./certs/key.pem:/etc/caddy/certs/key.pem:ro
       - caddy_data:/data
@@ -158,12 +153,42 @@ services:
     networks:
       - cloudisy_network
 
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.2-p0
+    container_name: pgbouncer
+    env_file: .env
+    ports:
+      - "6432:6432"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      LISTEN_PORT: 6432
+      POOL_MODE: transaction
+      AUTH_TYPE: scram-sha-256
+      AUTH_USER: ${POSTGRES_USER}
+      AUTH_QUERY: "SELECT usename, passwd FROM pg_shadow WHERE usename=$1"
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 25
+      MIN_POOL_SIZE: 5
+      RESERVE_POOL_SIZE: 5
+      RESERVE_POOL_TIMEOUT: 3
+      SERVER_RESET_QUERY: ""
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits,options
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+    networks:
+      - cloudisy_network
+
   redis:
     image: redis:7-alpine
     container_name: redis
     command: redis-server
     ports:
-      # Host scripts (npx tsx, test.js) use localhost:6379
       - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -173,7 +198,6 @@ services:
     restart: unless-stopped
     networks:
       - cloudisy_network
-
 
 volumes:
   pgdata:

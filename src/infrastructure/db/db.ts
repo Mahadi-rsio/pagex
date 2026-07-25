@@ -1,10 +1,15 @@
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
-import "dotenv/config"
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import "dotenv/config";
 
+const connectionString = process.env.DB!;
 
-const pool = new Pool({
-    connectionString: process.env.DB
-})
+const client = postgres(connectionString, {
+    // CRITICAL for transaction mode: disable prepared statements
+    prepare: false,
+    max: 10,
+    idle_timeout: 20,
+    max_lifetime: 1800,
+});
 
-export const db = drizzle(pool)
+export const db = drizzle(client);
