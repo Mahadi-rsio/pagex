@@ -1,0 +1,22 @@
+{
+  "name": "@pagex/blob-server",
+  "version": "1.0.0",
+  "description": "PageX Blob Server - Caddy with static_s3 plugin for content-addressed blob serving",
+  "private": true,
+  "scripts": {
+    "build": "go build -o caddy .",
+    "test": "go test -v ./...",
+    "run": "go run .",
+    "xcaddy": "xcaddy build --with github.com/Mahadi-rsio/pagex/services/blob-server=. --output ./caddy"
+  },
+  "keywords": [
+    "pagex",
+    "blob-server",
+    "caddy",
+    "static-s3",
+    "storage",
+    "s3"
+  ],
+  "author": "",
+  "license": "MIT"
+}

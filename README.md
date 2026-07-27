@@ -1,389 +1,394 @@
-# Cloudisy Server
+# PageX - Multi-tenant Static Site Hosting Platform
 
-Backend API and infrastructure for **Cloudisy** — a multi-tenant static-site hosting platform. Each user project is served as a subdomain (`mysite.cloudisy.com`) from content-addressed MinIO blobs via a custom Caddy plugin, with zero per-tenant configuration. Supports cloud builds from Git, CLI blob deploys, versioned deployments, instant rollback, and background blob GC.
+A scalable, Nix-based monorepo for hosting multi-tenant static sites with content-addressed blob storage, automatic optimization, and instant deployments.
 
----
-
-## AI Documentation
-
-For AI assistants working on this codebase, a dense reference is in `docs/`:
-
-| File | Contents |
-|------|----------|
-| [docs/SKILL.md](./docs/SKILL.md) | **Start here** — quick orientation + common task recipes |
-| [docs/PROJECT.md](./docs/PROJECT.md) | Full file tree, entry points, constants, MinIO/Redis layout |
-| [docs/API.md](./docs/API.md) | All HTTP endpoints with request/response shapes |
-| [docs/SCHEMA.md](./docs/SCHEMA.md) | All DB tables + Drizzle query patterns + Redis keys |
-| [docs/WORKERS.md](./docs/WORKERS.md) | BullMQ job data shapes + worker step-by-step logic |
-| [docs/RULES.md](./docs/RULES.md) | Coding conventions, patterns, what NOT to do |
-| [docs/INFRASTRUCTURE.md](./docs/INFRASTRUCTURE.md) | Docker services, volumes, ports, Caddy plugin |
-
----
-
-## Architecture
+## 🏗️ Architecture
 
 ```
-Client
-  │
-  ▼
-Caddy (static_s3 plugin)
-  │  1. Extract subdomain from Host header
-  │  2. Redis GET "site:{subdomain}"  →  site UUID (short TTL)
-  │       miss → SELECT id FROM sites WHERE subdomain=$1 AND active=true
-  │  3. Redis HGET "site_files:{site_id}" "{path}"  →  blob SHA256
-  │  4. Stream object from MinIO:  {bucket}/blobs/{sha256}
-  │
-  ├──▶ MinIO  (content-addressed blobs only — external / not in Compose)
-  │
-  └──▶ Express API  (site management, deploys, cloud builds, rollbacks, analytics)
-            │
-            ├── PostgreSQL  (sites, pages, site_daily_stats, builds, deployments, blobs, blob_tree_entries)
-            ├── Redis
-            │     DB0  site:{subdomain}, site_files:{site_id}
-            │     DB2  BullMQ
-            │     DB3  deploy:token:*, usage counters, db_cache:*
-            └── BullMQ Workers
-                    ├── sync    — flush Redis usage counters → PostgreSQL
-                    └── build   — git clone → docker build → blobs + Redis map
-                                  (1 GB RAM limit · live stats via SSE)
+┌─────────────────────────────────────────────────────────────────┐
+│                         PageX Platform                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
+│  │   Console     │    │  Blob Server  │    │     API      │      │
+│  │  (Next.js)    │    │  (Caddy)      │    │  (Express)   │      │
+│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘      │
+│         │                  │                  │                │
+│         └──────────┬───────┘                  │                │
+│                    │                          │                │
+│         ┌──────────▼───────┐                  │                │
+│         │    Caddy          │◄─────────────────┘                │
+│         │  (Reverse Proxy)   │                                    │
+│         └──────────┬───────┘                                    │
+│                    │                                             │
+│         ┌──────────▼───────┐                                    │
+│         │    Client         │                                    │
+│         │  (Browser)        │                                    │
+│         └──────────────────┘                                    │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │                    Shared Infrastructure                    │   │
+│  ├─────────────────┬─────────────────┬─────────────────┐    │   │
+│  │  PostgreSQL      │    Redis         │    MinIO         │    │   │
+│  │  (Database)      │  (Cache/Queue)   │  (Storage)        │    │   │
+│  └─────────────────┴─────────────────┴─────────────────┘    │   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Key design decisions
+## 📁 Project Structure
 
-| Topic | Decision |
-|-------|----------|
-| **Routing** | Caddy resolves `subdomain → site_id → path→blob hash → blobs/{hash}` at request time. No per-tenant Caddy config. |
-| **Storage** | Immutable objects at `blobs/{sha256}` only. No `tenant/{site_id}/` live copy — commit is DB + Redis map. |
-| **Redis map** | `site_files:{site_id}` hash (path → SHA256, TTL 24h). Rebuilt on every commit/rollback; deleted on page delete. |
-| **GC** | After commit/rollback, fire-and-forget `runDeploymentGC`. Keeps **1 active + 10 inactive** (`DEPLOYMENT_RETENTION=10`). Deletes expired deployment rows and truly orphaned MinIO blobs. Never blocks the HTTP response. |
-| **Analytics** | The plugin writes `site_daily_stats` rows to PostgreSQL (Redis → PG flush on a cron). |
-| **Auth** | JWT verified via JWKS from next-web (`AUTH_JWKS_URL`, default local console `:3080`). |
-| **Cloud Builds** | Isolated Docker container (`cloudisy-build-env`) with pnpm, 1 GB RAM. Live RAM + Net I/O via SSE. |
-| **Deploys** | CLI: prepare → presign → commit. Limits: ≤100 files, ≤10 MB each; magic-byte + blocked-extension checks; SHA256 dedup. |
-| **Optimization** | At commit/build: Brotli + Gzip for text; WebP for PNG/JPEG/GIF. Variants are separate blob tree entries with `Content-Encoding` / `Content-Type` on the blob object. |
-| **Rollbacks** | Flip `is_active` + rebuild `site_files:{site_id}` from the target deployment’s tree, then fire GC. |
-| **Redis host** | Compose sets `IN_DOCKER_COMPOSE=1` so `REDIS_URL=redis://redis:6379` works in containers. Host scripts remap `redis` → `localhost` (port `6379` published). |
+```
+pagex/
+├── services/                    # Core services
+│   ├── api/                    # Main Express backend
+│   │   ├── src/                # TypeScript source
+│   │   ├── Dockerfile          # Multi-stage Docker build
+│   │   └── flake.nix           # Nix development environment
+│   │
+│   ├── blob-server/           # Caddy with static_s3 plugin
+│   │   ├── src/                # Go source
+│   │   ├── Dockerfile          # Docker build
+│   │   └── flake.nix           # Nix development environment
+│   │
+│   └── console/               # Next.js web console
+│       ├── src/                # Next.js source
+│       ├── Dockerfile          # Multi-stage Docker build
+│       └── flake.nix           # Nix development environment
+│
+├── packages/                   # Shared packages
+│   ├── types/                 # TypeScript type definitions
+│   ├── utils/                 # Utility functions
+│   └── config/                # Configuration management
+│
+├── infrastructure/             # Infrastructure as code
+│   ├── docker/                # Docker configurations
+│   │   └── compose/           # Docker Compose files
+│   ├── kubernetes/            # Kubernetes manifests (future)
+│   ├── configs/               # Configuration files
+│   │   ├── caddy/             # Caddy configurations
+│   │   ├── databases/         # Database configurations
+│   │   └── .env              # Default environment variables
+│   └── certs/                # SSL certificates
+│
+├── scripts/                   # Global scripts
+│   ├── migrations/            # Database migrations
+│   └── setup/                 # Setup scripts
+│
+├── docs/                      # Documentation
+│   ├── architecture.md        # System architecture
+│   ├── services/             # Service documentation
+│   └── development.md         # Development guide
+│
+├── flake.nix                  # Root Nix flake
+├── flake.lock                 # Nix flake lock file
+├── package.json               # Root package.json (pnpm workspaces)
+├── turbo.json                 # Turbo build configuration
+└── README.md                  # This file
+```
 
----
+## 🚀 Getting Started
 
-## Services
+### Prerequisites
 
-| Container | Image / Build | Role |
-|-----------|---------------|------|
-| `express_app` | `./Dockerfile` (`runner`) | REST API |
-| `caddy_server` | `ghcr.io/mahadi-rsio/cdx_s3` | Caddy + `static_s3` + console on `:3080` |
-| `postgres_db` | `postgres:16-alpine` | Primary database |
-| `redis` | `redis:7-alpine` | Cache + BullMQ + `site_files` map (`6379` published for host scripts) |
-| `sync_w` | `./Dockerfile` (`runner`) | Usage sync worker |
-| `build_w` | `./Dockerfile` (`build-worker`) | Cloud build queue worker — `git` + `docker-cli` |
-| `build_env` | `./Dockerfile` (`build-env`) | Tags `cloudisy-build-env:latest` (pnpm) for cloud builds |
-| `drizzle_migrator` | `./Dockerfile` (`migrator`) | One-shot schema migrations |
-| `next_web` | `ghcr.io/mahadi-rsio/next-web` | Console API + syncs static UI into volume |
-| `next_web_migrator` | `config/next-web/Dockerfile.migrator` | One-shot Better Auth schema migrations |
+- [Nix](https://nixos.org/download.html) (recommended for reproducible development)
+- [Docker](https://docs.docker.com/get-docker/) and Docker Compose
+- [pnpm](https://pnpm.io/installation) (optional, but recommended)
+- [Node.js](https://nodejs.org/) 18+ (if not using Nix)
+- [Go](https://go.dev/dl/) 1.20+ (if not using Nix)
 
-MinIO is **external** (configure `MINIO_ENDPOINT_URL` / credentials in `.env`). There is no `upload_w` — ZIP upload was removed in favor of blob-direct CLI deploys.
+### Quick Start with Nix
 
-**next-web auth DB:** `next_web_migrator` applies Better Auth tables (`user`, `session`, `jwks`, …) into the same Postgres before `next_web` starts (tracked in `next_web_drizzle_migrations`).
+```bash
+# Enter development environment (automatically installs all dependencies)
+nix develop
 
-**Console UI:** same `caddy_server` listens on **:3080**, serves static from `next_web_static`, proxies `/api/*` → `next_web` (snippets under `config/next-web/caddy/`).
+# Or enter a service-specific shell
+nix develop -c api        # API service
+nix develop -c blob-server # Blob server
+nix develop -c console     # Console service
+```
 
----
+### Quick Start with Docker
 
-## Database Schema
+```bash
+# Copy default environment file
+cp infrastructure/configs/.env .env
 
-### `sites`
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | UUID PK | Site id used in Redis `site_files:{id}` |
-| `subdomain` | TEXT UNIQUE | e.g. `mysite` |
-| `active` | BOOLEAN | Caddy filters on this |
+# Edit .env with your configuration
+nano .env
 
-### `pages`
-Tenant metadata. `site_id` FK → sites.
+# Create build workspace for cloud builds
+mkdir -p /tmp/cloudisy-builds
 
-### `site_daily_stats`
-Daily analytics written by Caddy plugin. `site_id` FK → sites.
+# Start all services
+docker compose -f infrastructure/docker/compose/docker-compose.yml up -d
 
-### `builds`
-One row per triggered cloud build. Statuses: `queued → active → completed/failed`.
+# View running services
+docker compose ps
 
-### `blobs`
-Content-addressed store. PK = SHA256 hex. Object at `blobs/{hash}` in MinIO.
+# View logs
+docker compose logs -f
+```
 
-### `blob_tree_entries`
-Per-deployment file tree: `(deployment_id, path) → blob_hash`.
+### Development Workflow
 
-### `deployments`
-Deployment history per page. `is_active = true` marks the live version. `files_deployed` / `files_reused` track blob dedup stats.
+```bash
+# Install dependencies (using pnpm)
+pnpm install
 
-**Retention:** up to **11** rows per page (1 active + 10 inactive). Older inactive rows and orphaned blobs are removed by background GC.
+# Start API service in development mode
+pnpm run dev:api
 
----
+# Start console in development mode
+pnpm run dev:console
 
-## API Reference (summary)
+# Build all services
+pnpm run build
 
-All protected endpoints require `Authorization: Bearer <JWT>`.
+# Run database migrations
+pnpm run db:migrate
 
-### Pages
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/pages/create` | Create new page/site |
-| `GET` | `/api/pages` | List tenant's pages |
-| `DELETE` | `/api/pages/:id` | Delete page + Redis maps (blobs left until GC / orphan cleanup) |
-| `GET` | `/api/pages/usage/:domain` | Live + DB request/bandwidth usage |
+# Start with Docker Compose
+docker compose up -d
+```
 
-### Deploy
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/deploy/prepare` | Validate manifest + issue token + size summary |
-| `POST` | `/api/deploy/presign` | Presigned PUTs for missing blobs |
-| `POST` | `/api/deploy/commit` | Compress/WebP → blob tree → Redis map → fire GC (5 min timeout) |
+## 🛠️ Development with Nix
 
-### Builds
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/builds` | Trigger cloud build |
-| `GET` | `/api/builds/:buildId/logs` | SSE log stream with live stats |
-| `GET` | `/api/builds/:buildId` | Get build status |
-| `GET` | `/api/builds/page/:pageId` | List last 20 builds |
+### Enter Development Environment
 
-### Deployments
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/deployments/page/:pageId` | List deployment history (**page** UUID, not deployment UUID) |
-| `POST` | `/api/deployments/:deploymentId/rollback` | Instant rollback via Redis map rebuild + fire GC |
+```bash
+# Full development environment with all tools
+nix develop
 
-> See [docs/API.md](./docs/API.md) for full request/response shapes.
+# Service-specific environments
+nix develop -c api        # API service with Node.js, PostgreSQL, Redis
+nix develop -c blob-server # Blob server with Go, Caddy
+nix develop -c console     # Console with Node.js, Next.js
+```
 
----
+### Build with Nix
 
-## Environment Variables
+```bash
+# Build all services
+nix build
 
-Copy `env` to `.env` before starting.
+# Build specific service
+nix build .#api
+nix build .#blob-server
+nix build .#console
+
+# Run service directly
+nix run .#api
+```
+
+### Build Docker Images with Nix
+
+```bash
+# Build API Docker image
+docker build -t pagex-api -f services/api/Dockerfile .
+
+# Build blob-server Docker image
+docker build -t pagex-blob-server -f services/blob-server/Dockerfile .
+
+# Build console Docker image
+docker build -t pagex-console -f services/console/Dockerfile .
+```
+
+## 🐳 Docker Compose
+
+### Start Services
+
+```bash
+# Start all services
+docker compose -f infrastructure/docker/compose/docker-compose.yml up -d
+
+# Start specific services
+docker compose up -d api blob-server console db redis
+
+# View running containers
+docker compose ps
+
+# View logs
+docker compose logs -f
+
+# Stop services
+docker compose down
+```
+
+### Service Ports
+
+| Service | Port | Description |
+|---------|------|-------------|
+| API | 3000 | Main Express API |
+| Blob Server | 80, 443 | Caddy HTTP/HTTPS |
+| Blob Server Console | 3080 | Console access |
+| Console | 3000 | Next.js API |
+| PostgreSQL | 5432 | Database |
+| Redis | 6379 | Cache/Queue |
+| PgBouncer | 6432 | Connection pooler |
+
+## 📦 Package Management
+
+### pnpm Workspaces
+
+This project uses [pnpm workspaces](https://pnpm.io/workspaces) for efficient dependency management.
+
+```bash
+# Install all dependencies
+pnpm install
+
+# Install dependencies for a specific package
+pnpm install --filter @pagex/api
+pnpm install --filter @pagex/types
+
+# Add a dependency to a package
+pnpm add --filter @pagex/api express
+
+# Update dependencies
+pnpm update
+```
+
+### Turbo Build
+
+This project uses [Turbo](https://turbo.build/) for optimized builds.
+
+```bash
+# Build all packages
+turbo run build
+
+# Run dev servers
+turbo run dev
+
+# Run tests
+turbo run test
+
+# Run lint
+turbo run lint
+```
+
+## 🏗️ Services
+
+### API Service
+
+The main Express backend that handles:
+- Site management (create, delete, list)
+- Deployment management (prepare, presign, commit, rollback)
+- Build management (trigger, status, logs)
+- Analytics and usage tracking
+
+**Location:** `services/api/`
+
+**Commands:**
+```bash
+pnpm run dev        # Start development server
+pnpm run build      # Build for production
+pnpm run lint       # Run linter
+pnpm run test       # Run tests
+pnpm run db:migrate # Run database migrations
+```
+
+### Blob Server
+
+Caddy web server with custom `static_s3` plugin for:
+- Multi-tenant blob-direct serving
+- Content-addressed blob storage
+- Automatic compression variants (Brotli, Gzip)
+- Image optimization (WebP)
+- High-performance caching
+- S3-compatible storage (MinIO, AWS S3, Cloudflare R2, etc.)
+
+**Location:** `services/blob-server/`
+
+**Commands:**
+```bash
+go run .              # Start development server
+xcaddy build          # Build Caddy with plugin
+go test -v ./...      # Run tests
+```
+
+### Console
+
+Next.js web interface for:
+- User authentication (Better Auth)
+- Project management
+- Deployment management
+- Build management
+- Analytics dashboard
+
+**Location:** `services/console/`
+
+**Commands:**
+```bash
+pnpm run dev        # Start development server
+pnpm run build      # Build for production
+pnpm run lint       # Run linter
+pnpm run db:migrate # Run database migrations
+```
+
+## 🔧 Configuration
+
+### Environment Variables
+
+Copy the default environment file and modify as needed:
+
+```bash
+cp infrastructure/configs/.env .env
+nano .env
+```
+
+### Key Configuration Options
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DB` | — | PostgreSQL DSN (app / Compose network host `db`) |
-| `DRIZZLE_CONNECTION` | — | PostgreSQL DSN for Drizzle Kit (host-side often `localhost`) |
-| `REDIS_URL` | `redis://redis:6379` | Redis URL. Compose services keep hostname `redis` via `IN_DOCKER_COMPOSE=1`. Host scripts auto-remap to `localhost`. |
-| `MINIO_ENDPOINT` | — | MinIO hostname |
-| `MINIO_PORT` | `9000` | MinIO port |
-| `MINIO_ENDPOINT_URL` | — | Full MinIO base URL (used by Caddy) |
-| `MINIO_USE_SSL` | — | `true` / `false` |
-| `S3_ACCESS_KEY` | — | MinIO access key |
-| `S3_SECRET_KEY` | — | MinIO secret key |
-| `MINIO_BUCKET` | — | Shared bucket name |
-| `BASE_DOMAIN` | `localhost` | Base domain for subdomain routing |
-| `POSTGRES_USER/PASSWORD/DB` | — | PostgreSQL init vars |
-| `IN_DOCKER_COMPOSE` | — | Set to `1` by Compose for app/workers (do not set on host) |
-| `BETTER_AUTH_URL` | `http://localhost:3080` | Public URL of the next-web console (Caddy) |
-| `BETTER_AUTH_TRUSTED_ORIGINS` | `http://localhost:3080` | Better Auth trusted origins |
-| `PUBLIC_URL` | `http://localhost:3080` | Public console origin (must match browser URL) |
-| `NEXT_WEB_DATABASE_URL` | (falls back to `DIRECT_DB`) | Optional separate DSN for next-web |
-| `BETTER_AUTH_SECRET` | — | Required by next-web (set a long random secret) |
-| `ENABLE_EMAIL_PASSWORD` / `NEXT_PUBLIC_ENABLE_EMAIL_PASSWORD` | `true` | Email/password login gates |
-| `GITHUB_*` / `GOOGLE_*` / `SMTP_*` / `SENDER` / `BREVO_API_KEY` / `SMS_TOKEN` | — | Optional OAuth / email / SMS |
-| `AUTH_JWKS_URL` | `http://localhost:3080/api/auth/jwks` | JWKS for Express JWT verify. Compose overrides to `http://next_web:3000/api/auth/jwks`. |
+| `NODE_ENV` | development | Node.js environment |
+| `DATABASE_URL` | - | PostgreSQL connection string |
+| `REDIS_URL` | redis://localhost:6379 | Redis connection URL |
+| `MINIO_ENDPOINT_URL` | - | MinIO endpoint URL |
+| `S3_ACCESS_KEY` | - | S3/MinIO access key |
+| `S3_SECRET_KEY` | - | S3/MinIO secret key |
+| `MINIO_BUCKET` | pagex-blobs | Blob storage bucket |
+| `BASE_DOMAIN` | localhost | Base domain for subdomain routing |
+| `PUBLIC_URL` | http://localhost:3080 | Public console URL |
+| `BETTER_AUTH_SECRET` | - | Better Auth secret (required) |
 
----
+### Service-Specific Configuration
 
-## Getting Started
+Each service has its own configuration:
+- **API:** `services/api/` - Express server configuration
+- **Blob Server:** `services/blob-server/` - Caddy and plugin configuration
+- **Console:** `services/console/` - Next.js and Better Auth configuration
 
-### Prerequisites
-- Docker + Docker Compose
-- Reachable MinIO bucket (`MINIO_BUCKET`)
+## 📄 Documentation
 
-### Steps
+- [Architecture](docs/architecture.md) - System architecture overview
+- [Development Guide](docs/development.md) - Development setup and workflow
+- [API Service](docs/services/api.md) - API service documentation
+- [Blob Server](docs/services/blob-server.md) - Blob server documentation
+- [Console](docs/services/console.md) - Console documentation
 
-```bash
-# 1. Clone
-git clone --recurse-submodules <repo-url>
-cd pagex
+## 🤖 AI Development
 
-# 2. Configure
-cp env .env
-# Edit BASE_DOMAIN, DB credentials, MinIO keys / endpoint, REDIS_URL, etc.
+For AI assistants working on this codebase:
+- Use `nix develop` for reproducible development environments
+- Each service has its own `flake.nix` for service-specific dependencies
+- Shared packages are in `packages/` directory
+- Use `pnpm` for package management
+- Use `turbo` for optimized builds
 
-# 3. Create shared build workspace (DinD requirement)
-mkdir -p /tmp/cloudisy-builds
+## 📝 Contributing
 
-# 4. Start (remove any leftover upload_w orphans)
-docker compose up --build --remove-orphans
-```
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-> **First run:** Builds `cloudisy-build-env:latest` (pnpm base image). Migrations run automatically via `drizzle_migrator`.
+## 🤝 Community
 
-> **DinD note:** `build_w` mounts `/var/run/docker.sock` and `/tmp/cloudisy-builds`. The host path must exist for volume mounts in build containers to resolve correctly.
+- [GitHub Issues](https://github.com/Mahadi-rsio/pagex/issues) - Report issues and feature requests
+- [Discussions](https://github.com/Mahadi-rsio/pagex/discussions) - Ask questions and discuss ideas
 
-### Console (next-web)
+## 📄 License
 
-After Compose is up:
-
-| Check | URL / command |
-|-------|----------------|
-| Console UI | http://localhost:3080 |
-| Login | http://localhost:3080/login/ |
-| Health | `curl -sS http://localhost:3080/api/health` |
-
-Caddy config: site serving in `config/Caddyfile`; console routes imported from `config/next-web/caddy/`. Set `BETTER_AUTH_SECRET` (and any OAuth/SMTP vars) in `.env`. Auth tables are created by `next_web_migrator` on `docker compose up`.
-
-### One-time: purge legacy `tenant/` objects
-
-If you previously served from `tenant/{site_id}/`, clear those objects once (blobs are untouched):
-
-```bash
-npx tsx src/scripts/migrate-to-blob-serving.ts
-```
-
-### Migrations
-
-```bash
-# After changing src/infrastructure/db/schema.ts:
-npm run gen      # generate migration SQL
-npm run migrate  # apply (also runs automatically on docker compose up)
-```
-
----
-
-## Deploy Pipeline (CLI)
-
-```
-POST /api/deploy/prepare
-  → validateManifest: ≤100 files, ≤10 MB each, blocked extensions
-  → validate magic bytes + extension/MIME checks
-  → Redis SET deploy:token:{token} (DB3, TTL 10m)
-  → return uploadRequired hashes + summary
-
-POST /api/deploy/presign
-  → presigned PUT urls for blobs/{hash}
-
-Client PUTs file bodies to MinIO
-
-POST /api/deploy/commit  (request timeout 5 minutes)
-  → load original blobs
-  → expand variants:
-       .html/.css/.js/.json/.svg/.xml → .br + .gz
-       .png/.jpg/.jpeg/.gif → .webp (original kept)
-  → store variant blobs (SHA256 of compressed/WebP bytes)
-  → insert blob_tree_entries (originals + variants)
-  → activate deployment
-  → rebuild Redis site_files:{site_id} (DEL → HSET → EXPIRE 24h)
-  → DEL site:{subdomain}
-  → return summary { sizeReduced, imagesOptimized, … }
-  → fire-and-forget runDeploymentGC(pageId, siteId)
-```
-
-### Background GC (`runDeploymentGC`)
-
-Runs after every successful commit and rollback. Never awaited by the HTTP handler.
-
-1. Select inactive deployments ordered by `created_at DESC` with `OFFSET 10` (`DEPLOYMENT_RETENTION`)
-2. Collect candidate blob hashes from those deployments
-3. Cross-check: drop hashes still referenced by non-expired deployments
-4. Delete orphaned objects from MinIO (`blobs/{hash}`), batches of 100, concurrency 10
-5. In a DB transaction: delete `blob_tree_entries` → `deployments` → successfully deleted `blobs` rows
-6. Log: `GC complete: N deployments cleaned, M blobs deleted, X.Y MB freed`
-
-Steady state per page: **≤ 11 deployments** (1 active + 10 inactive).
-
-**Limits / blocked types** (shared by prepare + build worker): PDF, video, executables, archives (`.zip`/`.tar`/…), `.db`/`.sqlite`/`.log`, etc. See `src/utils/deployment-validator.ts`.
-
----
-
-## Build Pipeline (step by step)
-
-```
-POST /api/builds
-  → builds row inserted (status: queued)
-  → BullMQ job enqueued on cloudisy-cloud-builds
-  → build_w picks up job:
-      1. git clone --depth=1 (token injected)
-      2. docker run cloudisy-build-env:latest --memory 1g
-         (pnpm install && <buildCommand>)
-         → [Stats] logs streamed every 2s via SSE
-      3. output dir detected (.next / dist / out / build / public)
-      4. validateOutputDir (same count/size/extension rules as prepare)
-         on failure → builds.status=failed, SSE error, return cleanly
-      5. deployFromLocalDirectory:
-           hash → Brotli/Gzip/WebP → blobs + tree → Redis map → fire GC
-           → [Summary] line in SSE
-      6. builds row → status: completed, completed_at set
-  → site is live immediately (Caddy reads blobs via Redis map)
-```
-
----
-
-## Rollback System
-
-Every deploy (CLI or build) records a blob tree in PostgreSQL. Serving uses:
-
-- Blobs: `{bucket}/blobs/{sha256}`
-- Map: Redis `site_files:{site_id}` → path → hash
-
-Rolling back:
-
-1. `POST /api/deployments/:id/rollback`
-2. Flip `is_active` flags
-3. Rebuild `site_files:{site_id}` from the target tree
-4. Invalidate `site:{subdomain}`
-5. Fire-and-forget GC
-6. Site live immediately — no MinIO copy, no restart
-
----
-
-## Development
-
-```bash
-npm run build   # compile TypeScript
-npm run gen     # generate migration
-npm run migrate # apply migration
-
-# End-to-end test (paste JWT into test.js or export CLOUDISY_TOKEN)
-node test.js
-
-# CLI deploy + validation + summary only (skip cloud build)
-SKIP_BUILD=1 node test.js
-```
-
-`test.js` covers: blocked-extension prepare rejection, CLI deploy with Brotli/Gzip/WebP + prepare/commit summaries, blob reuse, rollback, optional cloud build + SSE `[Summary]`.
-
-Rebuild API + workers after local changes:
-
-```bash
-docker compose up --build -d --remove-orphans app build_worker sync_worker
-```
-
----
-
-## Project Structure
-
-```
-src/
-├── app.ts / server.ts           # Express setup + entrypoint
-├── constants/index.ts           # Shared constants (incl. DEPLOYMENT_RETENTION=10)
-├── middleware/auth.middleware.ts # JWT verification
-├── infrastructure/
-│   ├── db/schema.ts             # Drizzle table definitions
-│   ├── cache/redis.ts           # ioredis (DB0 site/site_files, DB2 BullMQ, DB3 usage)
-│   └── storage/minio.ts         # MinIO client + blob helpers + deleteBlobObjects
-├── controllers/                 # Thin HTTP handlers
-├── services/                    # Business logic
-│   ├── deploy.service.ts        # prepare / presign / commit + compress/WebP + Redis map
-│   ├── deployment.service.ts    # list + rollback
-│   ├── gc.service.ts            # background deployment + blob GC
-│   ├── build.service.ts
-│   └── page.service.ts
-├── queue/
-│   ├── jobs/                    # Queue + job data interfaces
-│   └── workers/                 # build.worker, sync.worker
-├── routes/                      # Express routers
-├── scripts/
-│   └── migrate-to-blob-serving.ts  # one-off delete of legacy tenant/ objects
-├── utils/
-│   ├── file-validator.ts        # Magic-byte + extension checks
-│   └── deployment-validator.ts  # File count / size / blocked-type limits
-└── validators/                  # Zod schemas
-docs/                            # AI-optimized codebase documentation
-drizzle/                         # Migration SQL files
-test.js                          # E2E deploy + build smoke test
-```
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

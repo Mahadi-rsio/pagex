@@ -1,7 +1,78 @@
-node_modules
-npm-debug.log
-Dockerfile
-.dockerignore
-.git
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Git
+.git/
 .gitignore
-dist
+.gitmodules
+
+# Build outputs
+dist/
+.next/
+out/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Documentation
+docs/
+*.md
+
+# Nix
+.nix-channels
+.nix-defexpr
+.nix-profile
+.nix-store
+/nix/
+flake.nix
+flake.lock
+
+# Docker files
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Logs
+*.log
+logs/
+
+# Test
+coverage/
+*.test.ts
+*.spec.ts
+
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# Local development
+local.env
+*.local
+
+# Service-specific
+services/*/node_modules/
+services/*/dist/
+services/*/.next/
+services/*/out/
+
+packages/*/node_modules/
+packages/*/dist/
+
+# Infrastructure
+infrastructure/configs/.env

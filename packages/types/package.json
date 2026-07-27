@@ -1,0 +1,23 @@
+{
+  "name": "@pagex/types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript types for PageX services",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "pagex",
+    "types",
+    "shared",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  }
+}

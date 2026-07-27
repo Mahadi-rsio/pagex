@@ -1,9 +1,84 @@
-node_modules
+# Dependencies
+node_modules/
+.pnpm-store/
 
-dist
+# Build outputs
+dist/
+.next/
+out/
+build/
 
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
 .env
-.env.dev
+.env.local
+.env.*.local
 
-log
+# Logs
+*.log
+logs/
 
+# Test coverage
+coverage/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Cache
+.cache/
+.pnpm-debug.log*
+
+# Docker
+.docker/
+
+# Nix
+.nix-channels
+.nix-defexpr
+.nix-profile
+.nix-store
+/nix/
+
+# Local development
+local.env
+*.local
+
+# Service-specific ignores
+services/*/node_modules/
+services/*/dist/
+services/*/.next/
+services/*/out/
+
+# Shared packages
+packages/*/node_modules/
+packages/*/dist/
+
+# Infrastructure
+infrastructure/configs/.env
+infrastructure/certs/
+
+# Docker Compose
+.docker/
+
+# Test files
+*.test.ts
+*.spec.ts
+
+# Go build artifacts
+*.exe
+*.so
+*.dll
+
+# Caddy
+caddy

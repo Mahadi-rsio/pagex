@@ -1,0 +1,28 @@
+{
+  "name": "@pagex/config",
+  "version": "1.0.0",
+  "description": "Shared configuration for PageX services",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "pagex",
+    "config",
+    "shared",
+    "typescript",
+    "environment"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@pagex/types": "workspace:*",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  }
+}

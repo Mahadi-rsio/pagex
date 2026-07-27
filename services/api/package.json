@@ -1,0 +1,63 @@
+{
+  "name": "@pagex/api",
+  "version": "1.0.0",
+  "description": "PageX API Service - Main Express backend for multi-tenant static site hosting",
+  "main": "dist/src/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/src/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "npx biome format --write",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  },
+  "keywords": [
+    "pagex",
+    "api",
+    "express",
+    "backend",
+    "static-site",
+    "hosting"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@pagex/types": "workspace:*",
+    "@pagex/utils": "workspace:*",
+    "@pagex/config": "workspace:*",
+    "axios": "^1.15.0",
+    "bullmq": "^5.73.5",
+    "cloudflare": "^5.2.0",
+    "dotenv": "^17.4.1",
+    "drizzle-orm": "^0.45.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.3.2",
+    "file-type": "^22.0.1",
+    "ioredis": "^5.10.1",
+    "jose": "^6.2.2",
+    "mime-types": "^3.0.2",
+    "minio": "^8.0.7",
+    "nanoid": "^5.1.7",
+    "p-limit": "^6.2.0",
+    "pg": "^8.20.0",
+    "postgres": "^3.4.9",
+    "rate-limit-redis": "^4.3.1",
+    "sharp": "^0.35.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/mime-types": "^3.0.1",
+    "@types/node": "^25.6.0",
+    "@types/pg": "^8.20.0",
+    "@types/sharp": "^0.31.1",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.23.1",
+    "typescript": "^6.0.2"
+  }
+}
