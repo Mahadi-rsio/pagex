@@ -28,11 +28,6 @@ if (!process.env.MINIO_BUCKET) {
 }
 export const SHARED_BUCKET = process.env.MINIO_BUCKET
 
-/** Legacy live site prefix: tenant/{siteId}/ — retained for one-off migration scripts. */
-export function liveSitePrefix(siteId: string): string {
-    return `tenant/${siteId}/`
-}
-
 /** Content-addressed blob object key */
 export function blobObjectKey(hash: string): string {
     return `blobs/${hash}`

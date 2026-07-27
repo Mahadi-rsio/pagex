@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 const sha256Hex = z.string().regex(/^[a-f0-9]{64}$/, 'hash must be 64-char lowercase hex SHA256')
 
-export const deployFileSchema = z.object({
+const deployFileSchema = z.object({
     path: z.string().min(1).refine(
         (p) => !p.startsWith('/') && !p.includes('..') && !p.includes('\\'),
         'path must be a relative POSIX path without ..'

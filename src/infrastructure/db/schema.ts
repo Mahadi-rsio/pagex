@@ -1,4 +1,4 @@
-import { bigint, boolean, date, index, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 
 /**
@@ -41,35 +41,6 @@ export const pages = pgTable("pages", {
 
     createdAt: timestamp("createdAt").defaultNow().notNull()
 });
-
-/**
- * `site_daily_stats` — daily analytics written by the caddy static_s3 plugin's
- * analytics middleware. The node app can query this for dashboard stats.
- */
-export const siteDailyStats = pgTable("site_daily_stats", {
-    id: uuid("id").primaryKey().notNull().defaultRandom(),
-    site_id: uuid("site_id").notNull().references(() => sites.id, { onDelete: 'cascade' }),
-    date: date("date").notNull(),
-
-    requests: bigint("requests", { mode: 'number' }).notNull().default(0),
-    bandwidth: bigint("bandwidth", { mode: 'number' }).notNull().default(0),
-
-    requests_2xx: bigint("requests_2xx", { mode: 'number' }).notNull().default(0),
-    requests_3xx: bigint("requests_3xx", { mode: 'number' }).notNull().default(0),
-    requests_4xx: bigint("requests_4xx", { mode: 'number' }).notNull().default(0),
-    requests_5xx: bigint("requests_5xx", { mode: 'number' }).notNull().default(0),
-
-    humans: bigint("humans", { mode: 'number' }).notNull().default(0),
-    bots: bigint("bots", { mode: 'number' }).notNull().default(0),
-    unique_ips: bigint("unique_ips", { mode: 'number' }).notNull().default(0),
-
-    peak_hour: text("peak_hour"),
-    peak_hour_requests: bigint("peak_hour_requests", { mode: 'number' }).notNull().default(0),
-
-    updatedAt: timestamp("updated_at").defaultNow(),
-}, (t) => ({
-    siteDataIdx: index("idx_site_daily_stats_site_date").on(t.site_id, t.date),
-}));
 
 /**
  * `builds` — records of page build jobs and their status.
