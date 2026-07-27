@@ -39,16 +39,26 @@ RUN npm install -g pnpm
 # Copy package files
 COPY package.json pnpm-lock.yaml ./
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile --production
+     # Install dependencies
+     RUN pnpm install --no-frozen-lockfile
 
-# Copy source files
-COPY src/ ./src/
-COPY drizzle/ ./drizzle/
-COPY tsconfig.json ./
+     # Copy source files
+     COPY *.ts ./
+     COPY constants/ ./constants/
+     COPY controllers/ ./controllers/
+     COPY middleware/ ./middleware/
+     COPY queue/ ./queue/
+     COPY routes/ ./routes/
+     COPY services/ ./services/
+     COPY types/ ./types/
+     COPY utils/ ./utils/
+     COPY validators/ ./validators/
+     COPY infrastructure/ ./infrastructure/
+     COPY drizzle/ ./drizzle/
+     COPY tsconfig.json ./
 
-# Build TypeScript
-RUN pnpm run build
+     # Build TypeScript
+     RUN pnpm run build
 
 # ============================================================================
 # Stage 3: Migrator - Database migrations
@@ -57,21 +67,22 @@ FROM node:20-alpine AS migrator
 
 WORKDIR /app
 
-# Install pnpm and drizzle-kit
-RUN npm install -g pnpm drizzle-kit
+# Install pnpm
+RUN npm install -g pnpm
 
 # Copy package files
 COPY package.json pnpm-lock.yaml ./
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile
+# Install dependencies including drizzle-kit
+RUN pnpm install --no-frozen-lockfile
 
 # Copy drizzle config and migrations
 COPY drizzle.config.ts ./
 COPY drizzle/ ./drizzle/
+COPY infrastructure/ ./infrastructure/
 
 # Set entrypoint
-CMD ["drizzle-kit", "migrate"]
+CMD ["npx", "drizzle-kit", "migrate"]
 
 # ============================================================================
 # Stage 4: Build Worker - Cloud builds
@@ -118,7 +129,7 @@ RUN apk add --no-cache git docker-cli
 COPY package.json pnpm-lock.yaml ./
 
 # Install dependencies
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --no-frozen-lockfile
 
 # Set entrypoint
 CMD ["sh", "-c", "echo 'cloudisy-build-env ready'"]
@@ -153,4 +164,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:3000/health || exit 1
 
 # Set entrypoint
-CMD ["node", "dist/src/server.js"]
+CMD ["node", "dist/server.js"]
