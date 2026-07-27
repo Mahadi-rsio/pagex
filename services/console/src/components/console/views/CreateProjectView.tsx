@@ -392,7 +392,7 @@ function BuildTerminal({
 }
 
 export function CreateProjectView() {
-    const { addProject } = useAppStore();
+    const { createProject, isLoading, error, clearError } = useAppStore();
     const router = useRouter();
 
     const [step, setStep] = useState<"name" | "deploy">("name");
@@ -448,20 +448,25 @@ export function CreateProjectView() {
         setStep("deploy");
     };
 
-    const handleCloudDeploy = () => {
+    const handleCloudDeploy = async () => {
         if (!selectedRepo || isDeploying) return;
         setIsDeploying(true);
         setShowBuild(true);
 
-        const project = addProject({
-            name: projectName.trim(),
-            description: selectedRepo.description,
-            repo: selectedRepo.fullName,
-            provider,
-            status: "building",
-            domain: `${slugName}.console.app`,
-        });
-        setCreatedProjectId(project.id);
+        try {
+            const project = await createProject({
+                name: projectName.trim(),
+                description: selectedRepo.description,
+                repo: selectedRepo.fullName,
+                provider,
+                status: "building",
+                domain: `${slugName}.console.app`,
+            });
+            setCreatedProjectId(project.id);
+        } catch (error) {
+            setIsDeploying(false);
+            // Error is already handled by the store
+        }
     };
 
     const handleBuildComplete = () => {
@@ -474,13 +479,17 @@ export function CreateProjectView() {
         }
     };
 
-    const handleFinishWithoutRepo = () => {
-        const project = addProject({
-            name: projectName.trim(),
-            status: "inactive",
-            domain: `${slugName}.console.app`,
-        });
-        navigateToProjectOverview(project.id);
+    const handleFinishWithoutRepo = async () => {
+        try {
+            const project = await createProject({
+                name: projectName.trim(),
+                status: "inactive",
+                domain: `${slugName}.console.app`,
+            });
+            navigateToProjectOverview(project.id);
+        } catch (error) {
+            // Error is already handled by the store
+        }
     };
 
     return (

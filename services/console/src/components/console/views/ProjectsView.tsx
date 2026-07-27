@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/useAppStore";
 import { formatRelativeTime } from "@/lib/utils";
@@ -103,8 +104,13 @@ function EmptyProjects({ onCreateClick }: { onCreateClick: () => void }) {
 }
 
 export function ProjectsView() {
-    const { projects } = useAppStore();
+    const { projects, fetchProjects, isLoading, error } = useAppStore();
     const router = useRouter();
+
+    // Fetch projects on mount
+    useEffect(() => {
+        fetchProjects();
+    }, [fetchProjects]);
 
     if (projects.length === 0) {
         return (

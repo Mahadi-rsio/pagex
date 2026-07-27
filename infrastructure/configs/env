@@ -20,13 +20,13 @@ REDIS_URL=redis://redis:6379
 
 MINIO_ROOT_USER=minioadmin
 MINIO_ROOT_PASSWORD=minioadmin
-MINIO_ENDPOINT=minio
-MINIO_ENDPOINT_URL=http://minio:9000
-MINIO_PORT=9000
+MINIO_ENDPOINT=minio #tenbyte_s3_endpoint
+MINIO_ENDPOINT_URL= #tenbyte_s3_url
+MINIO_PORT=9000 #s3 -> 443
 # Set to 'false' to disable SSL (e.g. for local docker minio). Omit or set 'true' for remote endpoints.
-MINIO_USE_SSL=false
-S3_ACCESS_KEY=minioadmin
-S3_SECRET_KEY=minioadmin
+MINIO_USE_SSL=false #s3 -> true
+S3_ACCESS_KEY=minioadmin #s3 -> accesskey
+S3_SECRET_KEY=minioadmin #s3 -> secretkey
 # Shared bucket name used by all tenants (caddy static_s3 plugin + MinIO). REQUIRED.
 MINIO_BUCKET=
 
