@@ -162,11 +162,11 @@ services:
     networks:
       - pagex_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 20s
 
   # ============================================================================
   # Database Migrator - API Service
@@ -194,8 +194,10 @@ services:
     <<: *nix
     build:
       context: ../../../services/console
-      dockerfile: Dockerfile.migrator
+      dockerfile: Dockerfile
+      target: migrator
     container_name: pagex_console_migrator
+    env_file: ../../../infrastructure/configs/.env
     environment:
       - DATABASE_URL=${NEXT_WEB_DATABASE_URL:-${DIRECT_DB:-postgresql://postgres:postgres@db:5432/pagex}}
     depends_on:

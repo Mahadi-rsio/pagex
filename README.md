@@ -72,6 +72,7 @@ pagex/
 │   └── certs/                # SSL certificates
 │
 ├── scripts/                   # Global scripts
+│   ├── docker.sh              # Docker Compose helper (env + compose paths)
 │   ├── migrations/            # Database migrations
 │   └── setup/                 # Setup scripts
 │
@@ -111,25 +112,27 @@ nix develop -c console     # Console service
 
 ### Quick Start with Docker
 
+Compose always loads `infrastructure/configs/.env` (uses Docker service hostnames like `db`, not `localhost`). Edit that file for stack configuration.
+
 ```bash
-# Copy default environment file
-cp infrastructure/configs/.env .env
+# Ensure Docker env exists (repo ships a default under infrastructure/configs/)
+# Edit infrastructure/configs/.env as needed — set BETTER_AUTH_SECRET at minimum
 
-# Edit .env with your configuration
-nano .env
-
-# Create build workspace for cloud builds
+# Create build workspace for cloud builds (if using build workers)
 mkdir -p /tmp/cloudisy-builds
 
-# Start all services
-docker compose -f infrastructure/docker/compose/docker-compose.yml up -d
+# Start the full stack
+pnpm docker:up
 
-# View running services
-docker compose ps
+# Or use the helper script directly
+./scripts/docker.sh up
 
-# View logs
-docker compose logs -f
+# Check status / logs
+pnpm docker:ps
+pnpm docker:logs
 ```
+
+Console UI is served via the blob server on **http://localhost:3080**. The API is on **http://localhost:3000**.
 
 ### Development Workflow
 
@@ -146,11 +149,11 @@ pnpm run dev:console
 # Build all services
 pnpm run build
 
-# Run database migrations
+# Run database migrations (local / API)
 pnpm run db:migrate
 
 # Start with Docker Compose
-docker compose up -d
+pnpm docker:up
 ```
 
 ## 🛠️ Development with Nix
@@ -197,24 +200,79 @@ docker build -t pagex-console -f services/console/Dockerfile .
 
 ## 🐳 Docker Compose
 
-### Start Services
+Use the helper script or `pnpm docker:*` scripts. Both always pass `--env-file infrastructure/configs/.env` so Compose interpolation uses Docker network hostnames.
+
+### pnpm scripts
+
+| Script | What it does |
+|--------|----------------|
+| `pnpm docker:up` | Start all services (`-d`) |
+| `pnpm docker:down` | Stop and remove containers |
+| `pnpm docker:build` | Build images |
+| `pnpm docker:rebuild` | `--no-cache` build, then up |
+| `pnpm docker:restart` | Restart services |
+| `pnpm docker:ps` | List containers |
+| `pnpm docker:logs` | Follow logs |
+| `pnpm docker:exec` | Shell into a service (`pnpm docker:exec -- console`) |
+| `pnpm docker:migrate` | Run API + console migrators |
+| `pnpm docker:console` | Start DB/Redis + migrators + console |
+| `pnpm docker:api` | Start DB/Redis/PgBouncer + migrator + API |
+| `pnpm docker:config` | Validate compose config |
+| `pnpm docker -- <cmd>` | Pass-through to `scripts/docker.sh` |
+
+### Common commands
 
 ```bash
-# Start all services
-docker compose -f infrastructure/docker/compose/docker-compose.yml up -d
+# Full stack
+pnpm docker:up
 
-# Start specific services
-docker compose up -d api blob-server console db redis
+# Console only (with deps + auth migrator)
+pnpm docker:console
 
-# View running containers
-docker compose ps
+# API only (with deps + API migrator)
+pnpm docker:api
 
-# View logs
-docker compose logs -f
+# Rebuild and restart console after code changes
+pnpm docker:rebuild -- console console-migrator
 
-# Stop services
-docker compose down
+# Follow one service
+pnpm docker:logs -- console
+
+# Run migrations only
+pnpm docker:migrate
+
+# Stop everything
+pnpm docker:down
 ```
+
+Equivalent via the script:
+
+```bash
+./scripts/docker.sh up
+./scripts/docker.sh up api console db redis
+./scripts/docker.sh logs console
+./scripts/docker.sh rebuild console console-migrator
+./scripts/docker.sh migrate
+./scripts/docker.sh down
+```
+
+Raw `docker compose` (if you prefer not to use the helper):
+
+```bash
+docker compose \
+  --env-file infrastructure/configs/.env \
+  -f infrastructure/docker/compose/docker-compose.yml \
+  up -d
+```
+
+### Migrators
+
+| Service | Image target | Purpose |
+|---------|--------------|---------|
+| `migrator` | `services/api` → `migrator` | API / platform schema |
+| `console-migrator` | `services/console` → `migrator` | Better Auth / console schema |
+
+`console` waits for `console-migrator` to finish successfully; `api` waits for `migrator`.
 
 ### Service Ports
 
@@ -222,11 +280,17 @@ docker compose down
 |---------|------|-------------|
 | API | 3000 | Main Express API |
 | Blob Server | 80, 443 | Caddy HTTP/HTTPS |
-| Blob Server Console | 3080 | Console access |
-| Console | 3000 | Next.js API |
+| Console (via blob server) | 3080 | Public console UI |
+| Console (internal) | 3000 | Next.js API inside the network |
 | PostgreSQL | 5432 | Database |
 | Redis | 6379 | Cache/Queue |
 | PgBouncer | 6432 | Connection pooler |
+
+### Environment notes
+
+- **Docker stack:** edit `infrastructure/configs/.env` (hosts like `db`, `redis`).
+- **Local tooling outside Compose:** a root `.env` may use `localhost` — do not point Compose interpolation at it or containers will fail to reach Postgres/Redis.
+- `BETTER_AUTH_SECRET` is required for the console service.
 
 ## 📦 Package Management
 
@@ -330,12 +394,13 @@ pnpm run db:migrate # Run database migrations
 
 ### Environment Variables
 
-Copy the default environment file and modify as needed:
+For Docker Compose, edit the Docker-oriented env file:
 
 ```bash
-cp infrastructure/configs/.env .env
-nano .env
+nano infrastructure/configs/.env
 ```
+
+For local (non-Compose) development you may also keep a root `.env` with `localhost` hosts. Do not use the root `.env` for Compose interpolation.
 
 ### Key Configuration Options
 
