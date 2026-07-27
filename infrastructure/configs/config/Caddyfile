@@ -3,11 +3,11 @@
 	auto_https off
 	order static_s3 before respond
 	admin 0.0.0.0:2019 {
-		origins caddy_server:2019 express_app:2019 localhost 127.0.0.1:2019
+		origins blob-server:2019 api:2019 localhost 127.0.0.1:2019
 	}
 }
 
-# next-web console route snippets (static export UI + /api → next_web)
+# Console route snippets (static export UI + /api → console)
 import caddy/snippets.caddy
 import caddy/routes.caddy
 
@@ -73,8 +73,8 @@ import caddy/routes.caddy
 	}
 }
 
-# ── next-web console (same caddy_server, dedicated port) ────────────────────
-# Static UI from next_web_static volume (/srv); /api/* → next_web:3000
+# ── Console (blob-server, dedicated port) ───────────────────────────────────
+# Static UI from next_web_static volume (/srv); /api/* → console:3000
 :3080 {
 	encode gzip zstd
 	import app_routes
@@ -87,12 +87,12 @@ http://*.{$BASE_DOMAIN:localhost} {
 }
 
 http://api.{$BASE_DOMAIN:localhost} {
-	reverse_proxy app:3000
+	reverse_proxy api:3000
 }
 
 # Also accept bare localhost API for convenience during local runs
 http://localhost {
-	reverse_proxy app:3000
+	reverse_proxy api:3000
 }
 
 # ── HTTPS (self-signed / Origin cert) ───────────────────────────────────────
@@ -104,5 +104,5 @@ http://localhost {
 
 api.{$BASE_DOMAIN:localhost} {
 	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
-	reverse_proxy app:3000
+	reverse_proxy api:3000
 }

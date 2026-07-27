@@ -4,10 +4,10 @@
   "description": "PageX Blob Server - Caddy with static_s3 plugin for content-addressed blob serving",
   "private": true,
   "scripts": {
-    "build": "go build -o caddy .",
-    "test": "go test -v ./...",
-    "run": "go run .",
-    "xcaddy": "xcaddy build --with github.com/Mahadi-rsio/pagex/services/blob-server=. --output ./caddy"
+    "build": "CGO_ENABLED=0 go build -tags=nobadger,nomysql,nopgx -ldflags='-s -w' -trimpath -o caddy ./cmd/caddy",
+    "test": "go test -v ./src/...",
+    "run": "go run ./cmd/caddy",
+    "xcaddy": "echo 'deprecated: use pnpm build (go build ./cmd/caddy)' && pnpm run build"
   },
   "keywords": [
     "pagex",

@@ -1,21 +1,35 @@
-# Stage 1: Build Caddy with the custom plugin
+# PageX blob-server — custom Caddy with static_s3 plugin
+# Uses a checked-in main.go + `go build` (not xcaddy) so module download
+# and compile artifacts cache across builds.
+
+# ============================================================================
+# Stage 1: Build custom Caddy binary
+# ============================================================================
 FROM caddy:2.11.4-builder AS builder
 
-# Copy go.mod and go.sum first to cache dependency downloads
-WORKDIR /src/cdx_s3
+WORKDIR /src
+
+# Cache Go modules independently of source changes
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
-# Copy the rest of the source code
-COPY . .
+# Plugin sources + custom main that blank-imports the plugin
+COPY src/ ./src/
+COPY cmd/ ./cmd/
 
-# Build Caddy with the local plugin source
-RUN xcaddy build \
-    --with github.com/Mahadi-rsio/cdx_s3=/src/cdx_s3
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build \
+      -tags=nobadger,nomysql,nopgx \
+      -ldflags="-s -w -X github.com/caddyserver/caddy/v2.CustomVersion=v2.11.4-pagex" \
+      -trimpath \
+      -o /usr/bin/caddy \
+      ./cmd/caddy
 
-# Stage 2: Final lightweight image
+# ============================================================================
+# Stage 2: Runtime image
+# ============================================================================
 FROM caddy:2.11.4-alpine
 
-# Copy the custom-built Caddy binary from the builder
-COPY --from=builder /src/cdx_s3/caddy /usr/bin/caddy
-
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy

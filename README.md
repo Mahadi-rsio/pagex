@@ -215,8 +215,9 @@ Use the helper script or `pnpm docker:*` scripts. Both always pass `--env-file i
 | `pnpm docker:logs` | Follow logs |
 | `pnpm docker:exec` | Shell into a service (`pnpm docker:exec -- console`) |
 | `pnpm docker:migrate` | Run API + console migrators |
-| `pnpm docker:console` | Start DB/Redis + migrators + console |
+| `pnpm docker:console` | Start DB/Redis + migrators + console + blob-server |
 | `pnpm docker:api` | Start DB/Redis/PgBouncer + migrator + API |
+| `pnpm docker:workers` | Start workers profile (sync/build) |
 | `pnpm docker:config` | Validate compose config |
 | `pnpm docker -- <cmd>` | Pass-through to `scripts/docker.sh` |
 
@@ -281,7 +282,8 @@ docker compose \
 | API | 3000 | Main Express API |
 | Blob Server | 80, 443 | Caddy HTTP/HTTPS |
 | Console (via blob server) | 3080 | Public console UI |
-| Console (internal) | 3000 | Next.js API inside the network |
+| Console (direct) | 3001 | Next.js app (API + pages) |
+| Console (internal) | 3000 | Next.js inside the Docker network |
 | PostgreSQL | 5432 | Database |
 | Redis | 6379 | Cache/Queue |
 | PgBouncer | 6432 | Connection pooler |

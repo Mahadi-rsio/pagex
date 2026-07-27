@@ -10,8 +10,10 @@
 #   - pgbouncer: PostgreSQL connection pooler
 #
 # MinIO is external (configure MINIO_ENDPOINT_URL)
-
-version: '3.8'
+#
+# Core stack (default): db redis pgbouncer migrator console-migrator api console blob-server
+# Workers (profile "workers"): sync-worker build-worker build-env
+#   pnpm docker:up -- --profile workers
 
 x-nix: &nix
   volumes:
@@ -56,11 +58,11 @@ services:
     networks:
       - pagex_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
   # ============================================================================
   # Blob Server - Caddy with static_s3 Plugin
@@ -92,10 +94,11 @@ services:
       - "3080:3080"
       - "2019:2019"
     volumes:
-      - ../../../infrastructure/configs/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ../../../infrastructure/configs/caddy:/etc/caddy/caddy:ro
+      - ../../../infrastructure/configs/config/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../../../infrastructure/configs/config/next-web/caddy:/etc/caddy/caddy:ro
       - ../../../infrastructure/certs/cert.pem:/etc/caddy/certs/cert.pem:ro
       - ../../../infrastructure/certs/key.pem:/etc/caddy/certs/key.pem:ro
+      - next_web_static:/srv
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
@@ -151,6 +154,8 @@ services:
       - next_web_static:/shared/static
     expose:
       - "3000"
+    ports:
+      - "3001:3000"
     depends_on:
       console-migrator:
         condition: service_completed_successfully
@@ -210,34 +215,38 @@ services:
       - pagex_network
 
   # ============================================================================
-  # Build Environment - For Cloud Builds
+  # Build Environment - For Cloud Builds (profile: workers)
   # ============================================================================
   build-env:
     <<: *nix
+    profiles: ["workers"]
     build:
       context: ../../../services/api
       target: build-env
-    image: cloudisy-build-env:latest
+    image: pagex-build-env:latest
+    pull_policy: build
     container_name: pagex_build_env
     restart: "no"
-    command: ["sh", "-c", "echo 'cloudisy-build-env ready'"]
+    command: ["sh", "-c", "echo 'pagex-build-env ready'"]
     networks:
       - pagex_network
 
   # ============================================================================
-  # Sync Worker - Usage Analytics
+  # Sync Worker - Usage Analytics (profile: workers)
   # ============================================================================
   sync-worker:
     <<: *nix
+    profiles: ["workers"]
     build:
       context: ../../../services/api
+      dockerfile: Dockerfile
       target: runner
     container_name: pagex_sync_worker
     env_file: ../../../infrastructure/configs/.env
     environment:
       - IN_DOCKER_COMPOSE=1
       - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3000/api/auth/jwks}
-    command: ["node", "dist/src/queue/workers/sync.worker.js"]
+    command: ["node", "dist/queue/workers/sync.worker.js"]
     depends_on:
       migrator:
         condition: service_completed_successfully
@@ -250,10 +259,11 @@ services:
       - pagex_network
 
   # ============================================================================
-  # Build Worker - Cloud Builds
+  # Build Worker - Cloud Builds (profile: workers)
   # ============================================================================
   build-worker:
     <<: *nix
+    profiles: ["workers"]
     build:
       context: ../../../services/api
       target: build-worker

@@ -4,10 +4,6 @@
   "description": "PageX - Multi-tenant static site hosting platform",
   "private": true,
   "packageManager": "pnpm@8.15.0",
-  "workspaces": [
-    "packages/*",
-    "services/*"
-  ],
   "scripts": {
     "dev": "turbo run dev --parallel",
     "dev:api": "cd services/api && pnpm run dev",
@@ -39,6 +35,7 @@
     "docker:migrate": "bash scripts/docker.sh migrate",
     "docker:console": "bash scripts/docker.sh console",
     "docker:api": "bash scripts/docker.sh api",
+    "docker:workers": "bash scripts/docker.sh workers",
     "docker:config": "bash scripts/docker.sh config",
     "nix:build": "nix build",
     "nix:dev": "nix develop",
