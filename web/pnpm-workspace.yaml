@@ -1,0 +1,8 @@
+allowBuilds:
+  '@tailwindcss/oxide': false
+  better-sqlite3: false
+  esbuild: false
+  sharp: false
+# Single-package workspace; also holds pnpm 11+ project config.
+# Disable default 1-day minimumReleaseAge so frozen lockfile installs work in CI/Docker.
+minimumReleaseAge: 0

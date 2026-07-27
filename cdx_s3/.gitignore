@@ -1,0 +1,16 @@
+# Binaries and templates
+caddy
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Coverage tool output
+*.out
+
+# OS specific files
+.DS_Store

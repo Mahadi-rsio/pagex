@@ -1,0 +1,72 @@
+{
+    auto_https off
+    order static_s3 before respond
+}
+
+:8080 {
+    # Matcher 1: Hashed assets (usually versioned JS/CSS/Fonts)
+    @hashed_assets path *.js *.css *.woff2 *.woff *.ttf
+
+    # Matcher 2: Everything else (HTML, favicon, metadata files)
+    @revalidate_assets not path *.js *.css *.woff2 *.woff *.ttf
+
+    # 1. Hashed JS/CSS: Cache for 1 year in browser (never check server again)
+    header @hashed_assets Cache-Control "public, max-age=31536000, immutable"
+
+    # 2. HTML & Others: Cache, but MUST validate with server on every load
+    header @revalidate_assets Cache-Control "public, max-age=0, must-revalidate"
+
+    # Matcher for media files to redirect to S3 (saves VPS bandwidth)
+    @media path *.png *.jpg *.jpeg *.gif *.mp4 *.pdf *.zip *.mp3 *.ico
+
+    handle @media {
+        static_s3 {
+            endpoint        http://minio:9000
+            bucket          cloudisy-sites
+            access_key      minioadmin
+            secret_key      minioadmin
+            use_path_style  true
+
+            # Multi-tenant context config
+            base_domain     localhost
+            db_dsn          "postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable"
+            redis_url       "redis://redis:6379/0"
+
+            # Redirect media directly to S3
+            redirect_to_s3   true
+            presign_redirect true
+            presign_lifetime 15m
+            
+            # SPA fallback options
+            fallback_except png css js svg ico woff woff2 ttf map
+        }
+    }
+
+    # Fallback handler for HTML, CSS, JS, etc. (cached locally on VPS)
+    handle {
+        static_s3 {
+            endpoint        http://minio:9000
+            bucket          cloudisy-sites
+            access_key      minioadmin
+            secret_key      minioadmin
+            use_path_style  true
+
+            # Multi-tenant config
+            base_domain     localhost
+            db_dsn          "postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable"
+            redis_url       "redis://redis:6379/0"
+
+            # Serve directly from Caddy (no redirection)
+            redirect_to_s3   false
+            
+            # Cache small site assets in memory
+            cache_ttl      2m
+            cache_size     1000
+            max_cache_size 512KiB
+            
+            # SPA fallback options
+            fallback_except png css js svg ico woff woff2 ttf map
+	        analytics 	   on
+        }
+    }
+}

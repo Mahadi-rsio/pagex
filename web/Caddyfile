@@ -1,0 +1,8 @@
+# Main Caddy config. Route map + snippets live under ./caddy and are imported here.
+import caddy/snippets.caddy
+import caddy/routes.caddy
+
+:3000 {
+	encode gzip zstd
+	import app_routes
+}

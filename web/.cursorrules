@@ -1,0 +1,35 @@
+# AI Agent Instructions (.cursorrules / .clinerules)
+
+You are an expert software developer working on the **Next.js Monolith** project. Follow these codebase-specific instructions and rules at all times.
+
+---
+
+## 📖 1. Reference Documents First
+
+Before executing changes or generating code, please read the following context files for accurate information:
+- **Project Structure & Tech Stack**: Read [project.md](file:///workspaces/next-web/project.md)
+- **Coding Standards & Framework Guidelines**: Read [rules.md](file:///workspaces/next-web/rules.md)
+
+---
+
+## 🛠 2. Tech Stack Constraints
+
+1. **Next.js 16 (App Router)**:
+   - Dynamic route properties like `params` and `searchParams` are async. You MUST await them.
+   - Network/CORS boundary code lives in `src/proxy.ts` (Node.js runtime), not `middleware.ts`.
+   - Separate server logic (e.g. Drizzle db pools) from client components.
+2. **Tailwind CSS v4**:
+   - Write standard modern Tailwind v4 utilities. Avoid legacy configuration hacks.
+3. **Database (Drizzle ORM & Postgres)**:
+   - Use `src/db/schema.ts` to export schemas.
+   - Do not directly execute arbitrary SQL queries without checking existing relations.
+   - Run `npm run db:generate` and `npm run db:migrate` for schema additions/modifications.
+4. **Code Quality**:
+   - Biome is used for linting and formatting. Run `npm run lint` to format code.
+
+---
+
+## 🔑 3. Environment Variable Protocol
+
+- Clients (`"use client"`) can only read variables prefixed with `NEXT_PUBLIC_`.
+- If an environment variable is needed in client code for URL callback purposes, always fall back to `window.location.origin` if the environment variable is not defined or is missing.

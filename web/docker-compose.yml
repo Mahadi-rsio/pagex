@@ -1,0 +1,78 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy:/etc/caddy/caddy:ro
+      - static_assets:/srv
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    env_file:
+      - .env
+    volumes:
+      - static_assets:/shared/static
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: next_web
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d next_web"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  static_assets:

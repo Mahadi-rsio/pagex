@@ -1,0 +1,38 @@
+# Reusable Caddy snippets for static-export UI serving.
+# Import from the main Caddyfile before using `import <snippet> ...`.
+
+# Serve a prerendered SSG shell for dynamic URL patterns.
+# Args: <matcher_name> <path_regexp> <shell_html_path>
+(dynamic_ssg) {
+	@{args[0]} path_regexp {args[0]} {args[1]}
+	handle @{args[0]} {
+		rewrite * {args[2]}
+		root * /srv
+		file_server
+	}
+}
+
+# Same as dynamic_ssg, but excludes one or more static paths (args[3:]).
+# Args: <matcher_name> <path_regexp> <shell_html_path> <excluded_path...>
+(dynamic_ssg_except) {
+	@{args[0]} {
+		path_regexp {args[0]} {args[1]}
+		not path {args[3:]}
+	}
+	handle @{args[0]} {
+		rewrite * {args[2]}
+		root * /srv
+		file_server
+	}
+}
+
+# Serve known static export path(s).
+# Args: <matcher_name> <path...>
+(static_page) {
+	@{args[0]} path {args[1:]}
+	handle @{args[0]} {
+		root * /srv
+		try_files {path} {path}/ {path}/index.html
+		file_server
+	}
+}
