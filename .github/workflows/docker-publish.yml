@@ -78,7 +78,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   # Multi-arch build for production tags
-   build-multi-arch:
+  build-multi-arch:
     needs: build-and-push
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
