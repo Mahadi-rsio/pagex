@@ -36,7 +36,6 @@ export const auth = betterAuth({
         },
     },
     plugins: [
-        nextCookies(),
         bearer(),
         openAPI(),
         phoneNumber({ sendOTP: async () => {} }),
@@ -50,5 +49,6 @@ export const auth = betterAuth({
         }),
         deviceAuthorization({ schema: {} }),
         emailOTP({ sendVerificationOTP: async () => {} }),
+        nextCookies(),
     ],
 });

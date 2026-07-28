@@ -134,8 +134,8 @@ services:
       - DATABASE_URL=${NEXT_WEB_DATABASE_URL:-${DB:-postgresql://postgres:postgres@db:5432/pagex}}
       - REDIS_URL=redis://redis:6379
       - PUBLIC_URL=${PUBLIC_URL:-http://localhost:3080}
-      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:3080}
-      - BETTER_AUTH_TRUSTED_ORIGINS=${BETTER_AUTH_TRUSTED_ORIGINS:-http://localhost:3080}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:3001}
+      - BETTER_AUTH_TRUSTED_ORIGINS=${BETTER_AUTH_TRUSTED_ORIGINS:-http://localhost:3001,http://localhost:3080}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
       - ENABLE_EMAIL_PASSWORD=${ENABLE_EMAIL_PASSWORD:-true}
       - NEXT_PUBLIC_ENABLE_EMAIL_PASSWORD=${NEXT_PUBLIC_ENABLE_EMAIL_PASSWORD:-true}

@@ -100,7 +100,6 @@ async function getAuth() {
             },
         },
         plugins: [
-            nextCookies(),
             bearer(),
             openAPI(),
             phoneNumber({
@@ -162,6 +161,7 @@ async function getAuth() {
                     }
                 },
             }),
+            nextCookies(),
         ],
     });
 }
