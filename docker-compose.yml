@@ -1,0 +1,299 @@
+version: '3.8'
+
+# PageX Docker Compose Configuration
+# ====================================
+# This file pulls pre-built images from GHCR for api, console, and blob-server
+# and builds the rest (db, redis, migrator, etc.) locally.
+#
+# For development with local builds of all services, use:
+#   docker compose -f infrastructure/docker/compose/docker-compose.yml up
+#
+# For production with pre-built images:
+#   docker compose -f docker-compose.yml up
+#
+# Environment file: Always uses infrastructure/configs/.env
+
+x-nix: &nix
+  volumes:
+    - nix-store:/nix/store:ro
+  environment:
+    - NIX_STORE_DIR=/nix/store
+
+services:
+  # ==========================================================================
+  # Core Services - Pulled from GHCR
+  # ==========================================================================
+
+  api:
+    <<: *nix
+    image: ghcr.io/mahadi-rsio/pagex/api:latest
+    container_name: pagex_api
+    env_file: infrastructure/configs/.env
+    environment:
+      - NODE_ENV=production
+      - IN_DOCKER_COMPOSE=1
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    networks:
+      - pagex-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  console:
+    <<: *nix
+    image: ghcr.io/mahadi-rsio/pagex/console:latest
+    container_name: pagex_console
+    env_file: infrastructure/configs/.env
+    environment:
+      - NODE_ENV=production
+      - IN_DOCKER_COMPOSE=1
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      console-migrator:
+        condition: service_completed_successfully
+    networks:
+      - pagex-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/api/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  blob-server:
+    <<: *nix
+    image: ghcr.io/mahadi-rsio/pagex/blob-server:latest
+    container_name: pagex_blob_server
+    env_file: infrastructure/configs/.env
+    environment:
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - DATABASE_URL=${DB:-postgresql://postgres:postgres@db:5432/pagex}?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+      - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
+      - MINIO_BUCKET=${MINIO_BUCKET}
+      - MINIO_ENDPOINT_URL=${MINIO_ENDPOINT_URL}
+      - CACHE_TTL=${CACHE_TTL:-10m}
+      - CACHE_SIZE=${CACHE_SIZE:-2000}
+      - MAX_CACHE_SIZE=${MAX_CACHE_SIZE:-5MB}
+      - REDIRECT_TO_S3=${REDIRECT_TO_S3:-false}
+      - PRESIGN_REDIRECT=${PRESIGN_REDIRECT:-false}
+      - PRESIGN_LIFETIME=${PRESIGN_LIFETIME:-15m}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "3080:3080"
+      - "2019:2019"
+    volumes:
+      - ./infrastructure/configs/config/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./infrastructure/configs/config/next-web/caddy:/etc/caddy/caddy:ro
+      - ./infrastructure/certs/cert.pem:/etc/caddy/certs/cert.pem:ro
+      - ./infrastructure/certs/key.pem:/etc/caddy/certs/key.pem:ro
+    networks:
+      - pagex-network
+    restart: unless-stopped
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2019/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ==========================================================================
+  # Infrastructure Services - Built Locally
+  # ==========================================================================
+
+  db:
+    image: postgres:15-alpine
+    container_name: pagex_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-pagex}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - pagex-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: pagex_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - pagex-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:1.18.0
+    container_name: pagex_pgbouncer
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_NAME: ${POSTGRES_DB:-pagex}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 100
+      DEFAULT_POOL_SIZE: 20
+    ports:
+      - "6432:6432"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - pagex-network
+    restart: unless-stopped
+
+  # ==========================================================================
+  # Migration Services - Built Locally
+  # ==========================================================================
+
+  migrator:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+      target: migrator
+    container_name: pagex_migrator
+    env_file: infrastructure/configs/.env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DB:-postgresql://postgres:postgres@db:5432/pagex}?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - pagex-network
+    restart: on-failure
+
+  console-migrator:
+    build:
+      context: ./services/console
+      dockerfile: Dockerfile
+      target: migrator
+    container_name: pagex_console_migrator
+    env_file: infrastructure/configs/.env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${NEXT_WEB_DATABASE_URL:-postgresql://postgres:postgres@db:5432/pagex}?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - pagex-network
+    restart: on-failure
+
+  # ==========================================================================
+  # Worker Services - Built Locally (Optional)
+  # ==========================================================================
+
+  sync-worker:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+      target: worker
+    container_name: pagex_sync_worker
+    env_file: infrastructure/configs/.env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DB:-postgresql://postgres:postgres@db:5432/pagex}?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - pagex-network
+    restart: unless-stopped
+    profiles:
+      - workers
+
+  build-worker:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+      target: build-worker
+    container_name: pagex_build_worker
+    env_file: infrastructure/configs/.env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DB:-postgresql://postgres:postgres@db:5432/pagex}?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+      - BUILD_ENV_IMAGE=${BUILD_ENV_IMAGE:-cloudisy-build-env:latest}
+      - BUILD_WORKSPACE=${BUILD_WORKSPACE:-/tmp/cloudisy-builds}
+    volumes:
+      - /tmp/cloudisy-builds:/tmp/cloudisy-builds
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - pagex-network
+    restart: unless-stopped
+    profiles:
+      - workers
+
+  build-env:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+      target: build-env
+    container_name: pagex_build_env
+    image: ${BUILD_ENV_IMAGE:-cloudisy-build-env:latest}
+    volumes:
+      - /tmp/cloudisy-builds:/tmp/cloudisy-builds
+    networks:
+      - pagex-network
+    restart: unless-stopped
+    profiles:
+      - workers
+
+# ==========================================================================
+# Volumes
+# ==========================================================================
+
+volumes:
+  postgres_data:
+  redis_data:
+
+# ==========================================================================
+# Networks
+# ==========================================================================
+
+networks:
+  pagex-network:
+    driver: bridge

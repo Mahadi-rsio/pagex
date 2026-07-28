@@ -1,22 +1,11 @@
 # Dependencies
 node_modules/
-.pnpm-store/
-.pnpm-debug.log
+.pnp
+.pnp.js
 
 # Git
 .git/
 .gitignore
-.gitmodules
-.gitattributes
-
-# Build outputs
-dist/
-.next/
-out/
-build/
-.turbo/
-*.tsbuildinfo
-*.tsbuildinfo.*
 
 # IDE
 .idea/
@@ -24,77 +13,49 @@ build/
 *.swp
 *.swo
 *~
-*.sublime-*
 
 # OS
 .DS_Store
 Thumbs.db
-Desktop.ini
-
-# Environment files
-.env
-.env.*
-!.env.example
-!.env.schema
-
-# Documentation
-docs/
-*.md
-*.mdx
-LICENSE
-
-# Nix
-.nix-channels
-.nix-defexpr
-.nix-profile
-.nix-store
-/nix/
-flake.nix
-flake.lock
-result
-result-*
-
-# Docker files
-Dockerfile*
-docker-compose*.yml
-.dockerignore
 
 # Logs
 *.log
 logs/
 
+# Build outputs
+dist/
+build/
+.out/
+.next/
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Nix
+.nix-profile
+/nix
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Documentation
+docs/
+*.md
+
 # Test
 coverage/
-*.test.ts
-*.spec.ts
-__tests__/
-__mocks__/
-fixtures/
+.nyc_output/
 
-# Temporary
+# Temporary files
 tmp/
 temp/
 *.tmp
 
-# Local development
-local.env
-*.local
-
-# Service-specific
-services/*/node_modules/
-services/*/dist/
-services/*/.next/
-services/*/out/
-services/*/.turbo/
-
-packages/*/node_modules/
-packages/*/dist/
-packages/*/.turbo/
-
-# Infrastructure
-infrastructure/configs/.env
-
-# CI
-.cache/
-.nyc_output/
-junit.xml
+# Project specific
+infrastructure/
+scripts/
+packages/
