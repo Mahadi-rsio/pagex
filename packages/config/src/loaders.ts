@@ -140,7 +140,8 @@ export async function loadAppConfig(configPath?: string): Promise<AppConfig> {
       return config;
     } catch {
       // Return default configuration
-      return {
+      const { createConfig } = await import('./schemas');
+      return createConfig({
         db: {
           host: 'localhost',
           port: 5432,
@@ -165,7 +166,7 @@ export async function loadAppConfig(configPath?: string): Promise<AppConfig> {
         baseDomain: 'localhost',
         environment: 'development',
         debug: false,
-      };
+      });
     }
   }
 }

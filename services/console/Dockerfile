@@ -4,7 +4,10 @@ WORKDIR /app
 
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN pnpm install --no-frozen-lockfile --ignore-scripts
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm config set store-dir /root/.local/share/pnpm/store && \
+    pnpm config set package-import-method copy && \
+    pnpm install --no-frozen-lockfile --ignore-scripts
 
 # --- Static UI export (no API routes / proxy) ---
 FROM base AS export-builder
@@ -13,7 +16,7 @@ COPY . .
 # Route handlers and proxy are unsupported with output: "export"
 RUN mv src/app/api /tmp/api-backup && \
     mv src/proxy.ts /tmp/proxy.ts.bak && \
-    BUILD_MODE=export pnpm build && \
+    BUILD_MODE=export npm run build && \
     mv /tmp/api-backup src/app/api && \
     mv /tmp/proxy.ts.bak src/proxy.ts
 
@@ -21,7 +24,7 @@ RUN mv src/app/api /tmp/api-backup && \
 FROM base AS api-builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN BUILD_MODE=standalone pnpm build
+RUN BUILD_MODE=standalone npm run build
 
 # --- DB migrator (drizzle-kit) ---
 FROM deps AS migrator

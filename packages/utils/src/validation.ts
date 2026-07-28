@@ -122,7 +122,8 @@ export function validateSchema<T>(
   
   for (const [key, validator] of Object.entries(schema)) {
     const value = (obj as Record<string, unknown>)[key];
-    if (!validator(value)) {
+    const v = validator as (value: unknown) => boolean;
+    if (!v(value)) {
       errors.push({
         field: key,
         message: `${key} is invalid`,

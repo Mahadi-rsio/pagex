@@ -16,6 +16,7 @@ export interface LoggerConfig {
   level: LogLevel;
   pretty?: boolean;
   includeTimestamp?: boolean;
+  context?: Record<string, unknown>;
 }
 
 export class Logger {

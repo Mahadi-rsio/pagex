@@ -20,6 +20,7 @@
   "license": "MIT",
   "dependencies": {
     "@pagex/types": "workspace:*",
+    "yaml": "^2.9.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {

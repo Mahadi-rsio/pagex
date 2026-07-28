@@ -2,7 +2,6 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { authClient } from "@/modules/auth/utils/auth-client";
 import { AuthGuard } from "@/components/console/AuthGuard";
 import { navigateHome } from "@/lib/navigate";
 import { Button } from "@/components/ui/button";
@@ -41,7 +40,15 @@ function DeviceApprovalContent() {
         if (!rawCode) return;
         setStatus("approving");
         try {
-            await authClient.device.approve({ userCode: rawCode });
+            // Call POST /api/auth/device/approve directly — authClient.device.approve
+            // is not typed on ReactAuthClient despite the plugin registering the path.
+            const res = await fetch("/api/auth/device/approve", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userCode: rawCode }),
+            });
+            if (!res.ok) throw new Error("approve failed");
             setStatus("approved");
             setTimeout(() => navigateHome(), 2000);
         } catch {
@@ -53,7 +60,14 @@ function DeviceApprovalContent() {
         if (!rawCode) return;
         setStatus("denying");
         try {
-            await authClient.device.deny({ userCode: rawCode });
+            // Same pattern for deny.
+            const res = await fetch("/api/auth/device/deny", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userCode: rawCode }),
+            });
+            if (!res.ok) throw new Error("deny failed");
             setStatus("denied");
             setTimeout(() => navigateHome(), 2000);
         } catch {

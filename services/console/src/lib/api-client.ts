@@ -1,4 +1,4 @@
-import { authClient } from "@/modules/auth/utils/auth-client";
+
 
 // API Service base URL - configured via environment variable
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -96,14 +96,19 @@ export class ApiClient {
 
         tokenFetchPromise = (async () => {
             try {
-                // Use the Better Auth client's token() method to get JWT token
-                // This is the official way to get the JWT token from the JWT plugin
-                const { data, error } = await authClient.token();
+                // authClient.token() is not typed on ReactAuthClient (jwtClient only
+                // exposes jwks() on the client type). Call the server endpoint directly.
+                const res = await fetch("/api/auth/token", {
+                    method: "GET",
+                    credentials: "include",
+                });
 
-                if (error) {
-                    console.error("Failed to get auth token:", error);
+                if (!res.ok) {
+                    console.error("Failed to get auth token:", res.statusText);
                     return null;
                 }
+
+                const data = await res.json();
 
                 if (data?.token) {
                     cachedToken = data.token;

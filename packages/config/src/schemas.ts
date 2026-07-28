@@ -1,7 +1,7 @@
 // Configuration schemas for validation
 
 import { z } from 'zod';
-import type { DatabaseConfig, RedisConfig, StorageConfig } from '@pagex/types';
+
 
 // Database configuration schema
 export const DatabaseConfigSchema = z.object({

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { authClient } from "@/modules/auth/utils/auth-client";
 import { navigateToDeviceApprove } from "@/lib/navigate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,10 +53,14 @@ function DeviceAuthContent() {
         setIsLoading(true);
         setError("");
         try {
-            const response = await authClient.device({
-                query: { user_code: formattedCode },
-            });
-            if (response.data) {
+            // The deviceAuthorizationClient plugin exposes GET /device to verify
+            // a user_code. We call the endpoint directly to avoid TypeScript inference
+            // issues with the ReactAuthClient generic type.
+            const res = await fetch(
+                `/api/auth/device?user_code=${encodeURIComponent(formattedCode)}`,
+                { method: "GET", credentials: "include" },
+            );
+            if (res.ok) {
                 navigateToDeviceApprove(formattedCode);
             } else {
                 setError("Invalid or expired code. Please try again.");

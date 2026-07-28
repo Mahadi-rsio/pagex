@@ -121,10 +121,10 @@ export function parseStringArray(value: string | undefined, defaultValue: string
 }
 
 // Validate environment
-export function validateEnvironment<T>(
-  schema: z.ZodSchema<T>,
+export function validateEnvironment<T extends z.ZodTypeAny>(
+  schema: T,
   env: Record<string, string | undefined> = process.env
-): T {
+): z.infer<T> {
   try {
     return schema.parse(env);
   } catch (error) {

@@ -7,12 +7,6 @@ export function isEmpty(value: string | null | undefined): boolean {
   return value === null || value === undefined || value.trim().length === 0;
 }
 
-/**
- * Check if a string is not empty
- */
-export function isNotEmpty(value: string | null | undefined): boolean {
-  return !isEmpty(value);
-}
 
 /**
  * Capitalize the first letter of a string
