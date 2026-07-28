@@ -13,12 +13,6 @@ on:
         required: false
         default: 'false'
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME_API: ${{ github.repository }}/api
-  IMAGE_NAME_CONSOLE: ${{ github.repository }}/console
-  IMAGE_NAME_BLOB_SERVER: ${{ github.repository }}/blob-server
-
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -34,15 +28,15 @@ jobs:
           - service: api
             context: services/api
             dockerfile: services/api/Dockerfile
-            image_name: ${{ env.IMAGE_NAME_API }}
+            image_name: ${{ github.repository }}/api
           - service: console
             context: services/console
             dockerfile: services/console/Dockerfile
-            image_name: ${{ env.IMAGE_NAME_CONSOLE }}
+            image_name: ${{ github.repository }}/console
           - service: blob-server
             context: services/blob-server
             dockerfile: services/blob-server/Dockerfile
-            image_name: ${{ env.IMAGE_NAME_BLOB_SERVER }}
+            image_name: ${{ github.repository }}/blob-server
 
     steps:
       - name: Checkout repository
@@ -54,7 +48,7 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -84,7 +78,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   # Multi-arch build for production tags
-  build-multi-arch:
+   build-multi-arch:
     needs: build-and-push
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
@@ -100,15 +94,15 @@ jobs:
           - service: api
             context: services/api
             dockerfile: services/api/Dockerfile
-            image_name: ${{ env.IMAGE_NAME_API }}
+            image_name: ${{ github.repository }}/api
           - service: console
             context: services/console
             dockerfile: services/console/Dockerfile
-            image_name: ${{ env.IMAGE_NAME_CONSOLE }}
+            image_name: ${{ github.repository }}/console
           - service: blob-server
             context: services/blob-server
             dockerfile: services/blob-server/Dockerfile
-            image_name: ${{ env.IMAGE_NAME_BLOB_SERVER }}
+            image_name: ${{ github.repository }}/blob-server
 
     steps:
       - name: Checkout repository
@@ -123,7 +117,7 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
