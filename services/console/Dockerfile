@@ -1,58 +1,56 @@
-FROM node:24-alpine AS base
-RUN corepack enable
+FROM node:24-alpine AS deps
 WORKDIR /app
+COPY package.json ./
+RUN npm install
 
-FROM base AS deps
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm config set store-dir /root/.local/share/pnpm/store && \
-    pnpm config set package-import-method copy && \
-    pnpm install --no-frozen-lockfile --ignore-scripts
-
-# --- Static UI export (no API routes / proxy) ---
-FROM base AS export-builder
+FROM node:24-alpine AS export-builder
+WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Route handlers and proxy are unsupported with output: "export"
 RUN mv src/app/api /tmp/api-backup && \
     mv src/proxy.ts /tmp/proxy.ts.bak && \
     BUILD_MODE=export npm run build && \
     mv /tmp/api-backup src/app/api && \
     mv /tmp/proxy.ts.bak src/proxy.ts
 
-# --- Standalone API server ---
-FROM base AS api-builder
+FROM node:24-alpine AS api-builder
+WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN BUILD_MODE=standalone npm run build
 
-# --- DB migrator (drizzle-kit) ---
-FROM deps AS migrator
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml drizzle.config.ts ./
+FROM node:24-alpine AS migrator
+WORKDIR /app
+RUN npm init -y && \
+    npm install drizzle-kit@^0.31.10 drizzle-orm@^0.45.2 dotenv postgres --omit=optional && \
+    find /app/node_modules -type f \( -name "*.ts" -not -name "*.d.ts" -o -name "*.js.map" -o -name "CHANGELOG*" -o -name "README*" -o -name "SECURITY*" \) -delete 2>/dev/null; \
+    npm cache clean --force && \
+    rm -f package.json package-lock.json
+COPY drizzle.config.ts ./
 COPY drizzle ./drizzle
 ENV CI=true
-CMD ["pnpm", "exec", "drizzle-kit", "migrate"]
+CMD ["npx", "drizzle-kit", "migrate"]
 
-FROM base AS runner
-ENV NODE_ENV=production
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
-ENV STATIC_SRC=/opt/static
-ENV STATIC_DEST=/shared/static
+FROM node:24-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOSTNAME="0.0.0.0" \
+    STATIC_SRC=/opt/static \
+    STATIC_DEST=/shared/static
 
-RUN apk add --no-cache su-exec wget && \
+RUN apk add --no-cache su-exec && \
     addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs && \
     mkdir -p /opt/static /shared/static && \
     chown -R nextjs:nodejs /opt/static /shared/static
 
-COPY --from=export-builder --chown=nextjs:nodejs /app/out /opt/static
+COPY --from=export-builder /app/out /opt/static
 COPY --from=api-builder /app/public ./public
-COPY --from=api-builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=api-builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --chmod=755 docker-entrypoint.sh /app/docker-entrypoint.sh
+COPY --from=api-builder /app/.next/standalone ./
+COPY --from=api-builder /app/.next/static ./.next/static
+COPY --chmod=755 docker-entrypoint.sh /app/
 
-# Entrypoint runs as root to sync the shared volume, then drops to nextjs.
 EXPOSE 3000
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=5 \

@@ -1,17 +1,22 @@
 # Dependencies
 node_modules/
 .pnpm-store/
+.pnpm-debug.log
 
 # Git
 .git/
 .gitignore
 .gitmodules
+.gitattributes
 
 # Build outputs
 dist/
 .next/
 out/
 build/
+.turbo/
+*.tsbuildinfo
+*.tsbuildinfo.*
 
 # IDE
 .idea/
@@ -19,19 +24,24 @@ build/
 *.swp
 *.swo
 *~
+*.sublime-*
 
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
 
 # Environment files
 .env
 .env.*
 !.env.example
+!.env.schema
 
 # Documentation
 docs/
 *.md
+*.mdx
+LICENSE
 
 # Nix
 .nix-channels
@@ -41,6 +51,8 @@ docs/
 /nix/
 flake.nix
 flake.lock
+result
+result-*
 
 # Docker files
 Dockerfile*
@@ -55,6 +67,9 @@ logs/
 coverage/
 *.test.ts
 *.spec.ts
+__tests__/
+__mocks__/
+fixtures/
 
 # Temporary
 tmp/
@@ -70,9 +85,16 @@ services/*/node_modules/
 services/*/dist/
 services/*/.next/
 services/*/out/
+services/*/.turbo/
 
 packages/*/node_modules/
 packages/*/dist/
+packages/*/.turbo/
 
 # Infrastructure
 infrastructure/configs/.env
+
+# CI
+.cache/
+.nyc_output/
+junit.xml
