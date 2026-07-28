@@ -38,8 +38,10 @@ Add the `static_s3` directive inside your site block.
             # Bucket name (Required)
             bucket "my-bucket"
             
-            # S3 endpoint. Omit for standard AWS S3. (Optional)
-            endpoint "https://localhost:9000"
+             # S3 endpoint. Omit for standard AWS S3. (Optional)
+             # IMPORTANT: Must include scheme (http:// or https://)
+             # The Go AWS SDK v2 uses url.Parse() and requires a valid URL scheme
+             endpoint "https://localhost:9000"
             
             # AWS Region. Defaults to "us-east-1" or "S3_REGION" environment variable. (Optional)
             region "us-east-1"
@@ -371,6 +373,7 @@ static_s3 {
 ```caddy
 static_s3 {
     bucket "dev-bucket"
+    # IMPORTANT: Always include scheme (http:// or https://)
     endpoint "http://localhost:9000"
     access_key "admin"
     secret_key "StrongPassword123"
@@ -378,6 +381,8 @@ static_s3 {
     cache_ttl 10s # Short TTL for dev
 }
 ```
+
+> **Note:** The `endpoint` must always include the scheme (`http://` or `https://`). The Go AWS SDK v2 uses `url.Parse()` on this value, and without a scheme, the hostname is treated as a URL path, producing invalid S3 request URLs.
 
 ---
 
