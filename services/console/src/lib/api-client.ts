@@ -1,7 +1,7 @@
 
 
 // API Service base URL - configured via environment variable
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
 // Cache for the auth token to avoid repeated fetches
 let cachedToken: string | null = null;
