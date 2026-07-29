@@ -3,21 +3,11 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install
 
-FROM node:24-alpine AS export-builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN mv src/app/api /tmp/api-backup && \
-    mv src/proxy.ts /tmp/proxy.ts.bak && \
-    BUILD_MODE=export npm run build && \
-    mv /tmp/api-backup src/app/api && \
-    mv /tmp/proxy.ts.bak src/proxy.ts
-
-FROM node:24-alpine AS api-builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-RUN BUILD_MODE=standalone npm run build
+RUN npm run build
 
 FROM node:24-alpine AS migrator
 WORKDIR /app
@@ -34,26 +24,21 @@ CMD ["npx", "drizzle-kit", "migrate"]
 FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
-    PORT=3000 \
-    HOSTNAME="0.0.0.0" \
-    STATIC_SRC=/opt/static \
-    STATIC_DEST=/shared/static
+    PORT=3001 \
+    HOSTNAME="0.0.0.0"
 
 RUN apk add --no-cache su-exec && \
     addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs && \
-    mkdir -p /opt/static /shared/static && \
-    chown -R nextjs:nodejs /opt/static /shared/static
+    adduser --system --uid 1001 nextjs
 
-COPY --from=export-builder /app/out /opt/static
-COPY --from=api-builder /app/public ./public
-COPY --from=api-builder /app/.next/standalone ./
-COPY --from=api-builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 COPY --chmod=755 docker-entrypoint.sh /app/
 
-EXPOSE 3000
+EXPOSE 3001
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=5 \
-  CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
+  CMD wget -qO- http://127.0.0.1:3001/api/health || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

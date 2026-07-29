@@ -398,6 +398,7 @@ export function CreateProjectView() {
     const [step, setStep] = useState<"name" | "deploy">("name");
     const [projectName, setProjectName] = useState("");
     const [nameError, setNameError] = useState("");
+    const [isCreating, setIsCreating] = useState(false);
 
     const [provider, setProvider] = useState<Provider>("github");
     const [searchQuery, setSearchQuery] = useState("");
@@ -432,7 +433,7 @@ export function CreateProjectView() {
         MOCK_API_KEY,
     );
 
-    const handleNameContinue = () => {
+    const handleNameContinue = async () => {
         const name = projectName.trim();
         if (!name) {
             setNameError("Project name is required");
@@ -445,28 +446,28 @@ export function CreateProjectView() {
             return;
         }
         setNameError("");
-        setStep("deploy");
+        setIsCreating(true);
+        clearError();
+
+        try {
+            const project = await createProject({
+                name,
+                status: "inactive",
+                domain: `${slugName}.console.app`,
+            });
+            setCreatedProjectId(project.id);
+            setStep("deploy");
+        } catch {
+            // Error is already handled by the store
+        } finally {
+            setIsCreating(false);
+        }
     };
 
     const handleCloudDeploy = async () => {
         if (!selectedRepo || isDeploying) return;
         setIsDeploying(true);
         setShowBuild(true);
-
-        try {
-            const project = await createProject({
-                name: projectName.trim(),
-                description: selectedRepo.description,
-                repo: selectedRepo.fullName,
-                provider,
-                status: "building",
-                domain: `${slugName}.console.app`,
-            });
-            setCreatedProjectId(project.id);
-        } catch (error) {
-            setIsDeploying(false);
-            // Error is already handled by the store
-        }
     };
 
     const handleBuildComplete = () => {
@@ -479,16 +480,9 @@ export function CreateProjectView() {
         }
     };
 
-    const handleFinishWithoutRepo = async () => {
-        try {
-            const project = await createProject({
-                name: projectName.trim(),
-                status: "inactive",
-                domain: `${slugName}.console.app`,
-            });
-            navigateToProjectOverview(project.id);
-        } catch (error) {
-            // Error is already handled by the store
+    const handleFinishWithoutRepo = () => {
+        if (createdProjectId) {
+            navigateToProjectOverview(createdProjectId);
         }
     };
 
@@ -573,12 +567,23 @@ export function CreateProjectView() {
                                 </p>
                             )}
                         </div>
+                        {error && (
+                            <p className="text-xs text-destructive">{error}</p>
+                        )}
                         <Button
                             onClick={handleNameContinue}
                             className="w-full"
                             size="lg"
+                            disabled={isCreating}
                         >
-                            Continue
+                            {isCreating ? (
+                                <>
+                                    <Loader2 className="size-4 animate-spin" />
+                                    Creating project...
+                                </>
+                            ) : (
+                                "Continue"
+                            )}
                         </Button>
                     </CardContent>
                 </Card>
