@@ -20,19 +20,6 @@
 
 # Tenant sites — served via static_s3
 http://*.localhost {
-	import static_site
-}
-
-http://api.localhost {
-	reverse_proxy api:3000
-}
-
-http://localhost {
-	reverse_proxy api:3000
-}
-
-# ── Shared static site handlers ─────────────────────────────
-(static_site) {
 	@hashed_assets path *.js *.css *.woff2 *.woff *.ttf
 	@revalidate_assets not path *.js *.css *.woff2 *.woff *.ttf
 
@@ -83,4 +70,12 @@ http://localhost {
 		}
 		format json
 	}
+}
+
+http://api.localhost {
+	reverse_proxy api:3000
+}
+
+http://localhost {
+	reverse_proxy api:3000
 }

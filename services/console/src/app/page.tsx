@@ -5,14 +5,13 @@ import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { LazyDashboardPage } from "@/components/console/ConsolePageWrappers";
+import { apiClient } from "@/lib/api-client";
 
 export default function HomePage() {
     useEffect(() => {
         const checkHealth = async () => {
             try {
-                const res = await fetch("http://api:3000/health");
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
+                const data = await apiClient.healthCheck();
                 if (data.message === "ok") {
                     toast.success("Server connected");
                 } else {
