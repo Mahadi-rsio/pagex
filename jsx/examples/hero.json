@@ -1,0 +1,31 @@
+{
+  "name": "Hero",
+  "tag": "section",
+  "props": {
+    "className": "hero",
+    "data-testid": "hero-section"
+  },
+  "children": [
+    {
+      "tag": "h1",
+      "children": "Welcome back"
+    },
+    {
+      "tag": "p",
+      "props": { "className": "hero-subtitle" },
+      "children": [
+        "Hello ",
+        { "expr": "user.name" },
+        "!"
+      ]
+    },
+    {
+      "tag": "button",
+      "props": {
+        "onClick": { "expr": "onStart" },
+        "disabled": { "expr": "isLoading" }
+      },
+      "children": "Get started"
+    }
+  ]
+}
