@@ -1,4 +1,4 @@
-import { bigint, boolean, index, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, date, index, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 
 /**
@@ -14,6 +14,31 @@ export const sites = pgTable("sites", {
     createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => ({
     subdomainIdx: index("idx_sites_subdomain").on(t.subdomain),
+}));
+
+/**
+ * `site_daily_stats` — per-site daily analytics written by the Caddy blob-server.
+ * Live counters live in Redis as `stats:{site_id}:{YYYY-MM-DD}` and flush here.
+ */
+export const siteDailyStats = pgTable("site_daily_stats", {
+    id: uuid("id").primaryKey().notNull().defaultRandom(),
+    siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    date: date("date").notNull(),
+    requests: bigint("requests", { mode: "number" }).notNull().default(0),
+    bandwidth: bigint("bandwidth", { mode: "number" }).notNull().default(0),
+    requests2xx: bigint("requests_2xx", { mode: "number" }).notNull().default(0),
+    requests3xx: bigint("requests_3xx", { mode: "number" }).notNull().default(0),
+    requests4xx: bigint("requests_4xx", { mode: "number" }).notNull().default(0),
+    requests5xx: bigint("requests_5xx", { mode: "number" }).notNull().default(0),
+    humans: bigint("humans", { mode: "number" }).notNull().default(0),
+    bots: bigint("bots", { mode: "number" }).notNull().default(0),
+    uniqueIps: bigint("unique_ips", { mode: "number" }).notNull().default(0),
+    peakHour: text("peak_hour"),
+    peakHourRequests: bigint("peak_hour_requests", { mode: "number" }).notNull().default(0),
+    updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+    uniqueSiteDate: unique("site_daily_stats_site_id_date_uid").on(t.siteId, t.date),
+    siteDateIdx: index("idx_site_daily_stats_site_date").on(t.siteId, t.date),
 }));
 
 /**

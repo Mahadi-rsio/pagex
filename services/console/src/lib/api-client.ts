@@ -139,6 +139,10 @@ export interface ApiUsage {
         pending_flush: boolean;
         interval_seconds: number;
     };
+    traffic?: {
+        bots: number;
+        humans: number;
+    };
 }
 
 export interface CreatePageInput {

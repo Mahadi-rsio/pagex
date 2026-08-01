@@ -12,6 +12,8 @@ services:
       - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
     expose:
       - "3000"
+    ports:
+      - "3000:3000"
     depends_on:
       migrator:
         condition: service_completed_successfully

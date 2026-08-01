@@ -1,5 +1,12 @@
 import { db } from '../infrastructure/db/db.js'
-import { blobTreeEntries, blobs, deployments, pages, sites } from '../infrastructure/db/schema.js'
+import {
+    blobTreeEntries,
+    blobs,
+    deployments,
+    pages,
+    siteDailyStats,
+    sites,
+} from '../infrastructure/db/schema.js'
 import { and, eq, sql } from 'drizzle-orm'
 import { customAlphabet } from 'nanoid'
 import { redis } from '../infrastructure/cache/redis.js'
@@ -64,6 +71,33 @@ function formatBytes(bytes: number): string {
     return `${(bytes / 1024 ** 3).toFixed(3)} GB`
 }
 
+function utcDateString(offsetDays = 0): string {
+    const d = new Date()
+    d.setUTCDate(d.getUTCDate() + offsetDays)
+    return d.toISOString().slice(0, 10)
+}
+
+async function readLiveSiteStats(siteId: string) {
+    // Blob-server analytics keys: stats:{site_id}:{YYYY-MM-DD}
+    const dates = [utcDateString(0), utcDateString(-1)]
+    let requests = 0
+    let bandwidth = 0
+    let bots = 0
+    let humans = 0
+
+    for (const day of dates) {
+        const key = `stats:${siteId}:${day}`
+        const vals = await redis.hgetall(key)
+        if (!vals || Object.keys(vals).length === 0) continue
+        requests += parseInt(vals.requests || '0', 10) || 0
+        bandwidth += parseInt(vals.bandwidth || '0', 10) || 0
+        bots += parseInt(vals.bots || '0', 10) || 0
+        humans += parseInt(vals.humans || '0', 10) || 0
+    }
+
+    return { requests, bandwidth, bots, humans }
+}
+
 async function getActiveDeploymentStorage(pageId: string) {
     const [active] = await db
         .select({ id: deployments.id })
@@ -92,18 +126,16 @@ async function getActiveDeploymentStorage(pageId: string) {
     }
 }
 
+/**
+ * Usage from the blob-server analytics pipeline:
+ * - Live: Redis `stats:{site_id}:{date}` (pending 5-min flush)
+ * - Flushed: PostgreSQL `site_daily_stats`
+ */
 export async function getPageUsage(domain: string) {
-    const dbCacheKey = `db_cache:${domain}`
-    let dbRequests = 0
-    let dbBandwidth = 0
-    let requestLimit = 100_000
-    let bandwidthLimit = 2147483648
-
     const [page] = await db
         .select({
             id: pages.id,
-            request: pages.request,
-            bandwidth_usage: pages.bandwidth_usage,
+            site_id: pages.site_id,
             request_limit: pages.request_limit,
             bandwidth_limit: pages.bandwidth_limit,
         })
@@ -113,49 +145,39 @@ export async function getPageUsage(domain: string) {
 
     if (!page) return null
 
-    requestLimit = Number(page.request_limit) || 100_000
-    bandwidthLimit = Number(page.bandwidth_limit) || 2147483648
+    const requestLimit = Number(page.request_limit) || 100_000
+    const bandwidthLimit = Number(page.bandwidth_limit) || 2147483648
 
-    const cachedDb = await redis.get(dbCacheKey)
-    if (cachedDb) {
-        const parsed = JSON.parse(cachedDb) as { request: number; bandwidth_usage: number }
-        dbRequests = parsed.request
-        dbBandwidth = parsed.bandwidth_usage
-    } else {
-        dbRequests = Number(page.request) || 0
-        dbBandwidth = Number(page.bandwidth_usage) || 0
+    const [flushedRow] = await db
+        .select({
+            requests: sql<number>`coalesce(sum(${siteDailyStats.requests}), 0)::bigint`.mapWith(Number),
+            bandwidth: sql<number>`coalesce(sum(${siteDailyStats.bandwidth}), 0)::bigint`.mapWith(Number),
+            bots: sql<number>`coalesce(sum(${siteDailyStats.bots}), 0)::bigint`.mapWith(Number),
+            humans: sql<number>`coalesce(sum(${siteDailyStats.humans}), 0)::bigint`.mapWith(Number),
+        })
+        .from(siteDailyStats)
+        .where(eq(siteDailyStats.siteId, page.site_id))
 
-        await redis.set(
-            dbCacheKey,
-            JSON.stringify({ request: dbRequests, bandwidth_usage: dbBandwidth }),
-            'EX',
-            900
-        )
-    }
+    const flushedRequests = flushedRow?.requests ?? 0
+    const flushedBandwidth = flushedRow?.bandwidth ?? 0
+    const live = await readLiveSiteStats(page.site_id)
 
-    const [liveReq, liveBw] = await Promise.all([
-        redis.get(`requests:${domain}`),
-        redis.get(`bandwidth:${domain}`),
-    ])
-
-    const liveRequests = parseInt(liveReq || '0', 10) || 0
-    const liveBandwidth = parseInt(liveBw || '0', 10) || 0
-    const totalRequests = dbRequests + liveRequests
-    const totalBandwidth = dbBandwidth + liveBandwidth
+    const totalRequests = flushedRequests + live.requests
+    const totalBandwidth = flushedBandwidth + live.bandwidth
     const storage = await getActiveDeploymentStorage(page.id)
 
     return {
         requests: {
             used: totalRequests,
             limit: requestLimit,
-            flushed: dbRequests,
-            live: liveRequests,
+            flushed: flushedRequests,
+            live: live.requests,
         },
         bandwidth: {
             used_bytes: totalBandwidth,
             used_gb: (totalBandwidth / 1024 ** 3).toFixed(6),
-            flushed_bytes: dbBandwidth,
-            live_bytes: liveBandwidth,
+            flushed_bytes: flushedBandwidth,
+            live_bytes: live.bandwidth,
             limit_bytes: bandwidthLimit,
             limit: formatBytes(bandwidthLimit),
         },
@@ -165,8 +187,12 @@ export async function getPageUsage(domain: string) {
             file_count: storage.fileCount,
         },
         sync: {
-            pending_flush: liveRequests > 0 || liveBandwidth > 0,
-            interval_seconds: 120,
+            pending_flush: live.requests > 0 || live.bandwidth > 0,
+            interval_seconds: 300,
+        },
+        traffic: {
+            bots: (flushedRow?.bots ?? 0) + live.bots,
+            humans: (flushedRow?.humans ?? 0) + live.humans,
         },
     }
 }
