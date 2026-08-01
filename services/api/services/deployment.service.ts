@@ -1,5 +1,5 @@
 import { db } from '../infrastructure/db/db.js'
-import { blobTreeEntries, deployments, pages } from '../infrastructure/db/schema.js'
+import { blobTreeEntries, blobs, deployments, pages } from '../infrastructure/db/schema.js'
 import { and, eq, ne, desc } from 'drizzle-orm'
 import { HttpError } from '../utils/http-error.js'
 import {
@@ -69,4 +69,57 @@ export async function listDeployments(pageId: string, tenantId: string) {
         .from(deployments)
         .where(and(eq(deployments.page_id, pageId), eq(deployments.tenant_id, tenantId)))
         .orderBy(desc(deployments.version))
+}
+
+export async function listPageDeploymentFiles(pageId: string, tenantId: string) {
+    const [active] = await db
+        .select()
+        .from(deployments)
+        .where(
+            and(
+                eq(deployments.page_id, pageId),
+                eq(deployments.tenant_id, tenantId),
+                eq(deployments.is_active, true),
+            ),
+        )
+        .limit(1)
+
+    const deployment =
+        active ??
+        (
+            await db
+                .select()
+                .from(deployments)
+                .where(
+                    and(
+                        eq(deployments.page_id, pageId),
+                        eq(deployments.tenant_id, tenantId),
+                    ),
+                )
+                .orderBy(desc(deployments.version))
+                .limit(1)
+        )[0]
+
+    if (!deployment) {
+        return {
+            deployment: null,
+            files: [] as Array<{ path: string; hash: string; size: number }>,
+            total_size: 0,
+        }
+    }
+
+    const files = await db
+        .select({
+            path: blobTreeEntries.path,
+            hash: blobTreeEntries.blobHash,
+            size: blobs.size,
+        })
+        .from(blobTreeEntries)
+        .innerJoin(blobs, eq(blobTreeEntries.blobHash, blobs.hash))
+        .where(eq(blobTreeEntries.deploymentId, deployment.id))
+        .orderBy(blobTreeEntries.path)
+
+    const total_size = files.reduce((sum, f) => sum + (f.size || 0), 0)
+
+    return { deployment, files, total_size }
 }

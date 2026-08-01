@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 
-const MOCK_API_KEY = "evo_sk_live_8f3a2c91d4e7b6a0";
+const API_KEY_PLACEHOLDER = "YOUR_API_KEY";
 
 const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
@@ -277,11 +277,11 @@ export function CreateProjectView() {
         .replace(/^-|-$/g, "");
     const deployCommand = getDeployCommand(
         slugName || "project_name",
-        MOCK_API_KEY,
+        API_KEY_PLACEHOLDER,
     );
     const workflowCode = getWorkflowCode(
         slugName || "project_name",
-        MOCK_API_KEY,
+        API_KEY_PLACEHOLDER,
     );
 
     const handleNameContinue = async () => {
@@ -707,14 +707,14 @@ export function CreateProjectView() {
                                         <p className="text-sm font-medium text-foreground">
                                             API key
                                         </p>
-                                        <p className="font-mono text-xs text-muted-foreground">
-                                            {MOCK_API_KEY.slice(0, 16)}••••••••
+                                        <p className="text-xs text-muted-foreground">
+                                            Replace{" "}
+                                            <code className="font-mono">
+                                                {API_KEY_PLACEHOLDER}
+                                            </code>{" "}
+                                            with your Evolo API key.
                                         </p>
                                     </div>
-                                    <CopyButton
-                                        value={MOCK_API_KEY}
-                                        label="Copy API key"
-                                    />
                                 </div>
 
                                 <div className="rounded-xl border border-border bg-muted/30 p-3">

@@ -21,7 +21,7 @@ CMD ["npx", "drizzle-kit", "migrate"]
 
 FROM node:20-alpine AS build-worker
 WORKDIR /app
-RUN apk add --no-cache docker-cli wget
+RUN apk add --no-cache docker-cli wget git
 COPY package.json ./
 RUN npm install --omit=dev && \
     rm -rf /app/node_modules/@img/sharp-wasm32 /app/node_modules/@emnapi && \
@@ -33,7 +33,10 @@ CMD ["node", "dist/queue/workers/build.worker.js"]
 
 FROM node:20-alpine AS build-env
 WORKDIR /app
-RUN apk add --no-cache git docker-cli
+RUN apk add --no-cache git docker-cli && \
+    corepack enable && \
+    corepack prepare pnpm@8.15.0 --activate && \
+    pnpm --version
 COPY package.json ./
 RUN npm install
 CMD ["sh", "-c", "echo 'pagex-build-env ready'"]

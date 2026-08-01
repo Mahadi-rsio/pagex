@@ -65,9 +65,9 @@ export function DashboardView() {
     const router = useRouter();
 
     const activeProjects = projects.filter((p) => p.status === "active").length;
-    const totalStorage = 2.4;
+    const totalStorage = 0;
     const storageLimit = 10;
-    const usagePercent = 68;
+    const usagePercent = 0;
 
     if (!user) return null;
 
@@ -252,39 +252,45 @@ export function DashboardView() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="pt-0">
-                        <div className="space-y-3">
-                            {activities.slice(0, 6).map((activity) => {
-                                const { icon: Icon, color } =
-                                    activityIcons[activity.type];
-                                return (
-                                    <div
-                                        key={activity.id}
-                                        className="flex items-start gap-3"
-                                    >
+                        {activities.length === 0 ? (
+                            <p className="text-sm text-muted-foreground py-8 text-center">
+                                No recent activity
+                            </p>
+                        ) : (
+                            <div className="space-y-3">
+                                {activities.slice(0, 6).map((activity) => {
+                                    const { icon: Icon, color } =
+                                        activityIcons[activity.type];
+                                    return (
                                         <div
-                                            className={`size-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${color}`}
+                                            key={activity.id}
+                                            className="flex items-start gap-3"
                                         >
-                                            <Icon className="size-3.5" />
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <p className="text-xs font-medium text-foreground leading-tight">
-                                                {activity.message}
-                                            </p>
-                                            {activity.projectName && (
-                                                <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                                                    {activity.projectName}
+                                            <div
+                                                className={`size-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${color}`}
+                                            >
+                                                <Icon className="size-3.5" />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-xs font-medium text-foreground leading-tight">
+                                                    {activity.message}
                                                 </p>
-                                            )}
-                                            <p className="text-xs text-muted-foreground/70 mt-0.5">
-                                                {formatRelativeTime(
-                                                    activity.timestamp,
+                                                {activity.projectName && (
+                                                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                                        {activity.projectName}
+                                                    </p>
                                                 )}
-                                            </p>
+                                                <p className="text-xs text-muted-foreground/70 mt-0.5">
+                                                    {formatRelativeTime(
+                                                        activity.timestamp,
+                                                    )}
+                                                </p>
+                                            </div>
                                         </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             </div>
@@ -297,51 +303,10 @@ export function DashboardView() {
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {[
-                            {
-                                label: "Bandwidth",
-                                used: 45.2,
-                                limit: 100,
-                                unit: "GB",
-                            },
-                            {
-                                label: "Build Minutes",
-                                used: 320,
-                                limit: 500,
-                                unit: "min",
-                            },
-                            {
-                                label: "Serverless Functions",
-                                used: 12500,
-                                limit: 100000,
-                                unit: "calls",
-                            },
-                        ].map(({ label, used, limit, unit }) => (
-                            <div key={label}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <p className="text-sm font-medium text-foreground">
-                                        {label}
-                                    </p>
-                                    <p className="text-sm text-muted-foreground">
-                                        {used.toLocaleString()}/
-                                        {limit.toLocaleString()} {unit}
-                                    </p>
-                                </div>
-                                <div className="h-2 rounded-full bg-muted overflow-hidden">
-                                    <div
-                                        className="h-full rounded-full bg-foreground/70 transition-all"
-                                        style={{
-                                            width: `${(used / limit) * 100}%`,
-                                        }}
-                                    />
-                                </div>
-                                <p className="text-sm text-muted-foreground mt-1">
-                                    {((used / limit) * 100).toFixed(1)}% used
-                                </p>
-                            </div>
-                        ))}
-                    </div>
+                    <p className="text-sm text-muted-foreground py-4 text-center">
+                        Usage metrics will appear once your projects receive
+                        traffic.
+                    </p>
                 </CardContent>
             </Card>
         </div>

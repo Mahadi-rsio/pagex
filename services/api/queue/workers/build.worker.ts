@@ -20,6 +20,32 @@ async function getFilesRecursively(dir: string): Promise<string[]> {
     return files.flat();
 }
 
+/** Pick install command from packageManager field or lockfiles. */
+async function resolveInstallCommand(cloneDir: string): Promise<string> {
+    const has = (file: string) => existsSync(path.join(cloneDir, file));
+
+    try {
+        const pkgRaw = await fs.readFile(path.join(cloneDir, 'package.json'), 'utf8');
+        const pkg = JSON.parse(pkgRaw) as { packageManager?: string };
+        const pm = pkg.packageManager?.split('@')[0]?.toLowerCase();
+        if (pm === 'npm') return '(npm ci 2>/dev/null || npm install)';
+        if (pm === 'yarn') return '(yarn install --frozen-lockfile 2>/dev/null || yarn install)';
+        if (pm === 'pnpm') return '(pnpm install --frozen-lockfile 2>/dev/null || pnpm install)';
+        if (pm === 'bun') return 'bun install';
+    } catch {
+        // fall through to lockfile detection
+    }
+
+    // Prefer npm when a package-lock exists (avoids broken pnpm-workspace.yaml
+    // files that only contain allowBuilds / ignoredBuiltDependencies).
+    if (has('package-lock.json')) return '(npm ci 2>/dev/null || npm install)';
+    if (has('yarn.lock')) return '(yarn install --frozen-lockfile 2>/dev/null || yarn install)';
+    if (has('pnpm-lock.yaml')) return '(pnpm install --frozen-lockfile 2>/dev/null || pnpm install)';
+    if (has('bun.lockb') || has('bun.lock')) return 'bun install';
+
+    return '(npm install || pnpm install)';
+}
+
 const worker = new Worker<CloudBuildJob>(
     CLOUDISY_CLOUD_BUILDS_QUEUE,
     async (job) => {
@@ -55,6 +81,9 @@ const worker = new Worker<CloudBuildJob>(
             await job.updateProgress(35);
             await job.log("Step 2: Building project with Docker...");
 
+            const installCommand = await resolveInstallCommand(cloneDir);
+            await job.log(`Using install: ${installCommand}`);
+
             const containerName = `cloudisy-build-${jobId}`;
             const dockerArgs = [
                 'run', '--rm',
@@ -69,9 +98,9 @@ const worker = new Worker<CloudBuildJob>(
                 }
             }
             dockerArgs.push(
-                'cloudisy-build-env:latest',
+                process.env.BUILD_ENV_IMAGE || 'pagex-build-env:latest',
                 'sh', '-c',
-                `(pnpm install --frozen-lockfile 2>/dev/null || pnpm install) && ${buildCommand}`
+                `${installCommand} && ${buildCommand}`
             );
 
             await new Promise<void>((resolve, reject) => {

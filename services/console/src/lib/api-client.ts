@@ -103,14 +103,41 @@ export interface ApiDeployment {
     created_at: string;
 }
 
+export interface ApiDeploymentFile {
+    path: string;
+    hash: string;
+    size: number;
+}
+
+export interface ApiDeploymentFilesResult {
+    deployment: ApiDeployment | null;
+    files: ApiDeploymentFile[];
+    total_size: number;
+}
+
 export interface ApiUsage {
     requests: {
         used: number;
         limit: number;
+        flushed: number;
+        live: number;
     };
     bandwidth: {
+        used_bytes: number;
         used_gb: string;
+        flushed_bytes: number;
+        live_bytes: number;
+        limit_bytes: number;
         limit: string;
+    };
+    storage: {
+        bytes: number;
+        human: string;
+        file_count: number;
+    };
+    sync: {
+        pending_flush: boolean;
+        interval_seconds: number;
     };
 }
 
@@ -598,6 +625,18 @@ export class ApiClient {
             `/api/deployments/page/${pageId}`,
         );
         return this.handleResponse<ApiDeployment[]>(response);
+    }
+
+    /**
+     * List files from the active (or latest) deployment for a page.
+     */
+    async getDeploymentFiles(
+        pageId: string,
+    ): Promise<ApiDeploymentFilesResult> {
+        const response = await this.fetchWithAuth(
+            `/api/deployments/page/${pageId}/files`,
+        );
+        return this.handleResponse<ApiDeploymentFilesResult>(response);
     }
 
     /**

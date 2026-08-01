@@ -53,7 +53,7 @@ export const ApiEnvironmentSchema = EnvironmentSchema.extend({
   BULLMQ_REDIS_URL: z.string().optional(),
   
   // Build
-  BUILD_ENV_IMAGE: z.string().default('cloudisy-build-env:latest'),
+  BUILD_ENV_IMAGE: z.string().default('pagex-build-env:latest'),
   BUILD_WORKSPACE: z.string().default('/tmp/cloudisy-builds'),
 });
 

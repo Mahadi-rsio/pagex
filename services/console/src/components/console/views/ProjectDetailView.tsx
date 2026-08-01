@@ -19,7 +19,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { Tree, Folder, File } from "@/components/ui/file-tree";
 import {
     Sheet,
     SheetContent,
@@ -43,10 +42,12 @@ import {
     apiClient,
     type ApiBuild,
     type ApiDeployment,
+    type ApiUsage,
     type BuildDoneEvent,
     type CommitDeployResult,
 } from "@/lib/api-client";
 import { buildDeployFile, type SelectedDeployFile } from "@/lib/deploy-utils";
+import { Tree, type TreeViewElement } from "@/components/ui/file-tree";
 import toast from "react-hot-toast";
 import {
     ArrowLeft,
@@ -57,11 +58,7 @@ import {
     Loader2,
     Clock,
     Globe,
-    Settings,
-    BarChart3,
     HardDrive,
-    Cpu,
-    Zap,
     Plus,
     Trash2,
     Copy,
@@ -79,6 +76,67 @@ import {
 } from "lucide-react";
 
 const CNAME_TARGET = "cname.console.app";
+
+function pathsToTreeElements(paths: string[]): TreeViewElement[] {
+    type MutableNode = TreeViewElement & { children?: MutableNode[] };
+    const root: MutableNode[] = [];
+    const folders = new Map<string, MutableNode>();
+
+    for (const rawPath of paths) {
+        const normalized = rawPath.replace(/^\/+/, "");
+        const parts = normalized.split("/").filter(Boolean);
+        if (parts.length === 0) continue;
+
+        let siblings = root;
+        let currentPath = "";
+
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i]!;
+            const isFile = i === parts.length - 1;
+            currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+            if (isFile) {
+                siblings.push({
+                    id: currentPath,
+                    name: part,
+                    type: "file",
+                    isSelectable: true,
+                });
+                continue;
+            }
+
+            let folder = folders.get(currentPath);
+            if (!folder) {
+                folder = {
+                    id: currentPath,
+                    name: part,
+                    type: "folder",
+                    isSelectable: true,
+                    children: [],
+                };
+                folders.set(currentPath, folder);
+                siblings.push(folder);
+            }
+            siblings = folder.children!;
+        }
+    }
+
+    return root;
+}
+
+function topLevelExpandedIds(elements: TreeViewElement[]): string[] {
+    return elements
+        .filter((el) => el.type === "folder" || Array.isArray(el.children))
+        .map((el) => el.id);
+}
+
+function formatBytes(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    if (bytes < 1024 ** 3) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    return `${(bytes / 1024 ** 3).toFixed(3)} GB`;
+}
 
 const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg
@@ -281,27 +339,64 @@ function OverviewTab({ project }: { project: Project }) {
     );
 }
 
-function DomainsTab() {
+function DomainsTab({ project }: { project: Project }) {
     type DomainEntry = {
         domain: string;
         type: "Automatic" | "Custom";
         verified: boolean;
     };
 
-    const [domains, setDomains] = useState<DomainEntry[]>([
-        {
-            domain: "my-saas-app.console.app",
-            type: "Automatic",
-            verified: true,
-        },
-        { domain: "app.acme.com", type: "Custom", verified: true },
-    ]);
+    const [loading, setLoading] = useState(true);
+    const [domains, setDomains] = useState<DomainEntry[]>([]);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [step, setStep] = useState<"name" | "dns">("name");
     const [domainInput, setDomainInput] = useState("");
     const [pendingDomain, setPendingDomain] = useState("");
     const [error, setError] = useState("");
     const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+    const loadDomain = useCallback(async () => {
+        setLoading(true);
+        try {
+            const pages = await apiClient.getPages();
+            const page = pages.find((p) => p.id === project.id);
+            const activeDomain = page?.domain ?? project.domain ?? null;
+            setDomains(
+                activeDomain
+                    ? [
+                          {
+                              domain: activeDomain,
+                              type: "Automatic",
+                              verified: true,
+                          },
+                      ]
+                    : [],
+            );
+        } catch (err) {
+            toast.error(
+                err instanceof Error
+                    ? err.message
+                    : "Failed to load project domain",
+            );
+            setDomains(
+                project.domain
+                    ? [
+                          {
+                              domain: project.domain,
+                              type: "Automatic",
+                              verified: true,
+                          },
+                      ]
+                    : [],
+            );
+        } finally {
+            setLoading(false);
+        }
+    }, [project.domain, project.id]);
+
+    useEffect(() => {
+        loadDomain();
+    }, [loadDomain]);
 
     const resetDrawer = () => {
         setStep("name");
@@ -364,18 +459,8 @@ function DomainsTab() {
     };
 
     const handleDone = () => {
-        if (!pendingDomain) return;
-
-        setDomains((prev) => [
-            ...prev,
-            { domain: pendingDomain, type: "Custom", verified: false },
-            { domain: `www.${pendingDomain}`, type: "Custom", verified: false },
-        ]);
+        toast.error("Custom domains are not available yet");
         handleDrawerOpenChange(false);
-    };
-
-    const handleDelete = (domain: string) => {
-        setDomains((prev) => prev.filter((d) => d.domain !== domain));
     };
 
     const dnsRecords = pendingDomain
@@ -397,62 +482,84 @@ function DomainsTab() {
                         <div>
                             <CardTitle className="text-sm">Domains</CardTitle>
                             <CardDescription className="text-xs">
-                                Manage custom domains for this project
+                                Active domain for this project
                             </CardDescription>
                         </div>
-                        <Button
-                            size="sm"
-                            className="gap-2 shrink-0"
-                            onClick={() => setDrawerOpen(true)}
-                        >
-                            <Plus className="size-3.5" />
-                            Add Domain
-                        </Button>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-2"
+                                onClick={loadDomain}
+                                disabled={loading}
+                            >
+                                <RefreshCw
+                                    className={`size-3.5 ${loading ? "animate-spin" : ""}`}
+                                />
+                                Refresh
+                            </Button>
+                            <Button
+                                size="sm"
+                                className="gap-2"
+                                onClick={() => setDrawerOpen(true)}
+                            >
+                                <Plus className="size-3.5" />
+                                Add Domain
+                            </Button>
+                        </div>
                     </div>
                 </CardHeader>
                 <CardContent>
-                    <div className="space-y-3">
-                        {domains.map((d) => (
-                            <div
-                                key={d.domain}
-                                className="flex items-center gap-3 rounded-xl border border-border p-3"
-                            >
-                                <Globe className="size-4 shrink-0 text-muted-foreground" />
-                                <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm font-medium text-foreground">
-                                        {d.domain}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">
-                                        {d.type}
-                                    </p>
-                                </div>
-                                {d.verified ? (
-                                    <Badge
-                                        variant="secondary"
-                                        className="text-xs"
-                                    >
-                                        <CheckCircle2 className="mr-1 size-3" />{" "}
-                                        Verified
-                                    </Badge>
-                                ) : (
-                                    <Badge
-                                        variant="outline"
-                                        className="text-xs"
-                                    >
-                                        Pending DNS
-                                    </Badge>
-                                )}
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="size-7 shrink-0"
-                                    onClick={() => handleDelete(d.domain)}
+                    {loading ? (
+                        <div className="flex items-center justify-center py-10">
+                            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : domains.length === 0 ? (
+                        <p className="text-sm text-muted-foreground py-6 text-center">
+                            No domain assigned to this project yet.
+                        </p>
+                    ) : (
+                        <div className="space-y-3">
+                            {domains.map((d) => (
+                                <div
+                                    key={d.domain}
+                                    className="flex items-center gap-3 rounded-xl border border-border p-3"
                                 >
-                                    <Trash2 className="size-3.5 text-muted-foreground" />
-                                </Button>
-                            </div>
-                        ))}
-                    </div>
+                                    <Globe className="size-4 shrink-0 text-muted-foreground" />
+                                    <div className="min-w-0 flex-1">
+                                        <a
+                                            href={`https://${d.domain}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground hover:underline"
+                                        >
+                                            {d.domain}
+                                            <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+                                        </a>
+                                        <p className="text-xs text-muted-foreground">
+                                            {d.type}
+                                        </p>
+                                    </div>
+                                    {d.verified ? (
+                                        <Badge
+                                            variant="secondary"
+                                            className="text-xs"
+                                        >
+                                            <CheckCircle2 className="mr-1 size-3" />{" "}
+                                            Verified
+                                        </Badge>
+                                    ) : (
+                                        <Badge
+                                            variant="outline"
+                                            className="text-xs"
+                                        >
+                                            Pending DNS
+                                        </Badge>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 
@@ -639,32 +746,7 @@ function EnvTab() {
         environment: "All" | "Production" | "Preview" | "Development";
     };
 
-    const [envVars, setEnvVars] = useState<EnvVar[]>([
-        {
-            id: "1",
-            key: "DATABASE_URL",
-            value: "postgresql://user:pass@host:5432/db",
-            environment: "Production",
-        },
-        {
-            id: "2",
-            key: "NEXTAUTH_SECRET",
-            value: "super-secret-key-here",
-            environment: "All",
-        },
-        {
-            id: "3",
-            key: "STRIPE_SECRET_KEY",
-            value: "sk_live_xxxxxxxxxxxxxxxx",
-            environment: "Production",
-        },
-        {
-            id: "4",
-            key: "REDIS_URL",
-            value: "redis://localhost:6379",
-            environment: "All",
-        },
-    ]);
+    const [envVars, setEnvVars] = useState<EnvVar[]>([]);
     const [showValues, setShowValues] = useState<Record<string, boolean>>({});
     const [isAdding, setIsAdding] = useState(false);
     const [newKey, setNewKey] = useState("");
@@ -908,86 +990,93 @@ function EnvTab() {
     );
 }
 
-function FilesTab() {
+function FilesTab({ project }: { project: Project }) {
+    const [loading, setLoading] = useState(true);
+    const [elements, setElements] = useState<TreeViewElement[]>([]);
+    const [deploymentVersion, setDeploymentVersion] = useState<number | null>(
+        null,
+    );
+    const [fileCount, setFileCount] = useState(0);
+    const [totalSize, setTotalSize] = useState(0);
+
+    const loadFiles = useCallback(async () => {
+        setLoading(true);
+        try {
+            const result = await apiClient.getDeploymentFiles(project.id);
+            setElements(pathsToTreeElements(result.files.map((f) => f.path)));
+            setDeploymentVersion(result.deployment?.version ?? null);
+            setFileCount(result.files.length);
+            setTotalSize(result.total_size ?? 0);
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to load deployment files",
+            );
+            setElements([]);
+            setDeploymentVersion(null);
+            setFileCount(0);
+            setTotalSize(0);
+        } finally {
+            setLoading(false);
+        }
+    }, [project.id]);
+
+    useEffect(() => {
+        loadFiles();
+    }, [loadFiles]);
+
     return (
         <div className="space-y-4">
             <Card>
                 <CardHeader>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-3">
                         <div>
                             <CardTitle className="text-sm">Files</CardTitle>
                             <CardDescription className="text-xs">
-                                Browse project files from latest deployment
+                                {deploymentVersion != null
+                                    ? `Deployment v${deploymentVersion} · ${fileCount} file${fileCount === 1 ? "" : "s"} · ${formatBytes(totalSize)}`
+                                    : "Browse project files from latest deployment"}
                             </CardDescription>
                         </div>
-                        <Button size="sm" variant="outline" className="gap-2">
-                            <Upload className="size-3.5" />
-                            Upload
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-2"
+                                onClick={loadFiles}
+                                disabled={loading}
+                            >
+                                <RefreshCw
+                                    className={`size-3.5 ${loading ? "animate-spin" : ""}`}
+                                />
+                                Refresh
+                            </Button>
+                        </div>
                     </div>
                 </CardHeader>
                 <CardContent>
-                    <div className="h-80 rounded-xl border border-border bg-muted/20 p-2">
-                        <Tree
-                            initialExpandedItems={["src", "src-components"]}
-                            initialSelectedId="src-app"
-                            className="h-full"
-                        >
-                            <Folder element="src" value="src">
-                                <Folder
-                                    element="components"
-                                    value="src-components"
-                                >
-                                    <File value="src-components-button">
-                                        <span>button.tsx</span>
-                                    </File>
-                                    <File value="src-components-card">
-                                        <span>card.tsx</span>
-                                    </File>
-                                    <File value="src-components-header">
-                                        <span>header.tsx</span>
-                                    </File>
-                                </Folder>
-                                <Folder element="lib" value="src-lib">
-                                    <File value="src-lib-utils">
-                                        <span>utils.ts</span>
-                                    </File>
-                                    <File value="src-lib-api">
-                                        <span>api.ts</span>
-                                    </File>
-                                </Folder>
-                                <File value="src-app">
-                                    <span>app.tsx</span>
-                                </File>
-                                <File value="src-main">
-                                    <span>main.tsx</span>
-                                </File>
-                                <File value="src-index-css">
-                                    <span>index.css</span>
-                                </File>
-                            </Folder>
-                            <Folder element="public" value="public">
-                                <File value="public-favicon">
-                                    <span>favicon.ico</span>
-                                </File>
-                                <File value="public-robots">
-                                    <span>robots.txt</span>
-                                </File>
-                            </Folder>
-                            <File value="package-json">
-                                <span>package.json</span>
-                            </File>
-                            <File value="tsconfig">
-                                <span>tsconfig.json</span>
-                            </File>
-                            <File value="next-config">
-                                <span>next.config.js</span>
-                            </File>
-                            <File value="readme">
-                                <span>README.md</span>
-                            </File>
-                        </Tree>
-                    </div>
+                    {loading ? (
+                        <div className="flex h-80 items-center justify-center rounded-xl border border-border bg-muted/20">
+                            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : elements.length === 0 ? (
+                        <div className="flex h-80 items-center justify-center rounded-xl border border-border bg-muted/20">
+                            <p className="text-sm text-muted-foreground">
+                                No deployed files yet.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="h-80 rounded-xl border border-border bg-muted/20 p-2">
+                            <Tree
+                                elements={elements}
+                                initialExpandedItems={topLevelExpandedIds(
+                                    elements,
+                                )}
+                                className="h-full"
+                            />
+                        </div>
+                    )}
                 </CardContent>
             </Card>
         </div>
@@ -1880,127 +1969,276 @@ function BuildsTab({ project }: { project: Project }) {
 function AnalyticsTab() {
     return (
         <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-4">
-                {[
-                    {
-                        label: "Page Views",
-                        value: "12,450",
-                        change: "+12%",
-                        icon: Activity,
-                    },
-                    {
-                        label: "Unique Visitors",
-                        value: "3,280",
-                        change: "+8%",
-                        icon: BarChart3,
-                    },
-                    {
-                        label: "Avg. Response",
-                        value: "145ms",
-                        change: "-3ms",
-                        icon: Zap,
-                    },
-                ].map(({ label, value, change, icon: Icon }) => (
-                    <Card key={label}>
-                        <CardContent className="p-4">
-                            <Icon className="size-4 text-muted-foreground mb-2" />
-                            <p className="text-2xl font-bold text-foreground">
-                                {value}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                                {label}
-                            </p>
-                            <p className="text-sm text-muted-foreground mt-1 font-medium">
-                                {change} this week
-                            </p>
-                        </CardContent>
-                    </Card>
-                ))}
-            </div>
             <Card>
-                <CardHeader>
-                    <CardTitle className="text-sm">Traffic Overview</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="h-32 flex items-end gap-2">
-                        {[
-                            40, 65, 35, 80, 55, 90, 70, 45, 85, 60, 75, 95, 50,
-                            88,
-                        ].map((h, i) => (
-                            <div
-                                key={i}
-                                className="flex-1 rounded-sm bg-foreground/70"
-                                style={{ height: `${h}%` }}
-                            />
-                        ))}
-                    </div>
-                    <div className="flex justify-between mt-2 text-xs text-muted-foreground">
-                        <span>14 days ago</span>
-                        <span>Today</span>
-                    </div>
+                <CardContent className="py-12">
+                    <p className="text-sm text-muted-foreground text-center">
+                        Analytics will appear once your project receives
+                        traffic.
+                    </p>
                 </CardContent>
             </Card>
         </div>
     );
 }
 
-function UsageTab() {
+function UsageTab({ project }: { project: Project }) {
+    const [usage, setUsage] = useState<ApiUsage | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState("");
+    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+    const loadUsage = useCallback(
+        async (quiet = false) => {
+            if (!project.domain) return;
+            if (quiet) setRefreshing(true);
+            else setLoading(true);
+            setError("");
+            try {
+                const data = await apiClient.getPageUsage(project.domain);
+                setUsage(data);
+                setLastUpdated(new Date());
+                setError("");
+            } catch (err) {
+                if (!quiet) {
+                    setError(
+                        err instanceof Error
+                            ? err.message
+                            : "Failed to load usage",
+                    );
+                }
+            } finally {
+                setLoading(false);
+                setRefreshing(false);
+            }
+        },
+        [project.domain],
+    );
+
+    useEffect(() => {
+        loadUsage();
+        if (!project.domain) return;
+        const id = window.setInterval(() => loadUsage(true), 10_000);
+        return () => window.clearInterval(id);
+    }, [loadUsage, project.domain]);
+
+    if (!project.domain) {
+        return (
+            <Card>
+                <CardContent className="py-12">
+                    <p className="text-sm text-muted-foreground text-center">
+                        Assign a domain to track usage for this project.
+                    </p>
+                </CardContent>
+            </Card>
+        );
+    }
+
+    if (loading && !usage) {
+        return (
+            <Card>
+                <CardContent className="py-12">
+                    <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="size-4 animate-spin" />
+                        Loading usage…
+                    </div>
+                </CardContent>
+            </Card>
+        );
+    }
+
+    if ((error || !usage) && !loading) {
+        return (
+            <Card>
+                <CardContent className="py-12 space-y-3">
+                    <p className="text-sm text-muted-foreground text-center">
+                        {error || "No usage data available."}
+                    </p>
+                    <div className="flex justify-center">
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => loadUsage()}
+                        >
+                            Retry
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
+        );
+    }
+
+    if (!usage) return null;
+
+    const bandwidthUsed = usage.bandwidth.used_bytes;
+    const bandwidthLimit = usage.bandwidth.limit_bytes || 1;
+    const syncMinutes = Math.max(
+        1,
+        Math.round((usage.sync.interval_seconds || 120) / 60),
+    );
+
     return (
         <div className="space-y-4">
-            {[
-                {
-                    label: "Bandwidth",
-                    used: 45.2,
-                    limit: 100,
-                    unit: "GB",
-                    icon: Activity,
-                },
-                {
-                    label: "Build Minutes",
-                    used: 320,
-                    limit: 500,
-                    unit: "min",
-                    icon: Cpu,
-                },
-                {
-                    label: "Storage",
-                    used: 2.4,
-                    limit: 10,
-                    unit: "GB",
-                    icon: HardDrive,
-                },
-                {
-                    label: "Function Calls",
-                    used: 12500,
-                    limit: 100000,
-                    unit: "calls",
-                    icon: Zap,
-                },
-            ].map(({ label, used, limit, unit, icon: Icon }) => (
-                <Card key={label}>
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                                <Icon className="size-4 text-muted-foreground" />
-                                <span className="text-sm font-medium text-foreground">
-                                    {label}
-                                </span>
-                            </div>
-                            <span className="text-sm text-muted-foreground font-medium">
-                                {used.toLocaleString()} /{" "}
-                                {limit.toLocaleString()} {unit}
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <CardTitle className="text-sm">
+                                Realtime usage
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                                Live Redis counters + flushed DB totals
+                                {lastUpdated
+                                    ? ` · updated ${formatRelativeTime(lastUpdated.toISOString())}`
+                                    : ""}
+                            </CardDescription>
+                        </div>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-2 shrink-0"
+                            onClick={() => loadUsage(true)}
+                            disabled={refreshing}
+                        >
+                            <RefreshCw
+                                className={`size-3.5 ${refreshing ? "animate-spin" : ""}`}
+                            />
+                            Refresh
+                        </Button>
+                    </div>
+                </CardHeader>
+                <CardContent className="space-y-3 pt-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Badge
+                            variant={
+                                usage.sync.pending_flush
+                                    ? "secondary"
+                                    : "outline"
+                            }
+                            className="text-xs"
+                        >
+                            {usage.sync.pending_flush
+                                ? "Pending Redis → DB flush"
+                                : "Fully flushed to DB"}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                            Sync runs about every {syncMinutes} min
+                        </span>
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                            <Activity className="size-4 text-muted-foreground" />
+                            <span className="text-sm font-medium text-foreground">
+                                Requests
                             </span>
                         </div>
-                        <Progress
-                            value={(used / limit) * 100}
-                            className="h-2"
-                        />
-                        <p className="text-sm text-muted-foreground mt-1.5">
-                            {((used / limit) * 100).toFixed(1)}% used
-                        </p>
-                    </CardContent>
-                </Card>
-            ))}
+                        <span className="text-sm text-muted-foreground font-medium">
+                            {usage.requests.used.toLocaleString()} /{" "}
+                            {usage.requests.limit.toLocaleString()}
+                        </span>
+                    </div>
+                    <Progress
+                        value={
+                            usage.requests.limit > 0
+                                ? (usage.requests.used /
+                                      usage.requests.limit) *
+                                  100
+                                : 0
+                        }
+                        className="h-2"
+                    />
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                        <div className="rounded-lg border border-border bg-muted/20 p-2.5">
+                            <p className="text-xs text-muted-foreground">
+                                Flushed (DB)
+                            </p>
+                            <p className="text-sm font-medium text-foreground mt-0.5">
+                                {usage.requests.flushed.toLocaleString()}
+                            </p>
+                        </div>
+                        <div className="rounded-lg border border-border bg-muted/20 p-2.5">
+                            <p className="text-xs text-muted-foreground">
+                                Live (Redis)
+                            </p>
+                            <p className="text-sm font-medium text-foreground mt-0.5">
+                                {usage.requests.live.toLocaleString()}
+                            </p>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                            <HardDrive className="size-4 text-muted-foreground" />
+                            <span className="text-sm font-medium text-foreground">
+                                Bandwidth
+                            </span>
+                        </div>
+                        <span className="text-sm text-muted-foreground font-medium">
+                            {formatBytes(bandwidthUsed)} /{" "}
+                            {usage.bandwidth.limit}
+                        </span>
+                    </div>
+                    <Progress
+                        value={
+                            bandwidthLimit > 0
+                                ? (bandwidthUsed / bandwidthLimit) * 100
+                                : 0
+                        }
+                        className="h-2"
+                    />
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                        <div className="rounded-lg border border-border bg-muted/20 p-2.5">
+                            <p className="text-xs text-muted-foreground">
+                                Flushed (DB)
+                            </p>
+                            <p className="text-sm font-medium text-foreground mt-0.5">
+                                {formatBytes(usage.bandwidth.flushed_bytes)}
+                            </p>
+                        </div>
+                        <div className="rounded-lg border border-border bg-muted/20 p-2.5">
+                            <p className="text-xs text-muted-foreground">
+                                Live (Redis)
+                            </p>
+                            <p className="text-sm font-medium text-foreground mt-0.5">
+                                {formatBytes(usage.bandwidth.live_bytes)}
+                            </p>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                            <FileText className="size-4 text-muted-foreground" />
+                            <span className="text-sm font-medium text-foreground">
+                                App storage
+                            </span>
+                        </div>
+                        <span className="text-sm text-muted-foreground font-medium">
+                            {usage.storage.human}
+                        </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                        {usage.storage.file_count.toLocaleString()} file
+                        {usage.storage.file_count === 1 ? "" : "s"} in the
+                        active deployment
+                        {usage.storage.bytes > 0
+                            ? ` (${formatBytes(usage.storage.bytes)})`
+                            : ""}
+                    </p>
+                </CardContent>
+            </Card>
         </div>
     );
 }
@@ -2237,7 +2475,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                     <OverviewTab project={project} />
                 </TabsContent>
                 <TabsContent value="domains">
-                    <DomainsTab />
+                    <DomainsTab project={project} />
                 </TabsContent>
                 <TabsContent value="deploys">
                     <DeployTab project={project} />
@@ -2246,7 +2484,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                     <BuildsTab project={project} />
                 </TabsContent>
                 <TabsContent value="files">
-                    <FilesTab />
+                    <FilesTab project={project} />
                 </TabsContent>
                 <TabsContent value="environment">
                     <EnvTab />
@@ -2255,7 +2493,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                     <AnalyticsTab />
                 </TabsContent>
                 <TabsContent value="usage">
-                    <UsageTab />
+                    <UsageTab project={project} />
                 </TabsContent>
                 <TabsContent value="settings">
                     <SettingsTab project={project} />

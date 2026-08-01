@@ -62,7 +62,7 @@ const initialProjects: Project[] = [];
 
 export const useAppStore = create<AppStore>((set, get) => ({
     user: null,
-    balance: 47.5,
+    balance: 0,
     theme: "dark",
     projects: initialProjects,
     activities: initialActivities,

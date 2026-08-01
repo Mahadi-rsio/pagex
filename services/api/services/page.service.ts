@@ -1,6 +1,6 @@
 import { db } from '../infrastructure/db/db.js'
-import { pages, sites } from '../infrastructure/db/schema.js'
-import { eq } from 'drizzle-orm'
+import { blobTreeEntries, blobs, deployments, pages, sites } from '../infrastructure/db/schema.js'
+import { and, eq, sql } from 'drizzle-orm'
 import { customAlphabet } from 'nanoid'
 import { redis } from '../infrastructure/cache/redis.js'
 import { TOP_LEVEL_DOMAIN } from '../constants/index.js'
@@ -57,10 +57,64 @@ export async function createPage(
     }
 }
 
+function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
+    if (bytes < 1024 ** 3) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+    return `${(bytes / 1024 ** 3).toFixed(3)} GB`
+}
+
+async function getActiveDeploymentStorage(pageId: string) {
+    const [active] = await db
+        .select({ id: deployments.id })
+        .from(deployments)
+        .where(and(eq(deployments.page_id, pageId), eq(deployments.is_active, true)))
+        .limit(1)
+
+    if (!active) {
+        return { bytes: 0, fileCount: 0, human: '0 B' }
+    }
+
+    const [row] = await db
+        .select({
+            bytes: sql<number>`coalesce(sum(${blobs.size}), 0)::bigint`.mapWith(Number),
+            fileCount: sql<number>`count(*)::int`.mapWith(Number),
+        })
+        .from(blobTreeEntries)
+        .innerJoin(blobs, eq(blobTreeEntries.blobHash, blobs.hash))
+        .where(eq(blobTreeEntries.deploymentId, active.id))
+
+    const bytes = row?.bytes ?? 0
+    return {
+        bytes,
+        fileCount: row?.fileCount ?? 0,
+        human: formatBytes(bytes),
+    }
+}
+
 export async function getPageUsage(domain: string) {
     const dbCacheKey = `db_cache:${domain}`
     let dbRequests = 0
     let dbBandwidth = 0
+    let requestLimit = 100_000
+    let bandwidthLimit = 2147483648
+
+    const [page] = await db
+        .select({
+            id: pages.id,
+            request: pages.request,
+            bandwidth_usage: pages.bandwidth_usage,
+            request_limit: pages.request_limit,
+            bandwidth_limit: pages.bandwidth_limit,
+        })
+        .from(pages)
+        .where(eq(pages.domain, domain))
+        .limit(1)
+
+    if (!page) return null
+
+    requestLimit = Number(page.request_limit) || 100_000
+    bandwidthLimit = Number(page.bandwidth_limit) || 2147483648
 
     const cachedDb = await redis.get(dbCacheKey)
     if (cachedDb) {
@@ -68,19 +122,8 @@ export async function getPageUsage(domain: string) {
         dbRequests = parsed.request
         dbBandwidth = parsed.bandwidth_usage
     } else {
-        const page = await db
-            .select({
-                request: pages.request,
-                bandwidth_usage: pages.bandwidth_usage,
-            })
-            .from(pages)
-            .where(eq(pages.domain, domain))
-            .limit(1)
-
-        if (!page.length) return null
-
-        dbRequests = Number(page[0]!.request) || 0
-        dbBandwidth = Number(page[0]!.bandwidth_usage) || 0
+        dbRequests = Number(page.request) || 0
+        dbBandwidth = Number(page.bandwidth_usage) || 0
 
         await redis.set(
             dbCacheKey,
@@ -95,14 +138,35 @@ export async function getPageUsage(domain: string) {
         redis.get(`bandwidth:${domain}`),
     ])
 
-    const totalRequests = dbRequests + parseInt(liveReq || '0')
-    const totalBandwidth = dbBandwidth + parseInt(liveBw || '0')
+    const liveRequests = parseInt(liveReq || '0', 10) || 0
+    const liveBandwidth = parseInt(liveBw || '0', 10) || 0
+    const totalRequests = dbRequests + liveRequests
+    const totalBandwidth = dbBandwidth + liveBandwidth
+    const storage = await getActiveDeploymentStorage(page.id)
 
     return {
-        requests: { used: totalRequests, limit: 100_000 },
+        requests: {
+            used: totalRequests,
+            limit: requestLimit,
+            flushed: dbRequests,
+            live: liveRequests,
+        },
         bandwidth: {
+            used_bytes: totalBandwidth,
             used_gb: (totalBandwidth / 1024 ** 3).toFixed(6),
-            limit: '1GB',
+            flushed_bytes: dbBandwidth,
+            live_bytes: liveBandwidth,
+            limit_bytes: bandwidthLimit,
+            limit: formatBytes(bandwidthLimit),
+        },
+        storage: {
+            bytes: storage.bytes,
+            human: storage.human,
+            file_count: storage.fileCount,
+        },
+        sync: {
+            pending_flush: liveRequests > 0 || liveBandwidth > 0,
+            interval_seconds: 120,
         },
     }
 }
