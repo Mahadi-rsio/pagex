@@ -117,7 +117,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
                 id: apiPage.id,
                 domain: apiPage.domain,
                 createdAt: apiPage.createdAt,
-                updatedAt: apiPage.updatedAt,
+                updatedAt: apiPage.updatedAt ?? apiPage.createdAt,
             };
 
             set((state) => ({

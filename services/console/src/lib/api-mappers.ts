@@ -14,7 +14,7 @@ export function mapApiPageToProject(apiPage: ApiPage): Project {
         status: "active", // Default status, can be mapped from API if available
         domain: apiPage.domain,
         createdAt: apiPage.createdAt,
-        updatedAt: apiPage.updatedAt,
+        updatedAt: apiPage.updatedAt ?? apiPage.createdAt,
     };
 }
 
@@ -57,7 +57,7 @@ export function getProjectStatus(
 
     // Check if there are active deployments
     const hasActiveDeployment = deployments.some(
-        (deployment) => deployment.isActive,
+        (deployment) => deployment.is_active,
     );
     if (hasActiveDeployment) return "active";
 
@@ -87,7 +87,7 @@ export function filterBuildsByPageId(
     builds: ApiBuild[],
     pageId: string,
 ): ApiBuild[] {
-    return builds.filter((build) => build.pageId === pageId);
+    return builds.filter((build) => build.page_id === pageId);
 }
 
 /**
@@ -97,5 +97,5 @@ export function filterDeploymentsByPageId(
     deployments: ApiDeployment[],
     pageId: string,
 ): ApiDeployment[] {
-    return deployments.filter((deployment) => deployment.pageId === pageId);
+    return deployments.filter((deployment) => deployment.page_id === pageId);
 }

@@ -3,52 +3,64 @@ import { NextRequest, NextResponse } from "next/server";
 const EXPRESS_URL = process.env.EXPRESS_URL;
 
 async function handler(request: NextRequest) {
-  if (!EXPRESS_URL) {
-    return NextResponse.json(
-      { error: "EXPRESS_URL not configured" },
-      { status: 500 }
-    );
-  }
-
-  const path = request.nextUrl.pathname.replace("/api/proxy", "");
-  const targetUrl = `${EXPRESS_URL}${path}${request.nextUrl.search}`;
-
-  const forwardHeaders = new Headers();
-  request.headers.forEach((value, key) => {
-    const skip = ["host", "connection", "transfer-encoding"];
-    if (!skip.includes(key.toLowerCase())) {
-      forwardHeaders.set(key, value);
-    }
-  });
-
-  try {
-    const res = await fetch(targetUrl, {
-      method: request.method,
-      headers: forwardHeaders,
-      ...(!["GET", "HEAD"].includes(request.method) && {
-        body: await request.arrayBuffer(),
-      }),
-    });
-
-    const contentType = res.headers.get("content-type") || "";
-
-    if (contentType.includes("application/json")) {
-      const data = await res.json();
-      return NextResponse.json(data, { status: res.status });
+    if (!EXPRESS_URL) {
+        return NextResponse.json(
+            { error: "EXPRESS_URL not configured" },
+            { status: 500 },
+        );
     }
 
-    const text = await res.text();
-    return new NextResponse(text, {
-      status: res.status,
-      headers: { "Content-Type": contentType },
+    const path = request.nextUrl.pathname.replace("/api/proxy", "");
+    const targetUrl = `${EXPRESS_URL}${path}${request.nextUrl.search}`;
+
+    const forwardHeaders = new Headers();
+    request.headers.forEach((value, key) => {
+        const skip = ["host", "connection", "transfer-encoding"];
+        if (!skip.includes(key.toLowerCase())) {
+            forwardHeaders.set(key, value);
+        }
     });
-  } catch (err) {
-    console.error("[Proxy Error]", err);
-    return NextResponse.json(
-      { error: "Express server unreachable" },
-      { status: 502 }
-    );
-  }
+
+    try {
+        const res = await fetch(targetUrl, {
+            method: request.method,
+            headers: forwardHeaders,
+            ...(!["GET", "HEAD"].includes(request.method) && {
+                body: await request.arrayBuffer(),
+            }),
+        });
+
+        const contentType = res.headers.get("content-type") || "";
+
+        // Stream server-sent events / binary bodies through untouched.
+        if (contentType.includes("text/event-stream")) {
+            return new Response(res.body, {
+                status: res.status,
+                headers: {
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    Connection: "keep-alive",
+                },
+            });
+        }
+
+        if (contentType.includes("application/json")) {
+            const data = await res.json();
+            return NextResponse.json(data, { status: res.status });
+        }
+
+        const text = await res.text();
+        return new NextResponse(text, {
+            status: res.status,
+            headers: { "Content-Type": contentType },
+        });
+    } catch (err) {
+        console.error("[Proxy Error]", err);
+        return NextResponse.json(
+            { error: "Express server unreachable" },
+            { status: 502 },
+        );
+    }
 }
 
 export const GET = handler;

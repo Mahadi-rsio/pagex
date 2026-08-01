@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/useAppStore";
 import type { Project } from "@/store/useAppStore";
@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Tree, Folder, File } from "@/components/ui/file-tree";
 import {
@@ -27,6 +28,26 @@ import {
     SheetHeader,
     SheetTitle,
 } from "@/components/ui/sheet";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+    apiClient,
+    type ApiBuild,
+    type ApiDeployment,
+    type BuildDoneEvent,
+    type CommitDeployResult,
+} from "@/lib/api-client";
+import { buildDeployFile, type SelectedDeployFile } from "@/lib/deploy-utils";
+import toast from "react-hot-toast";
 import {
     ArrowLeft,
     ExternalLink,
@@ -48,9 +69,30 @@ import {
     EyeOff,
     Upload,
     Activity,
+    Rocket,
+    RefreshCw,
+    Play,
+    X,
+    Terminal,
+    RotateCcw,
+    FileText,
 } from "lucide-react";
 
 const CNAME_TARGET = "cname.console.app";
+
+const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        {...props}
+    >
+        <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+    </svg>
+);
 
 const statusConfig = {
     active: {
@@ -84,6 +126,23 @@ function OverviewTab({ project }: { project: Project }) {
         statusConfig[project.status as keyof typeof statusConfig] ||
         statusConfig.inactive;
     const StatusIcon = status.icon;
+    const [deployments, setDeployments] = useState<ApiDeployment[]>([]);
+    const [deploymentsLoading, setDeploymentsLoading] = useState(true);
+
+    const loadDeployments = useCallback(async () => {
+        try {
+            const list = await apiClient.getDeployments(project.id);
+            setDeployments(list.slice(0, 5));
+        } catch {
+            // Non-critical; keep previous state.
+        } finally {
+            setDeploymentsLoading(false);
+        }
+    }, [project.id]);
+
+    useEffect(() => {
+        loadDeployments();
+    }, [loadDeployments]);
 
     return (
         <div className="space-y-4">
@@ -177,51 +236,45 @@ function OverviewTab({ project }: { project: Project }) {
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0">
-                    <div className="space-y-2">
-                        {[
-                            {
-                                sha: "a1b2c3d",
-                                message: "feat: add user authentication",
-                                status: "success",
-                                time: "10 minutes ago",
-                                branch: "main",
-                            },
-                            {
-                                sha: "e4f5g6h",
-                                message: "fix: resolve API timeout issue",
-                                status: "success",
-                                time: "2 hours ago",
-                                branch: "main",
-                            },
-                            {
-                                sha: "i7j8k9l",
-                                message: "chore: update dependencies",
-                                status: "failed",
-                                time: "1 day ago",
-                                branch: "main",
-                            },
-                        ].map((deploy) => (
-                            <div
-                                key={deploy.sha}
-                                className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/50 transition-colors"
-                            >
+                    {deploymentsLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : deployments.length === 0 ? (
+                        <p className="py-8 text-center text-sm text-muted-foreground">
+                            No deployments yet. Upload files or trigger a cloud
+                            build to get started.
+                        </p>
+                    ) : (
+                        <div className="space-y-2">
+                            {deployments.map((deploy) => (
                                 <div
-                                    className={`size-2 rounded-full shrink-0 ${deploy.status === "success" ? "bg-emerald-500" : "bg-destructive"}`}
-                                />
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-xs font-medium text-foreground truncate">
-                                        {deploy.message}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">
-                                        {deploy.branch} · {deploy.sha}
-                                    </p>
+                                    key={deploy.id}
+                                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/50 transition-colors"
+                                >
+                                    <div
+                                        className={`size-2 rounded-full shrink-0 ${deploy.is_active ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-medium text-foreground truncate">
+                                            {deploy.source === "build"
+                                                ? `Cloud build · v${deploy.version}`
+                                                : `Upload · v${deploy.version}`}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {deploy.file_count} files
+                                            {deploy.is_active
+                                                ? " · Active"
+                                                : ""}
+                                        </p>
+                                    </div>
+                                    <span className="text-xs text-muted-foreground shrink-0">
+                                        {formatRelativeTime(deploy.created_at)}
+                                    </span>
                                 </div>
-                                <span className="text-xs text-muted-foreground shrink-0">
-                                    {deploy.time}
-                                </span>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                    )}
                 </CardContent>
             </Card>
         </div>
@@ -941,6 +994,889 @@ function FilesTab() {
     );
 }
 
+function DeployTab({ project }: { project: Project }) {
+    const [files, setFiles] = useState<SelectedDeployFile[]>([]);
+    const [isDeploying, setIsDeploying] = useState(false);
+    const [deployStep, setDeployStep] = useState("");
+    const [deployResult, setDeployResult] = useState<CommitDeployResult | null>(
+        null,
+    );
+    const [deployError, setDeployError] = useState("");
+    const [deployments, setDeployments] = useState<ApiDeployment[]>([]);
+    const [deploymentsLoading, setDeploymentsLoading] = useState(true);
+    const [rollingBack, setRollingBack] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const loadDeployments = useCallback(async () => {
+        try {
+            const list = await apiClient.getDeployments(project.id);
+            setDeployments(list);
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to load deployments",
+            );
+        } finally {
+            setDeploymentsLoading(false);
+        }
+    }, [project.id]);
+
+    useEffect(() => {
+        loadDeployments();
+    }, [loadDeployments]);
+
+    const handleSelectFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const selected = Array.from(e.target.files ?? []);
+        const entries: SelectedDeployFile[] = selected.map((file) => ({
+            path: file.name,
+            file,
+        }));
+        setFiles(entries);
+        setDeployResult(null);
+        setDeployError("");
+        e.target.value = "";
+    };
+
+    const removeFile = (path: string) => {
+        setFiles((prev) => prev.filter((f) => f.path !== path));
+        setDeployResult(null);
+        setDeployError("");
+    };
+
+    const handleDeploy = async () => {
+        if (files.length === 0 || isDeploying) return;
+        setIsDeploying(true);
+        setDeployError("");
+        setDeployResult(null);
+        try {
+            // 1. Build the file manifest (hash + magic bytes)
+            setDeployStep("Hashing files…");
+            const manifest = await Promise.all(
+                files.map((f) => buildDeployFile(f.file)),
+            );
+
+            // 2. Prepare: validate manifest, get token + missing blobs
+            setDeployStep("Preparing deployment…");
+            const prepared = await apiClient.prepareDeploy({
+                pageId: project.id,
+                files: manifest,
+            });
+
+            // 3. Upload any missing blobs to presigned URLs
+            if (prepared.uploadRequired.length > 0) {
+                setDeployStep(
+                    `Uploading ${prepared.uploadRequired.length} blob(s)…`,
+                );
+                const hashes = [
+                    ...new Set(prepared.uploadRequired.map((u) => u.hash)),
+                ];
+                const presigned = await apiClient.presignDeploy({
+                    deploymentToken: prepared.deploymentToken,
+                    hashes,
+                });
+                const urlMap = new Map(
+                    presigned.urls.map((u) => [u.hash, u.url]),
+                );
+                const fileByHash = new Map(manifest.map((m) => [m.hash, m]));
+                for (const hash of hashes) {
+                    const url = urlMap.get(hash);
+                    const entry = fileByHash.get(hash);
+                    if (url && entry) {
+                        const source = files.find((f) => f.path === entry.path);
+                        if (source) {
+                            await apiClient.uploadBlob(
+                                url,
+                                await source.file.arrayBuffer(),
+                            );
+                        }
+                    }
+                }
+            }
+
+            // 4. Commit: activate the deployment
+            setDeployStep("Finalizing deployment…");
+            const committed = await apiClient.commitDeploy({
+                deploymentToken: prepared.deploymentToken,
+            });
+            setDeployResult(committed);
+            toast.success(
+                `Deployed ${committed.summary.deployedFiles} file${committed.summary.deployedFiles === 1 ? "" : "s"} (v${committed.deployment.version})`,
+            );
+            setFiles([]);
+            loadDeployments();
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : "Deployment failed";
+            setDeployError(message);
+            toast.error(message);
+        } finally {
+            setIsDeploying(false);
+            setDeployStep("");
+        }
+    };
+
+    const handleRollback = async (deployment: ApiDeployment) => {
+        if (rollingBack) return;
+        if (
+            !window.confirm(
+                `Roll back to deployment v${deployment.version}? This will make it the live version.`,
+            )
+        ) {
+            return;
+        }
+        setRollingBack(deployment.id);
+        try {
+            await apiClient.rollback(deployment.id);
+            toast.success(`Rolled back to v${deployment.version}`);
+            loadDeployments();
+        } catch (error) {
+            toast.error(
+                error instanceof Error ? error.message : "Rollback failed",
+            );
+        } finally {
+            setRollingBack(null);
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+            {/* Upload & deploy */}
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <CardTitle className="text-sm">
+                                Upload &amp; Deploy
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                                Deploy static files directly from your browser.
+                                Files are content-addressed, compressed, and
+                                image-optimized automatically.
+                            </CardDescription>
+                        </div>
+                        {!isDeploying && (
+                            <Button
+                                size="sm"
+                                className="gap-2 shrink-0"
+                                onClick={() => fileInputRef.current?.click()}
+                            >
+                                <Upload className="size-3.5" />
+                                Select Files
+                            </Button>
+                        )}
+                    </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={handleSelectFiles}
+                    />
+
+                    {files.length === 0 && !deployResult && (
+                        <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="w-full rounded-xl border border-dashed border-border p-8 text-center hover:border-primary/40 hover:bg-accent/40 transition-colors"
+                        >
+                            <Upload className="mx-auto mb-2 size-5 text-muted-foreground" />
+                            <p className="text-sm font-medium text-foreground">
+                                Choose files to deploy
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                                HTML, JS, CSS, images… up to 50 MB per file
+                            </p>
+                        </button>
+                    )}
+
+                    {files.length > 0 && (
+                        <div className="space-y-2">
+                            <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                                {files.map((f) => (
+                                    <div
+                                        key={f.path}
+                                        className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
+                                    >
+                                        <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                                        <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                                            {f.path}
+                                        </span>
+                                        <span className="shrink-0 text-xs text-muted-foreground">
+                                            {(f.file.size / 1024).toFixed(1)} KB
+                                        </span>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="size-6 shrink-0"
+                                            onClick={() => removeFile(f.path)}
+                                            disabled={isDeploying}
+                                        >
+                                            <X className="size-3.5 text-muted-foreground" />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                            <Button
+                                onClick={handleDeploy}
+                                disabled={isDeploying}
+                                className="w-full gap-2"
+                            >
+                                {isDeploying ? (
+                                    <>
+                                        <Loader2 className="size-4 animate-spin" />
+                                        {deployStep || "Deploying…"}
+                                    </>
+                                ) : (
+                                    <>
+                                        <Rocket className="size-4" />
+                                        Deploy {files.length} file
+                                        {files.length === 1 ? "" : "s"}
+                                    </>
+                                )}
+                            </Button>
+                        </div>
+                    )}
+
+                    {deployError && (
+                        <p className="text-xs text-destructive">
+                            {deployError}
+                        </p>
+                    )}
+
+                    {deployResult && (
+                        <div className="rounded-xl border border-border bg-muted/30 p-4">
+                            <div className="flex items-center gap-2 mb-2">
+                                <CheckCircle2 className="size-4 text-emerald-500" />
+                                <p className="text-sm font-medium text-foreground">
+                                    Deployed v{deployResult.deployment.version}
+                                </p>
+                                <Badge
+                                    variant="secondary"
+                                    className="ml-auto text-xs"
+                                >
+                                    {deployResult.deployment.source}
+                                </Badge>
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                <p>
+                                    Files deployed:{" "}
+                                    {deployResult.summary.deployedFiles}
+                                </p>
+                                <p>
+                                    Total size:{" "}
+                                    {deployResult.summary.totalSizeHuman}
+                                </p>
+                                <p>
+                                    Compressed:{" "}
+                                    {deployResult.summary.filesCompressed}
+                                </p>
+                                <p>
+                                    Size reduced:{" "}
+                                    {deployResult.summary.sizeReducedPercent}%
+                                </p>
+                                <p>
+                                    Images optimized:{" "}
+                                    {deployResult.summary.imagesOptimized}
+                                </p>
+                                <p>
+                                    WebP variants:{" "}
+                                    {deployResult.summary.webpVariants}
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Deployment history */}
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <CardTitle className="text-sm">
+                                Deployment History
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                                Roll back to any previous deployment
+                            </CardDescription>
+                        </div>
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            className="gap-1.5 shrink-0"
+                            onClick={loadDeployments}
+                        >
+                            <RefreshCw className="size-3.5" />
+                            Refresh
+                        </Button>
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    {deploymentsLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : deployments.length === 0 ? (
+                        <p className="py-8 text-center text-sm text-muted-foreground">
+                            No deployments yet.
+                        </p>
+                    ) : (
+                        <div className="space-y-2">
+                            {deployments.map((deployment) => (
+                                <div
+                                    key={deployment.id}
+                                    className="flex items-center gap-3 rounded-lg border border-border p-3"
+                                >
+                                    <div
+                                        className={`size-2 rounded-full shrink-0 ${deployment.is_active ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-sm font-medium text-foreground">
+                                                v{deployment.version}
+                                            </p>
+                                            <Badge
+                                                variant={
+                                                    deployment.is_active
+                                                        ? "default"
+                                                        : "outline"
+                                                }
+                                                className="text-xs"
+                                            >
+                                                {deployment.is_active
+                                                    ? "Live"
+                                                    : deployment.source}
+                                            </Badge>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                            {deployment.file_count} files ·{" "}
+                                            {deployment.filesDeployed ?? 0}{" "}
+                                            deployed /{" "}
+                                            {deployment.filesReused ?? 0} reused
+                                            ·{" "}
+                                            {formatRelativeTime(
+                                                deployment.created_at,
+                                            )}
+                                        </p>
+                                    </div>
+                                    {!deployment.is_active && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="shrink-0 gap-1.5"
+                                            onClick={() =>
+                                                handleRollback(deployment)
+                                            }
+                                            disabled={
+                                                rollingBack === deployment.id
+                                            }
+                                        >
+                                            {rollingBack === deployment.id ? (
+                                                <Loader2 className="size-3.5 animate-spin" />
+                                            ) : (
+                                                <RotateCcw className="size-3.5" />
+                                            )}
+                                            Rollback
+                                        </Button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+        </div>
+    );
+}
+
+const buildStatusConfig: Record<
+    ApiBuild["status"],
+    {
+        label: string;
+        variant: "default" | "secondary" | "destructive" | "outline";
+    }
+> = {
+    queued: { label: "Queued", variant: "secondary" },
+    active: { label: "Building", variant: "secondary" },
+    completed: { label: "Completed", variant: "default" },
+    failed: { label: "Failed", variant: "destructive" },
+};
+
+function parseEnvVars(text: string): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const line of text.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const eq = trimmed.indexOf("=");
+        if (eq === -1) continue;
+        const key = trimmed.slice(0, eq).trim();
+        const value = trimmed.slice(eq + 1).trim();
+        if (key) result[key] = value;
+    }
+    return result;
+}
+
+function BuildsTab({ project }: { project: Project }) {
+    const [builds, setBuilds] = useState<ApiBuild[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [showTrigger, setShowTrigger] = useState(false);
+    const [isTriggering, setIsTriggering] = useState(false);
+    const [error, setError] = useState("");
+
+    const [repoUrl, setRepoUrl] = useState("");
+    const [gitToken, setGitToken] = useState("");
+    const [framework, setFramework] = useState("vite");
+    const [buildCommand, setBuildCommand] = useState("pnpm build");
+    const [outputDir, setOutputDir] = useState("dist");
+    const [envVarsText, setEnvVarsText] = useState("");
+
+    const [activeBuildId, setActiveBuildId] = useState<string | null>(null);
+    const [logs, setLogs] = useState<string[]>([]);
+    const [progress, setProgress] = useState(0);
+    const [logDone, setLogDone] = useState(false);
+    const logBoxRef = useRef<HTMLDivElement>(null);
+    const abortRef = useRef<AbortController | null>(null);
+
+    const loadBuilds = useCallback(async () => {
+        try {
+            const list = await apiClient.getBuilds(project.id);
+            setBuilds(list);
+        } catch (loadError) {
+            toast.error(
+                loadError instanceof Error
+                    ? loadError.message
+                    : "Failed to load builds",
+            );
+        } finally {
+            setLoading(false);
+        }
+    }, [project.id]);
+
+    useEffect(() => {
+        loadBuilds();
+    }, [loadBuilds]);
+
+    useEffect(() => {
+        return () => abortRef.current?.abort();
+    }, []);
+
+    useEffect(() => {
+        logBoxRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [logs]);
+
+    const startLogs = useCallback(
+        async (buildId: string) => {
+            abortRef.current?.abort();
+            const controller = new AbortController();
+            abortRef.current = controller;
+            setActiveBuildId(buildId);
+            setLogs([]);
+            setProgress(0);
+            setLogDone(false);
+
+            try {
+                const done = await apiClient.streamBuildLogs(
+                    buildId,
+                    {
+                        onLog: (message) =>
+                            setLogs((prev) => [...prev, message]),
+                        onProgress: (value) => setProgress(value),
+                        onStatus: () => {
+                            /* status is implied by build rows */
+                        },
+                        onDone: (event: BuildDoneEvent) => {
+                            setLogDone(true);
+                            if (event.error) {
+                                setLogs((prev) => [
+                                    ...prev,
+                                    `[error] ${event.error}`,
+                                ]);
+                            }
+                            loadBuilds();
+                        },
+                        onError: (event) => {
+                            setLogDone(true);
+                            setLogs((prev) => [
+                                ...prev,
+                                `[error] ${event.message}`,
+                            ]);
+                        },
+                    },
+                    controller.signal,
+                );
+
+                if (done) {
+                    setLogDone(true);
+                }
+            } catch {
+                setLogDone(true);
+                setLogs((prev) => [
+                    ...prev,
+                    "[error] Failed to connect to build log stream",
+                ]);
+            }
+        },
+        [loadBuilds],
+    );
+
+    const resetForm = () => {
+        setRepoUrl("");
+        setGitToken("");
+        setFramework("vite");
+        setBuildCommand("pnpm build");
+        setOutputDir("dist");
+        setEnvVarsText("");
+        setError("");
+    };
+
+    const handleTrigger = async () => {
+        const url = repoUrl.trim();
+        if (!url) {
+            setError("Enter a GitHub repository URL");
+            return;
+        }
+        if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+/.test(url)) {
+            setError("Enter a valid public GitHub repository URL");
+            return;
+        }
+        setIsTriggering(true);
+        setError("");
+        try {
+            const envVars = parseEnvVars(envVarsText);
+            const build = await apiClient.triggerBuild({
+                pageId: project.id,
+                repoUrl: url,
+                gitProvider: "github",
+                ...(gitToken.trim() ? { gitToken: gitToken.trim() } : {}),
+                framework: framework.trim() || "vite",
+                ...(buildCommand.trim()
+                    ? { buildCommand: buildCommand.trim() }
+                    : {}),
+                ...(outputDir.trim() ? { outputDir: outputDir.trim() } : {}),
+                ...(Object.keys(envVars).length > 0 ? { envVars } : {}),
+            });
+            toast.success("Build queued");
+            setShowTrigger(false);
+            resetForm();
+            loadBuilds();
+            startLogs(build.id);
+        } catch (triggerError) {
+            const message =
+                triggerError instanceof Error
+                    ? triggerError.message
+                    : "Failed to trigger build";
+            setError(message);
+            toast.error(message);
+        } finally {
+            setIsTriggering(false);
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <CardTitle className="text-sm">
+                                Cloud Builds
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                                Build your git repository and deploy the output
+                                to production
+                            </CardDescription>
+                        </div>
+                        {!showTrigger && (
+                            <Button
+                                size="sm"
+                                className="gap-2 shrink-0"
+                                onClick={() => setShowTrigger(true)}
+                            >
+                                <Plus className="size-3.5" />
+                                New Build
+                            </Button>
+                        )}
+                    </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    {showTrigger && (
+                        <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
+                            <div className="flex items-center justify-between">
+                                <p className="text-sm font-medium text-foreground">
+                                    Trigger a build
+                                </p>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-7"
+                                    onClick={() => {
+                                        setShowTrigger(false);
+                                        setError("");
+                                    }}
+                                >
+                                    <X className="size-3.5" />
+                                </Button>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <GithubIcon className="size-5 shrink-0 text-muted-foreground" />
+                                <div className="relative flex-1">
+                                    <Input
+                                        id="build-repo"
+                                        placeholder="https://github.com/user/repo"
+                                        value={repoUrl}
+                                        onChange={(e) => {
+                                            setRepoUrl(e.target.value);
+                                            setError("");
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter")
+                                                handleTrigger();
+                                        }}
+                                        className="h-10 pr-24 font-mono text-sm"
+                                    />
+                                    <Button
+                                        size="sm"
+                                        className="absolute right-1 top-1/2 h-8 -translate-y-1/2 gap-1.5 px-3"
+                                        onClick={handleTrigger}
+                                        disabled={isTriggering}
+                                    >
+                                        {isTriggering ? (
+                                            <Loader2 className="size-3.5 animate-spin" />
+                                        ) : (
+                                            <Play className="size-3.5" />
+                                        )}
+                                        Build
+                                    </Button>
+                                </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                Deploy a public GitHub repository. Paste a repo
+                                URL and click Build — the output will be
+                                deployed automatically.
+                            </p>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="build-framework">
+                                        Framework
+                                    </Label>
+                                    <Input
+                                        id="build-framework"
+                                        placeholder="vite"
+                                        value={framework}
+                                        onChange={(e) =>
+                                            setFramework(e.target.value)
+                                        }
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="build-command">
+                                        Build command
+                                    </Label>
+                                    <Input
+                                        id="build-command"
+                                        placeholder="pnpm build"
+                                        value={buildCommand}
+                                        onChange={(e) =>
+                                            setBuildCommand(e.target.value)
+                                        }
+                                        className="font-mono text-xs"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="build-output">
+                                        Output directory
+                                    </Label>
+                                    <Input
+                                        id="build-output"
+                                        placeholder="dist"
+                                        value={outputDir}
+                                        onChange={(e) =>
+                                            setOutputDir(e.target.value)
+                                        }
+                                        className="font-mono text-xs"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="build-token">
+                                    Git token (for private repos)
+                                </Label>
+                                <Input
+                                    id="build-token"
+                                    type="password"
+                                    placeholder="ghp_…"
+                                    value={gitToken}
+                                    onChange={(e) =>
+                                        setGitToken(e.target.value)
+                                    }
+                                    className="font-mono text-xs"
+                                />
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="build-env">
+                                    Environment variables (KEY=VALUE per line)
+                                </Label>
+                                <Textarea
+                                    id="build-env"
+                                    rows={3}
+                                    placeholder={
+                                        "VITE_API_URL=https://api.example.com\nNODE_ENV=production"
+                                    }
+                                    value={envVarsText}
+                                    onChange={(e) =>
+                                        setEnvVarsText(e.target.value)
+                                    }
+                                    className="font-mono text-xs"
+                                />
+                            </div>
+
+                            {error && (
+                                <p className="text-xs text-destructive">
+                                    {error}
+                                </p>
+                            )}
+
+                            <div className="flex items-center justify-end gap-2">
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                        setShowTrigger(false);
+                                        setError("");
+                                    }}
+                                >
+                                    Cancel
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {loading ? (
+                        <div className="flex items-center justify-center py-8">
+                            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : builds.length === 0 ? (
+                        <p className="py-8 text-center text-sm text-muted-foreground">
+                            No builds yet. Trigger a cloud build from your git
+                            repository.
+                        </p>
+                    ) : (
+                        <div className="space-y-2">
+                            {builds.map((build) => {
+                                const config =
+                                    buildStatusConfig[build.status] ??
+                                    buildStatusConfig.queued;
+                                const isActive = activeBuildId === build.id;
+                                return (
+                                    <div
+                                        key={build.id}
+                                        className="rounded-lg border border-border p-3"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+                                                {build.status === "active" ? (
+                                                    <Loader2 className="size-4 animate-spin text-blue-500" />
+                                                ) : build.status ===
+                                                  "completed" ? (
+                                                    <CheckCircle2 className="size-4 text-emerald-500" />
+                                                ) : build.status ===
+                                                  "failed" ? (
+                                                    <AlertCircle className="size-4 text-destructive" />
+                                                ) : (
+                                                    <Clock className="size-4 text-muted-foreground" />
+                                                )}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="truncate text-sm font-medium text-foreground">
+                                                        {build.framework}
+                                                    </span>
+                                                    <Badge
+                                                        variant={config.variant}
+                                                        className="text-xs"
+                                                    >
+                                                        {config.label}
+                                                    </Badge>
+                                                </div>
+                                                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                                    {build.repo_url} ·{" "}
+                                                    {build.build_command ??
+                                                        "pnpm build"}
+                                                </p>
+                                            </div>
+                                            <span className="shrink-0 text-xs text-muted-foreground">
+                                                {formatRelativeTime(
+                                                    build.created_at,
+                                                )}
+                                            </span>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="shrink-0 gap-1.5"
+                                                onClick={() =>
+                                                    isActive
+                                                        ? abortRef.current?.abort()
+                                                        : startLogs(build.id)
+                                                }
+                                            >
+                                                <Terminal className="size-3.5" />
+                                                {isActive ? "Stop" : "Logs"}
+                                            </Button>
+                                        </div>
+
+                                        {isActive && (
+                                            <div className="mt-3">
+                                                {progress > 0 && (
+                                                    <Progress
+                                                        value={progress}
+                                                        className="h-1.5 mb-2"
+                                                    />
+                                                )}
+                                                <div className="overflow-hidden rounded-lg border border-[#2d3139] bg-[#0d1117] font-mono text-xs text-slate-300">
+                                                    <div className="h-56 space-y-1 overflow-y-auto p-3">
+                                                        {logs.length === 0 ? (
+                                                            <p className="text-slate-500">
+                                                                Waiting for log
+                                                                output…
+                                                            </p>
+                                                        ) : (
+                                                            logs.map(
+                                                                (line, i) => (
+                                                                    <p
+                                                                        key={`${i}-${line}`}
+                                                                        className="text-slate-400"
+                                                                    >
+                                                                        {line}
+                                                                    </p>
+                                                                ),
+                                                            )
+                                                        )}
+                                                        {!logDone && (
+                                                            <span className="inline-block h-3 w-1.5 animate-pulse bg-slate-300" />
+                                                        )}
+                                                        <div ref={logBoxRef} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+        </div>
+    );
+}
+
 function AnalyticsTab() {
     return (
         <div className="space-y-4">
@@ -1072,6 +2008,23 @@ function UsageTab() {
 function SettingsTab({ project }: { project: Project }) {
     const { deleteProject } = useAppStore();
     const router = useRouter();
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    const handleDelete = async () => {
+        setIsDeleting(true);
+        try {
+            await deleteProject(project.id);
+            toast.success("Project deleted");
+            router.push("/projects");
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to delete project",
+            );
+            setIsDeleting(false);
+        }
+    };
 
     return (
         <div className="space-y-4">
@@ -1115,23 +2068,46 @@ function SettingsTab({ project }: { project: Project }) {
                                 its data
                             </p>
                         </div>
-                        <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => {
-                                if (
-                                    window.confirm(
-                                        "Are you sure you want to delete this project?",
-                                    )
-                                ) {
-                                    deleteProject(project.id);
-                                    router.push("/projects");
-                                }
-                            }}
-                        >
-                            <Trash2 className="size-3.5 mr-1.5" />
-                            Delete
-                        </Button>
+                        <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    disabled={isDeleting}
+                                >
+                                    {isDeleting ? (
+                                        <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                                    ) : (
+                                        <Trash2 className="size-3.5 mr-1.5" />
+                                    )}
+                                    Delete
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>
+                                        Delete {project.name}?
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        This will permanently delete the
+                                        project, its deployments, and all
+                                        associated data. This action cannot be
+                                        undone.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>
+                                        Cancel
+                                    </AlertDialogCancel>
+                                    <AlertDialogAction
+                                        className="bg-destructive text-white hover:bg-destructive/90"
+                                        onClick={handleDelete}
+                                    >
+                                        Delete project
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
                     </div>
                 </CardContent>
             </Card>
@@ -1141,10 +2117,28 @@ function SettingsTab({ project }: { project: Project }) {
 
 export function ProjectDetailView({ projectId }: { projectId: string }) {
     const router = useRouter();
-    const getProject = useAppStore((s) => s.getProject);
-    const project = getProject(projectId);
+    const project = useAppStore((s) =>
+        s.projects.find((p) => p.id === projectId),
+    );
+    const isLoading = useAppStore((s) => s.isLoading);
+    const fetchProjects = useAppStore((s) => s.fetchProjects);
+    const fetchedRef = useRef(false);
+
+    useEffect(() => {
+        if (!project && !fetchedRef.current) {
+            fetchedRef.current = true;
+            fetchProjects();
+        }
+    }, [project, fetchProjects]);
 
     if (!project) {
+        if (isLoading || !fetchedRef.current) {
+            return (
+                <div className="flex h-svh items-center justify-center bg-background">
+                    <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+                </div>
+            );
+        }
         return (
             <div className="flex flex-col items-center justify-center h-full p-6 text-center">
                 <AlertCircle className="size-12 text-muted-foreground/40 mb-4" />
@@ -1220,6 +2214,8 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                         {[
                             { value: "overview", label: "Overview" },
                             { value: "domains", label: "Domains" },
+                            { value: "deploys", label: "Deploys" },
+                            { value: "builds", label: "Builds" },
                             { value: "files", label: "Files" },
                             { value: "environment", label: "Environment" },
                             { value: "analytics", label: "Analytics" },
@@ -1242,6 +2238,12 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                 </TabsContent>
                 <TabsContent value="domains">
                     <DomainsTab />
+                </TabsContent>
+                <TabsContent value="deploys">
+                    <DeployTab project={project} />
+                </TabsContent>
+                <TabsContent value="builds">
+                    <BuildsTab project={project} />
                 </TabsContent>
                 <TabsContent value="files">
                     <FilesTab />

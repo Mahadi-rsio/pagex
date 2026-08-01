@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/useAppStore";
 import { navigateToProjectOverview } from "@/lib/navigate";
+import { apiClient, type BuildDoneEvent } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,12 +16,10 @@ import {
     CardDescription,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-    Search,
     ArrowLeft,
-    GitBranch,
-    Clock,
     CheckCircle2,
     Copy,
     Terminal,
@@ -30,6 +29,7 @@ import {
     KeyRound,
     Loader2,
 } from "lucide-react";
+import toast from "react-hot-toast";
 
 const MOCK_API_KEY = "evo_sk_live_8f3a2c91d4e7b6a0";
 
@@ -39,138 +39,14 @@ const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
     </svg>
 );
 
-const GitlabIcon = (props: React.SVGProps<SVGSVGElement>) => (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-        <path d="M23.955 13.587l-1.342-4.135-2.664-8.189c-.135-.423-.73-.423-.867 0L16.418 9.45H7.582L4.919 1.263C4.783.84 4.185.84 4.05 1.26L1.386 9.449.044 13.587c-.121.375.014.789.331 1.023L12 23.054l11.625-8.443c.318-.235.453-.648.33-1.024" />
-    </svg>
-);
-
-const BitbucketIcon = (props: React.SVGProps<SVGSVGElement>) => (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-        <path d="M.778 1.213a.768.768 0 00-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95a.772.772 0 00.77-.646l3.27-20.03a.768.768 0 00-.768-.891zM14.52 15.53H9.522L8.17 8.466h7.561z" />
-    </svg>
-);
-
-type Provider = "github" | "gitlab" | "bitbucket";
-
-interface MockRepo {
-    id: string;
-    name: string;
-    fullName: string;
-    description?: string;
-    updatedAt: string;
-    isPrivate: boolean;
-}
-
-const mockRepos: Record<Provider, MockRepo[]> = {
-    github: [
-        {
-            id: "r1",
-            name: "my-next-app",
-            fullName: "acme/my-next-app",
-            description: "Next.js SaaS application",
-            updatedAt: "2026-07-16T07:00:00Z",
-            isPrivate: false,
-        },
-        {
-            id: "r2",
-            name: "api-backend",
-            fullName: "acme/api-backend",
-            description: "REST API with Node.js",
-            updatedAt: "2026-07-15T12:00:00Z",
-            isPrivate: true,
-        },
-        {
-            id: "r3",
-            name: "marketing-site",
-            fullName: "acme/marketing-site",
-            description: "Landing page",
-            updatedAt: "2026-07-14T09:00:00Z",
-            isPrivate: false,
-        },
-        {
-            id: "r4",
-            name: "mobile-app",
-            fullName: "acme/mobile-app",
-            description: "React Native app",
-            updatedAt: "2026-07-12T15:00:00Z",
-            isPrivate: true,
-        },
-    ],
-    gitlab: [
-        {
-            id: "g1",
-            name: "devops-pipeline",
-            fullName: "acme/devops-pipeline",
-            description: "CI/CD pipeline configs",
-            updatedAt: "2026-07-15T08:00:00Z",
-            isPrivate: true,
-        },
-        {
-            id: "g2",
-            name: "data-processor",
-            fullName: "acme/data-processor",
-            description: "ETL data processing",
-            updatedAt: "2026-07-13T14:00:00Z",
-            isPrivate: true,
-        },
-    ],
-    bitbucket: [
-        {
-            id: "b1",
-            name: "legacy-api",
-            fullName: "acme/legacy-api",
-            description: "Old REST API",
-            updatedAt: "2026-07-10T10:00:00Z",
-            isPrivate: true,
-        },
-        {
-            id: "b2",
-            name: "frontend-v1",
-            fullName: "acme/frontend-v1",
-            description: "Old frontend",
-            updatedAt: "2026-07-08T09:00:00Z",
-            isPrivate: false,
-        },
-    ],
-};
-
-const providerConfig = {
-    github: {
-        label: "GitHub",
-        icon: GithubIcon,
-        color: "hover:border-foreground/40 hover:bg-muted/50",
-        activeColor: "border-foreground/50 bg-muted text-foreground",
-    },
-    gitlab: {
-        label: "GitLab",
-        icon: GitlabIcon,
-        color: "hover:border-orange-500/50 hover:bg-orange-500/5",
-        activeColor:
-            "border-orange-500 bg-orange-500/10 text-orange-600 dark:text-orange-400",
-    },
-    bitbucket: {
-        label: "Bitbucket",
-        icon: BitbucketIcon,
-        color: "hover:border-blue-500/50 hover:bg-blue-500/5",
-        activeColor:
-            "border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400",
-    },
-};
-
 function getDeployCommand(projectName: string, apiKey: string) {
     return `npm i evolo && npx evolo deploy --project=${projectName} --source=dist --api-key=${apiKey}`;
 }
 
-function getWorkflowCode(
-    provider: Provider,
-    projectName: string,
-    apiKey: string,
-) {
+function getWorkflowCode(projectName: string, apiKey: string) {
     const deploy = getDeployCommand(projectName, apiKey);
 
-    if (provider === "github") {
-        return `name: Deploy to Evolo
+    return `name: Deploy to Evolo
 
 on:
   push:
@@ -196,64 +72,128 @@ jobs:
           EVOLO_API_KEY: \${{ secrets.EVOLO_API_KEY }}
         run: ${deploy.replace(apiKey, "$EVOLO_API_KEY")}
 `;
-    }
-
-    if (provider === "gitlab") {
-        return `stages:
-  - build
-  - deploy
-
-build:
-  stage: build
-  image: node:20
-  script:
-    - npm ci
-    - npm run build
-  artifacts:
-    paths:
-      - dist/
-
-deploy:
-  stage: deploy
-  image: node:20
-  script:
-    - ${deploy.replace(apiKey, "$EVOLO_API_KEY")}
-  only:
-    - main
-`;
-    }
-
-    return `image: node:20
-
-pipelines:
-  branches:
-    main:
-      - step:
-          name: Build & Deploy to Evolo
-          caches:
-            - node
-          script:
-            - npm ci
-            - npm run build
-            - ${deploy.replace(apiKey, "$EVOLO_API_KEY")}
-`;
 }
 
-const BUILD_LOG_LINES = [
-    { text: "> Cloning repository...", delay: 400 },
-    { text: "> Installing dependencies...", delay: 900 },
-    { text: "  npm ci", delay: 1400 },
-    { text: "  added 482 packages in 8.2s", delay: 2000 },
-    { text: "> Building application...", delay: 2600 },
-    { text: "  vite build", delay: 3100 },
-    { text: "  ✓ 124 modules transformed.", delay: 3700 },
-    { text: "  dist/index.html                   0.46 kB", delay: 4100 },
-    { text: "  dist/assets/index-a1b2c3d4.js   142.18 kB", delay: 4500 },
-    { text: "> Uploading build artifacts...", delay: 5100 },
-    { text: "> Provisioning edge network...", delay: 5700 },
-    { text: "✓ Build completed successfully", delay: 6300 },
-    { text: "✓ Deployed to production", delay: 6800 },
-];
+function LiveBuildTerminal({
+    projectName,
+    repoName,
+    buildId,
+    onComplete,
+}: {
+    projectName: string;
+    repoName: string;
+    buildId: string;
+    onComplete: () => void;
+}) {
+    const [lines, setLines] = useState<string[]>([]);
+    const [progress, setProgress] = useState(0);
+    const [done, setDone] = useState(false);
+    const [error, setError] = useState("");
+    const bottomRef = useRef<HTMLDivElement>(null);
+    const onCompleteRef = useRef(onComplete);
+    onCompleteRef.current = onComplete;
+
+    useEffect(() => {
+        const controller = new AbortController();
+        apiClient
+            .streamBuildLogs(
+                buildId,
+                {
+                    onLog: (message) => setLines((prev) => [...prev, message]),
+                    onProgress: (value) => setProgress(value),
+                    onDone: (event: BuildDoneEvent) => {
+                        setDone(true);
+                        if (event.error) {
+                            setError(event.error);
+                            setLines((prev) => [
+                                ...prev,
+                                `[error] ${event.error}`,
+                            ]);
+                        }
+                        onCompleteRef.current();
+                    },
+                    onError: (event) => {
+                        setDone(true);
+                        setError(event.message);
+                        setLines((prev) => [
+                            ...prev,
+                            `[error] ${event.message}`,
+                        ]);
+                        onCompleteRef.current();
+                    },
+                },
+                controller.signal,
+            )
+            .catch(() => {
+                setDone(true);
+                setError("Failed to connect to the build log stream");
+                onCompleteRef.current();
+            });
+        return () => controller.abort();
+    }, [buildId]);
+
+    useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [lines]);
+
+    const statusLabel = done
+        ? error
+            ? "Failed"
+            : "Complete"
+        : progress > 0
+          ? `${Math.round(progress)}%`
+          : "Building";
+
+    return (
+        <div className="overflow-hidden rounded-xl border border-[#2d3139] bg-[#0d1117] font-mono text-xs text-slate-300 shadow-lg">
+            <div className="flex items-center justify-between border-b border-[#2d3139] bg-[#21262d] px-4 py-2.5">
+                <div className="flex items-center gap-2 text-slate-200">
+                    <Terminal className="size-4 text-[#ec7211]" />
+                    <span className="font-sans text-sm font-medium">
+                        Build · {projectName}
+                    </span>
+                </div>
+                <Badge
+                    variant="outline"
+                    className="border-[#30363d] bg-[#161b22] font-sans text-xs text-slate-300"
+                >
+                    {statusLabel}
+                </Badge>
+            </div>
+            {progress > 0 && !done && (
+                <div className="h-1 bg-[#30363d]">
+                    <div
+                        className="h-full bg-[#ec7211] transition-all"
+                        style={{ width: `${progress}%` }}
+                    />
+                </div>
+            )}
+            <div className="h-64 space-y-1 overflow-y-auto p-4">
+                <p className="text-slate-500">$ cloud build {repoName}</p>
+                {lines.map((line, i) => (
+                    <p
+                        key={`${i}-${line}`}
+                        className={
+                            line.startsWith("✓")
+                                ? "text-emerald-400"
+                                : line.startsWith(">")
+                                  ? "text-[#79c0ff]"
+                                  : line.startsWith("[error]")
+                                    ? "text-red-400"
+                                    : "text-slate-400"
+                        }
+                    >
+                        {line}
+                    </p>
+                ))}
+                {!done && (
+                    <span className="inline-block h-3.5 w-1.5 animate-pulse bg-slate-300" />
+                )}
+                <div ref={bottomRef} />
+            </div>
+        </div>
+    );
+}
 
 function CopyButton({
     value,
@@ -311,86 +251,6 @@ function CodeBlock({ code, copyLabel }: { code: string; copyLabel?: string }) {
     );
 }
 
-function BuildTerminal({
-    projectName,
-    repoName,
-    onComplete,
-}: {
-    projectName: string;
-    repoName: string;
-    onComplete: () => void;
-}) {
-    const [lines, setLines] = useState<string[]>([]);
-    const [done, setDone] = useState(false);
-    const bottomRef = useRef<HTMLDivElement>(null);
-    const onCompleteRef = useRef(onComplete);
-    onCompleteRef.current = onComplete;
-
-    useEffect(() => {
-        const timers = BUILD_LOG_LINES.map(({ text, delay }) =>
-            window.setTimeout(() => {
-                setLines((prev) => [...prev, text]);
-            }, delay),
-        );
-
-        const doneTimer = window.setTimeout(() => {
-            setDone(true);
-            onCompleteRef.current();
-        }, 7200);
-
-        return () => {
-            timers.forEach(clearTimeout);
-            clearTimeout(doneTimer);
-        };
-    }, []);
-
-    useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [lines]);
-
-    return (
-        <div className="overflow-hidden rounded-xl border border-[#2d3139] bg-[#0d1117] font-mono text-xs text-slate-300 shadow-lg">
-            <div className="flex items-center justify-between border-b border-[#2d3139] bg-[#21262d] px-4 py-2.5">
-                <div className="flex items-center gap-2 text-slate-200">
-                    <Terminal className="size-4 text-[#ec7211]" />
-                    <span className="font-sans text-sm font-medium">
-                        Build · {projectName}
-                    </span>
-                </div>
-                <Badge
-                    variant="outline"
-                    className="border-[#30363d] bg-[#161b22] font-sans text-xs text-slate-300"
-                >
-                    {done ? "Complete" : "Building"}
-                </Badge>
-            </div>
-            <div className="h-64 space-y-1 overflow-y-auto p-4">
-                <p className="text-slate-500">
-                    $ evolo deploy --project={projectName} --repo={repoName}
-                </p>
-                {lines.map((line, i) => (
-                    <p
-                        key={`${i}-${line}`}
-                        className={
-                            line.startsWith("✓")
-                                ? "text-emerald-400"
-                                : line.startsWith(">")
-                                  ? "text-[#79c0ff]"
-                                  : "text-slate-400"
-                        }
-                    >
-                        {line}
-                    </p>
-                ))}
-                {!done && (
-                    <span className="inline-block h-3.5 w-1.5 animate-pulse bg-slate-300" />
-                )}
-                <div ref={bottomRef} />
-            </div>
-        </div>
-    );
-}
-
 export function CreateProjectView() {
     const { createProject, isLoading, error, clearError } = useAppStore();
     const router = useRouter();
@@ -400,22 +260,14 @@ export function CreateProjectView() {
     const [nameError, setNameError] = useState("");
     const [isCreating, setIsCreating] = useState(false);
 
-    const [provider, setProvider] = useState<Provider>("github");
-    const [searchQuery, setSearchQuery] = useState("");
-    const [selectedRepo, setSelectedRepo] = useState<MockRepo | null>(null);
+    const [repoUrl, setRepoUrl] = useState("");
+    const [repoError, setRepoError] = useState("");
     const [isDeploying, setIsDeploying] = useState(false);
     const [showBuild, setShowBuild] = useState(false);
+    const [activeBuildId, setActiveBuildId] = useState<string | null>(null);
+    const [buildError, setBuildError] = useState("");
     const [createdProjectId, setCreatedProjectId] = useState<string | null>(
         null,
-    );
-
-    const [ciProvider, setCiProvider] = useState<Provider>("github");
-
-    const repos = mockRepos[provider];
-    const filteredRepos = repos.filter(
-        (repo) =>
-            repo.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            repo.description?.toLowerCase().includes(searchQuery.toLowerCase()),
     );
 
     const slugName = projectName
@@ -428,7 +280,6 @@ export function CreateProjectView() {
         MOCK_API_KEY,
     );
     const workflowCode = getWorkflowCode(
-        ciProvider,
         slugName || "project_name",
         MOCK_API_KEY,
     );
@@ -465,9 +316,43 @@ export function CreateProjectView() {
     };
 
     const handleCloudDeploy = async () => {
-        if (!selectedRepo || isDeploying) return;
+        const url = repoUrl.trim();
+        if (!url) {
+            setRepoError("Enter a GitHub repository URL");
+            return;
+        }
+        if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+/.test(url)) {
+            setRepoError("Enter a valid public GitHub repository URL");
+            return;
+        }
+        if (!createdProjectId) {
+            setRepoError("Project not found — go back and recreate it");
+            return;
+        }
+        if (isDeploying) return;
+        setRepoError("");
         setIsDeploying(true);
+        setBuildError("");
         setShowBuild(true);
+        try {
+            const build = await apiClient.triggerBuild({
+                pageId: createdProjectId,
+                repoUrl: url,
+                gitProvider: "github",
+                framework: "vite",
+                buildCommand: "npm run build",
+                outputDir: "dist",
+            });
+            setActiveBuildId(build.id);
+        } catch (buildErr) {
+            const message =
+                buildErr instanceof Error
+                    ? buildErr.message
+                    : "Failed to start the build";
+            setBuildError(message);
+            toast.error(message);
+            setIsDeploying(false);
+        }
     };
 
     const handleBuildComplete = () => {
@@ -496,6 +381,9 @@ export function CreateProjectView() {
                     onClick={() => {
                         if (step === "deploy" && !showBuild) {
                             setStep("name");
+                        } else if (showBuild && !activeBuildId) {
+                            setShowBuild(false);
+                            setIsDeploying(false);
                         } else {
                             router.push("/projects");
                         }
@@ -613,27 +501,40 @@ export function CreateProjectView() {
                             <Card>
                                 <CardHeader className="space-y-1.5 px-6 pt-6 pb-4">
                                     <CardTitle className="flex items-center gap-2 text-base">
-                                        {isDeploying ? (
-                                            <Loader2 className="size-4 animate-spin text-blue-500" />
-                                        ) : (
+                                        {activeBuildId && !isDeploying ? (
                                             <CheckCircle2 className="size-4 text-emerald-500" />
+                                        ) : (
+                                            <Loader2 className="size-4 animate-spin text-blue-500" />
                                         )}
-                                        {isDeploying
-                                            ? "Building your project"
-                                            : "Deployment complete"}
+                                        {activeBuildId && !isDeploying
+                                            ? "Deployment complete"
+                                            : "Building your project"}
                                     </CardTitle>
                                     <CardDescription>
-                                        {selectedRepo?.fullName} ·{" "}
-                                        {providerConfig[provider].label}
+                                        {repoUrl.trim()} · GitHub
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-4 px-6 pb-6">
-                                    <BuildTerminal
-                                        projectName={slugName}
-                                        repoName={selectedRepo?.fullName ?? ""}
-                                        onComplete={handleBuildComplete}
-                                    />
-                                    {!isDeploying && (
+                                    {buildError && !activeBuildId ? (
+                                        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+                                            {buildError}
+                                        </div>
+                                    ) : activeBuildId ? (
+                                        <LiveBuildTerminal
+                                            projectName={slugName}
+                                            repoName={repoUrl.trim()}
+                                            buildId={activeBuildId}
+                                            onComplete={handleBuildComplete}
+                                        />
+                                    ) : (
+                                        <div className="flex h-64 items-center justify-center rounded-xl border border-[#2d3139] bg-[#0d1117]">
+                                            <div className="flex items-center gap-2 text-slate-400">
+                                                <Loader2 className="size-4 animate-spin" />
+                                                Starting build…
+                                            </div>
+                                        </div>
+                                    )}
+                                    {!isDeploying && activeBuildId && (
                                         <Button
                                             onClick={handleViewProject}
                                             className="w-full"
@@ -648,129 +549,51 @@ export function CreateProjectView() {
                             <Card>
                                 <CardHeader className="space-y-1.5 px-6 pt-6 pb-4">
                                     <CardTitle className="text-base">
-                                        Connect a repository
+                                        Deploy from GitHub
                                     </CardTitle>
                                     <CardDescription>
-                                        Import from GitHub, GitLab, or Bitbucket
-                                        to deploy from the cloud.
+                                        Build and deploy a public GitHub
+                                        repository with one click. No account
+                                        connection required.
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-5 px-6 pb-6">
-                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                        {(
-                                            Object.keys(
-                                                providerConfig,
-                                            ) as Provider[]
-                                        ).map((p) => {
-                                            const {
-                                                label,
-                                                icon: Icon,
-                                                color,
-                                                activeColor,
-                                            } = providerConfig[p];
-                                            const isActive = provider === p;
-                                            return (
-                                                <button
-                                                    key={p}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setProvider(p);
-                                                        setSelectedRepo(null);
-                                                        setSearchQuery("");
-                                                    }}
-                                                    className={`flex items-center justify-center gap-2.5 rounded-xl border-2 px-4 py-4 text-sm font-medium transition-all ${
-                                                        isActive
-                                                            ? activeColor
-                                                            : `border-border text-muted-foreground ${color}`
-                                                    }`}
-                                                >
-                                                    <Icon className="size-5 shrink-0" />
-                                                    <span>{label}</span>
-                                                    {isActive && (
-                                                        <CheckCircle2 className="ml-auto size-3.5 shrink-0" />
-                                                    )}
-                                                </button>
-                                            );
-                                        })}
+                                    <div className="flex items-center gap-2">
+                                        <GithubIcon className="size-5 shrink-0 text-muted-foreground" />
+                                        <div className="relative flex-1">
+                                            <Input
+                                                placeholder="https://github.com/user/repo"
+                                                value={repoUrl}
+                                                onChange={(e) => {
+                                                    setRepoUrl(e.target.value);
+                                                    setRepoError("");
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter")
+                                                        handleCloudDeploy();
+                                                }}
+                                                className="h-10 pr-24 font-mono text-sm"
+                                            />
+                                            <Button
+                                                className="absolute right-1 top-1/2 h-8 -translate-y-1/2 gap-1.5 px-3"
+                                                onClick={handleCloudDeploy}
+                                                disabled={isDeploying}
+                                            >
+                                                <Cloud className="size-3.5" />
+                                                Deploy
+                                            </Button>
+                                        </div>
                                     </div>
-
-                                    <div className="relative">
-                                        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                                        <Input
-                                            placeholder="Search repositories..."
-                                            value={searchQuery}
-                                            onChange={(e) =>
-                                                setSearchQuery(e.target.value)
-                                            }
-                                            className="h-10 pl-9"
-                                        />
-                                    </div>
-
-                                    <div className="max-h-72 space-y-2.5 overflow-y-auto pr-1">
-                                        {filteredRepos.length === 0 ? (
-                                            <div className="py-10 text-center text-sm text-muted-foreground">
-                                                No repositories found
-                                            </div>
-                                        ) : (
-                                            filteredRepos.map((repo) => (
-                                                <button
-                                                    key={repo.id}
-                                                    type="button"
-                                                    onClick={() =>
-                                                        setSelectedRepo(repo)
-                                                    }
-                                                    className={`flex w-full items-center gap-3.5 rounded-xl border p-4 text-left transition-all ${
-                                                        selectedRepo?.id ===
-                                                        repo.id
-                                                            ? "border-primary bg-primary/5"
-                                                            : "border-border hover:border-primary/30 hover:bg-accent/50"
-                                                    }`}
-                                                >
-                                                    <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                                                        <GitBranch className="size-4 text-muted-foreground" />
-                                                    </div>
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="truncate text-sm font-medium text-foreground">
-                                                                {repo.name}
-                                                            </span>
-                                                            {repo.isPrivate && (
-                                                                <Badge
-                                                                    variant="outline"
-                                                                    className="shrink-0 py-0 text-xs"
-                                                                >
-                                                                    Private
-                                                                </Badge>
-                                                            )}
-                                                        </div>
-                                                        {repo.description && (
-                                                            <p className="mt-1 truncate text-xs text-muted-foreground">
-                                                                {
-                                                                    repo.description
-                                                                }
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                                                        <Clock className="size-3" />
-                                                        {new Date(
-                                                            repo.updatedAt,
-                                                        ).toLocaleDateString()}
-                                                    </div>
-                                                </button>
-                                            ))
-                                        )}
-                                    </div>
-
-                                    <Button
-                                        onClick={handleCloudDeploy}
-                                        disabled={!selectedRepo}
-                                        className="w-full gap-2"
-                                        size="lg"
-                                    >
-                                        <Cloud className="size-4" />
-                                        Deploy
-                                    </Button>
+                                    {repoError && (
+                                        <p className="text-xs text-destructive">
+                                            {repoError}
+                                        </p>
+                                    )}
+                                    <p className="text-xs text-muted-foreground">
+                                        Paste a public GitHub repo URL. We clone
+                                        it, run the build, and deploy the output
+                                        to your project domain.
+                                    </p>
                                 </CardContent>
                             </Card>
                         )}
@@ -910,42 +733,6 @@ export function CreateProjectView() {
                                     </div>
                                 </div>
 
-                                <div className="space-y-3">
-                                    <p className="text-sm font-medium text-foreground">
-                                        Workflow provider
-                                    </p>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {(
-                                            Object.keys(
-                                                providerConfig,
-                                            ) as Provider[]
-                                        ).map((p) => {
-                                            const { label, icon: Icon } =
-                                                providerConfig[p];
-                                            const isActive = ciProvider === p;
-                                            return (
-                                                <button
-                                                    key={p}
-                                                    type="button"
-                                                    onClick={() =>
-                                                        setCiProvider(p)
-                                                    }
-                                                    className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-xs font-medium transition-all ${
-                                                        isActive
-                                                            ? "border-primary bg-primary/5 text-foreground"
-                                                            : "border-border text-muted-foreground hover:bg-accent"
-                                                    }`}
-                                                >
-                                                    <Icon className="size-4 shrink-0" />
-                                                    <span className="hidden sm:inline">
-                                                        {label}
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-
                                 <CodeBlock code={workflowCode} />
 
                                 <p className="text-xs text-muted-foreground">
@@ -953,8 +740,8 @@ export function CreateProjectView() {
                                     <code className="font-mono">
                                         EVOLO_API_KEY
                                     </code>{" "}
-                                    in your provider secrets, then paste the
-                                    workflow into your repo.
+                                    in your GitHub Actions secrets, then paste
+                                    the workflow into your repo.
                                 </p>
 
                                 <Button
