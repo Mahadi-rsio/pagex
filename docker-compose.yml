@@ -69,6 +69,10 @@ services:
       dockerfile: Dockerfile
       target: runner
     env_file: .env
+    environment:
+      - DATABASE_URL=${NEXT_WEB_DATABASE_URL:-${DIRECT_DB:-postgresql://postgres:postgres@db:5432/pagex}}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - EXPRESS_URL=${NEXT_PUBLIC_API_URL:-http://api:3000}
     expose:
       - "3001"
     depends_on:
