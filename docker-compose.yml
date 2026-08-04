@@ -105,7 +105,10 @@ services:
   # Database Migrator — Console Service
   # ============================================================================
   console-migrator:
-    image: ghcr.io/mahadi-rsio/pagex/console-migrator:latest
+    build:
+      context: ./services/console
+      dockerfile: Dockerfile
+      target: migrator
     env_file: .env
     environment:
       - DATABASE_URL=${NEXT_WEB_DATABASE_URL:-${DIRECT_DB:-postgresql://postgres:postgres@db:5432/pagex}}
@@ -122,8 +125,11 @@ services:
   # Build Environment — For Cloud Builds (profile: workers)
   # ============================================================================
   build-env:
-    image: ghcr.io/mahadi-rsio/pagex/api-build-env:latest
-    pull_policy: always
+    build:
+      context: ./services/api
+      target: build-env
+    image: pagex-build-env:latest
+    pull_policy: build
     restart: "no"
     command: ["sh", "-c", "echo 'pagex-build-env ready'"]
     networks:
