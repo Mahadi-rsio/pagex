@@ -409,9 +409,12 @@ For local (non-Compose) development you may also keep a root `.env` with `localh
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NODE_ENV` | development | Node.js environment |
-| `DATABASE_URL` | - | PostgreSQL connection string |
-| `REDIS_URL` | redis://localhost:6379 | Redis connection URL |
-| `MINIO_ENDPOINT_URL` | - | MinIO endpoint URL **Must include scheme (http:// or https://)** |
+| `DATABASE_URL` | - | PostgreSQL connection string (used by console service) |
+| `NEXT_WEB_DATABASE_URL` | - | PostgreSQL connection string for console DB (maps to `DATABASE_URL` inside container) |
+| `REDIS_URL` | redis://redis:6379 | Redis connection URL (use `redis` hostname in Docker Compose) |
+| `EXPRESS_URL` | http://api:3000 | Internal URL of the Express API — used by the Next.js `/api/proxy/*` route. Use `http://api:3000` in Docker Compose, `http://localhost:3000` for local dev |
+| `AUTH_JWKS_URL` | http://console:3001/api/auth/jwks | JWKS endpoint for JWT verification. Must point to console service port **3001** |
+| `MINIO_ENDPOINT_URL` | - | MinIO endpoint URL — **must include scheme (http:// or https://)** |
 | `S3_ACCESS_KEY` | - | S3/MinIO access key |
 | `S3_SECRET_KEY` | - | S3/MinIO secret key |
 | `MINIO_BUCKET` | pagex-blobs | Blob storage bucket |
