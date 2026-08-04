@@ -94,68 +94,10 @@ jobs:
           cache-from: type=gha,scope=api-build-worker
           cache-to: type=gha,mode=max,scope=api-build-worker
 
-      # ---------------------------------------------------------
-      # 3. Build Env Base Image (target: build-env)
-      # ---------------------------------------------------------
-      - name: Extract metadata for Build Env
-        id: meta-build-env
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.REPO }}/api-build-env
-          tags: |
-            type=raw,value=latest
-            type=raw,value=${{ steps.tag.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag.outputs.version }}
-            type=semver,pattern={{major}},value=${{ steps.tag.outputs.version }}
-            type=sha,prefix=sha-
-
-      - name: Build & Push Build Env
-        uses: docker/build-push-action@v6
-        with:
-          context: ./services/api
-          file: ./services/api/Dockerfile
-          target: build-env
-          push: true
-          platforms: linux/amd64
-          tags: ${{ steps.meta-build-env.outputs.tags }}
-          labels: ${{ steps.meta-build-env.outputs.labels }}
-          cache-from: type=gha,scope=api-build-env
-          cache-to: type=gha,mode=max,scope=api-build-env
-
-      # ---------------------------------------------------------
-      # 4. Migrator (target: migrator)
-      # ---------------------------------------------------------
-      - name: Extract metadata for Migrator
-        id: meta-migrator
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.REPO }}/api-migrator
-          tags: |
-            type=raw,value=latest
-            type=raw,value=${{ steps.tag.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag.outputs.version }}
-            type=semver,pattern={{major}},value=${{ steps.tag.outputs.version }}
-            type=sha,prefix=sha-
-
-      - name: Build & Push Migrator
-        uses: docker/build-push-action@v6
-        with:
-          context: ./services/api
-          file: ./services/api/Dockerfile
-          target: migrator
-          push: true
-          platforms: linux/amd64
-          tags: ${{ steps.meta-migrator.outputs.tags }}
-          labels: ${{ steps.meta-migrator.outputs.labels }}
-          cache-from: type=gha,scope=api-migrator
-          cache-to: type=gha,mode=max,scope=api-migrator
-
       - name: Write job summary
         run: |
-          echo "### ✅ API & Worker Images Published to GHCR" >> "$GITHUB_STEP_SUMMARY"
+          echo "### ✅ API & Build Worker Images Published to GHCR" >> "$GITHUB_STEP_SUMMARY"
           echo "| Image | Target | Version |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
           echo "| \`${{ env.REGISTRY }}/${{ env.REPO }}/api\` | \`runner\` | \`${{ steps.tag.outputs.version }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| \`${{ env.REGISTRY }}/${{ env.REPO }}/api-build-worker\` | \`build-worker\` | \`${{ steps.tag.outputs.version }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| \`${{ env.REGISTRY }}/${{ env.REPO }}/api-build-env\` | \`build-env\` | \`${{ steps.tag.outputs.version }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| \`${{ env.REGISTRY }}/${{ env.REPO }}/api-migrator\` | \`migrator\` | \`${{ steps.tag.outputs.version }}\` |" >> "$GITHUB_STEP_SUMMARY"

@@ -69,31 +69,6 @@ jobs:
           cache-from: type=gha,scope=console-runner
           cache-to: type=gha,mode=max,scope=console-runner
 
-      - name: Extract metadata for console migrator
-        id: meta-migrator
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/console-migrator
-          tags: |
-            type=raw,value=latest
-            type=raw,value=${{ steps.tag.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag.outputs.version }}
-            type=semver,pattern={{major}},value=${{ steps.tag.outputs.version }}
-            type=sha,prefix=sha-
-
-      - name: Build and push console migrator
-        uses: docker/build-push-action@v6
-        with:
-          context: ./services/console
-          file: ./services/console/Dockerfile
-          target: migrator
-          push: true
-          platforms: linux/amd64
-          tags: ${{ steps.meta-migrator.outputs.tags }}
-          labels: ${{ steps.meta-migrator.outputs.labels }}
-          cache-from: type=gha,scope=console-migrator
-          cache-to: type=gha,mode=max,scope=console-migrator
-
       - name: Write job summary
         run: |
           echo "### ✅ console published" >> "$GITHUB_STEP_SUMMARY"
