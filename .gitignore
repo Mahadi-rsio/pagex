@@ -83,5 +83,6 @@ infrastructure/certs/
 *.so
 *.dll
 
-# Caddy
-caddy
+# Caddy binary
+/caddy
+/services/blob-server/caddy
