@@ -3,10 +3,7 @@ services:
   # API Service — Express Backend
   # ============================================================================
   api:
-    build:
-      context: ./services/api
-      dockerfile: Dockerfile
-      target: runner
+    image: ghcr.io/mahadi-rsio/pagex/api:latest
     env_file: .env
     environment:
       - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
@@ -62,10 +59,7 @@ services:
   # Console — Next.js Standalone (port 3001)
   # ============================================================================
   console:
-    build:
-      context: ./services/console
-      dockerfile: Dockerfile
-      target: runner
+    image: ghcr.io/mahadi-rsio/pagex/console:latest
     env_file: .env
     environment:
       - DATABASE_URL=${NEXT_WEB_DATABASE_URL:-${DIRECT_DB:-postgresql://postgres:postgres@db:5432/pagex}}
@@ -111,10 +105,7 @@ services:
   # Database Migrator — Console Service
   # ============================================================================
   console-migrator:
-    build:
-      context: ./services/console
-      dockerfile: Dockerfile
-      target: migrator
+    image: ghcr.io/mahadi-rsio/pagex/console-migrator:latest
     env_file: .env
     environment:
       - DATABASE_URL=${NEXT_WEB_DATABASE_URL:-${DIRECT_DB:-postgresql://postgres:postgres@db:5432/pagex}}
@@ -131,11 +122,8 @@ services:
   # Build Environment — For Cloud Builds (profile: workers)
   # ============================================================================
   build-env:
-    build:
-      context: ./services/api
-      target: build-env
-    image: pagex-build-env:latest
-    pull_policy: build
+    image: ghcr.io/mahadi-rsio/pagex/api-build-env:latest
+    pull_policy: always
     restart: "no"
     command: ["sh", "-c", "echo 'pagex-build-env ready'"]
     networks:
@@ -145,10 +133,7 @@ services:
   # Sync Worker — Usage Analytics (profile: workers)
   # ============================================================================
   sync-worker:
-    build:
-      context: ./services/api
-      dockerfile: Dockerfile
-      target: runner
+    image: ghcr.io/mahadi-rsio/pagex/api:latest
     env_file: .env
     environment:
       - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
@@ -168,9 +153,7 @@ services:
   # Build Worker — Cloud Builds (profile: workers)
   # ============================================================================
   build-worker:
-    build:
-      context: ./services/api
-      target: build-worker
+    image: ghcr.io/mahadi-rsio/pagex/api-build-worker:latest
     env_file: .env
     environment:
       - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
