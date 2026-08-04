@@ -29,9 +29,7 @@ services:
   # Blob Server — Caddy with static_s3 Plugin
   # ============================================================================
   blob-server:
-    build:
-      context: ./services/blob-server
-      dockerfile: Dockerfile
+    image: ghcr.io/mahadi-rsio/pagex/blob-server:latest
     ports:
       - "80:80"
       - "443:443"
