@@ -16,7 +16,6 @@ import {
     CardDescription,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     ArrowLeft,
@@ -29,7 +28,7 @@ import {
     KeyRound,
     Loader2,
 } from "lucide-react";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 
 const API_KEY_PLACEHOLDER = "YOUR_API_KEY";
 
@@ -145,49 +144,57 @@ function LiveBuildTerminal({
           : "Building";
 
     return (
-        <div className="overflow-hidden rounded-xl border border-[#2d3139] bg-[#0d1117] font-mono text-xs text-slate-300 shadow-lg">
-            <div className="flex items-center justify-between border-b border-[#2d3139] bg-[#21262d] px-4 py-2.5">
-                <div className="flex items-center gap-2 text-slate-200">
-                    <Terminal className="size-4 text-[#ec7211]" />
-                    <span className="font-sans text-sm font-medium">
+        <div className="scan-line overflow-hidden rounded-2xl border border-border bg-[#0a0a0a] font-mono text-xs leading-relaxed text-zinc-300 shadow-[0_32px_80px_-32px_oklch(0_0_0/0.75)]">
+            <div className="flex items-center justify-between border-b border-white/[0.06] bg-white/[0.03] px-4 py-3">
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                        <span className="size-2.5 rounded-full bg-zinc-700" />
+                        <span className="size-2.5 rounded-full bg-zinc-600" />
+                        <span className="size-2.5 rounded-full bg-zinc-500" />
+                    </div>
+                    <Terminal className="size-4 text-zinc-100" />
+                    <span className="font-sans text-sm font-medium text-zinc-100">
                         Build · {projectName}
                     </span>
                 </div>
                 <Badge
                     variant="outline"
-                    className="border-[#30363d] bg-[#161b22] font-sans text-xs text-slate-300"
+                    className="border-white/10 bg-white/[0.04] font-sans text-xs text-zinc-300"
                 >
                     {statusLabel}
                 </Badge>
             </div>
             {progress > 0 && !done && (
-                <div className="h-1 bg-[#30363d]">
+                <div className="h-1 bg-white/[0.06]">
                     <div
-                        className="h-full bg-[#ec7211] transition-all"
+                        className="h-full bg-zinc-100 transition-all"
                         style={{ width: `${progress}%` }}
                     />
                 </div>
             )}
-            <div className="h-64 space-y-1 overflow-y-auto p-4">
-                <p className="text-slate-500">$ cloud build {repoName}</p>
+            <div className="h-[26rem] space-y-1.5 overflow-y-auto p-5">
+                <p className="text-zinc-600">
+                    <span className="select-none text-zinc-500">$</span> cloud
+                    build {repoName}
+                </p>
                 {lines.map((line, i) => (
                     <p
                         key={`${i}-${line}`}
                         className={
                             line.startsWith("✓")
-                                ? "text-emerald-400"
+                                ? "text-zinc-100"
                                 : line.startsWith(">")
-                                  ? "text-[#79c0ff]"
+                                  ? "text-zinc-300"
                                   : line.startsWith("[error]")
                                     ? "text-red-400"
-                                    : "text-slate-400"
+                                    : "text-zinc-500"
                         }
                     >
                         {line}
                     </p>
                 ))}
                 {!done && (
-                    <span className="inline-block h-3.5 w-1.5 animate-pulse bg-slate-300" />
+                    <span className="inline-block h-3.5 w-2 animate-pulse bg-zinc-100" />
                 )}
                 <div ref={bottomRef} />
             </div>
@@ -224,7 +231,7 @@ function CopyButton({
         >
             {copied ? (
                 <>
-                    <CheckCircle2 className="size-3.5 text-emerald-500" />
+                    <CheckCircle2 className="size-3.5 text-foreground" />
                     Copied
                 </>
             ) : (
@@ -244,7 +251,7 @@ function CodeBlock({ code, copyLabel }: { code: string; copyLabel?: string }) {
                 <span className="text-xs text-muted-foreground">Workflow</span>
                 <CopyButton value={code} label={copyLabel ?? "Copy"} />
             </div>
-            <pre className="max-h-80 overflow-auto bg-[#0d1117] p-4 text-xs leading-relaxed text-slate-300">
+            <pre className="max-h-80 overflow-auto bg-[#0a0a0a] p-4 font-mono text-xs leading-relaxed text-zinc-300">
                 <code>{code}</code>
             </pre>
         </div>
@@ -502,9 +509,9 @@ export function CreateProjectView() {
                                 <CardHeader className="space-y-1.5 px-6 pt-6 pb-4">
                                     <CardTitle className="flex items-center gap-2 text-base">
                                         {activeBuildId && !isDeploying ? (
-                                            <CheckCircle2 className="size-4 text-emerald-500" />
+                                            <CheckCircle2 className="size-4 text-foreground" />
                                         ) : (
-                                            <Loader2 className="size-4 animate-spin text-blue-500" />
+                                            <Loader2 className="size-4 animate-spin text-foreground" />
                                         )}
                                         {activeBuildId && !isDeploying
                                             ? "Deployment complete"
@@ -527,8 +534,8 @@ export function CreateProjectView() {
                                             onComplete={handleBuildComplete}
                                         />
                                     ) : (
-                                        <div className="flex h-64 items-center justify-center rounded-xl border border-[#2d3139] bg-[#0d1117]">
-                                            <div className="flex items-center gap-2 text-slate-400">
+                                        <div className="flex h-64 items-center justify-center rounded-xl border border-border bg-[#0a0a0a]">
+                                            <div className="flex items-center gap-2 text-zinc-500">
                                                 <Loader2 className="size-4 animate-spin" />
                                                 Starting build…
                                             </div>
@@ -656,7 +663,7 @@ export function CreateProjectView() {
                                             </div>
                                             <CopyButton value={item.command} />
                                         </div>
-                                        <pre className="overflow-x-auto rounded-lg bg-[#0d1117] px-3 py-2.5 font-mono text-xs text-emerald-400">
+                                        <pre className="overflow-x-auto rounded-lg bg-[#0a0a0a] px-3 py-2.5 font-mono text-xs text-zinc-300">
                                             <code>$ {item.command}</code>
                                         </pre>
                                     </div>

@@ -38,13 +38,13 @@ const statusConfig = {
         label: "Active",
         variant: "default" as const,
         icon: CheckCircle2,
-        color: "text-emerald-500",
+        color: "text-foreground",
     },
     building: {
         label: "Building",
         variant: "secondary" as const,
         icon: Loader2,
-        color: "text-blue-500",
+        color: "text-muted-foreground",
     },
     error: {
         label: "Error",

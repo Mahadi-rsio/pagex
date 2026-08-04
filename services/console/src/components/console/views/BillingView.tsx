@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CreditCard, Wallet, Plus } from "lucide-react";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 
 export function BillingView() {
     const { balance } = useAppStore();

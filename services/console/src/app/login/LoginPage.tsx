@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { authClient } from "@/modules/auth/utils/auth-client";
 import Image from "next/image";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 import { AnimatedGridPattern } from "@/components/ui/animated-grid-pattern";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";

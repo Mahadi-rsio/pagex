@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import { toast } from "sonner";
-import { Toaster } from "@/components/ui/sonner";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { LazyDashboardPage } from "@/components/console/ConsolePageWrappers";
 import { apiClient } from "@/lib/api-client";
@@ -25,11 +24,8 @@ export default function HomePage() {
     }, []);
 
     return (
-        <>
-            <Toaster />
-            <ConsoleShell>
-                <LazyDashboardPage />
-            </ConsoleShell>
-        </>
+        <ConsoleShell>
+            <LazyDashboardPage />
+        </ConsoleShell>
     );
 }

@@ -48,7 +48,7 @@ import {
 } from "@/lib/api-client";
 import { buildDeployFile, type SelectedDeployFile } from "@/lib/deploy-utils";
 import { Tree, type TreeViewElement } from "@/components/ui/file-tree";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 import {
     ArrowLeft,
     ExternalLink,
@@ -156,13 +156,13 @@ const statusConfig = {
     active: {
         label: "Active",
         icon: CheckCircle2,
-        color: "text-emerald-500",
+        color: "text-foreground",
         badgeVariant: "default" as const,
     },
     building: {
         label: "Building",
         icon: Loader2,
-        color: "text-blue-500",
+        color: "text-muted-foreground",
         badgeVariant: "secondary" as const,
     },
     error: {
@@ -233,9 +233,7 @@ function LiveUsageSummary({ project }: { project: Project }) {
                 <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                         <Activity className="size-4 text-muted-foreground" />
-                        <CardTitle className="text-sm">
-                            Live Usage
-                        </CardTitle>
+                        <CardTitle className="text-sm">Live Usage</CardTitle>
                         {/* Pulsing live dot */}
                         <span
                             className={`inline-flex size-2 rounded-full transition-colors duration-500 ${
@@ -290,10 +288,7 @@ function LiveUsageSummary({ project }: { project: Project }) {
                                     {usage.requests.limit.toLocaleString()}
                                 </span>
                             </div>
-                            <Progress
-                                value={requestPct}
-                                className="h-1.5"
-                            />
+                            <Progress value={requestPct} className="h-1.5" />
                             <div className="grid grid-cols-2 gap-2">
                                 <div className="rounded-md border border-border bg-muted/30 px-2 py-1.5">
                                     <p className="text-[10px] text-muted-foreground leading-none mb-0.5">
@@ -326,10 +321,7 @@ function LiveUsageSummary({ project }: { project: Project }) {
                                     {usage.bandwidth.limit}
                                 </span>
                             </div>
-                            <Progress
-                                value={bandwidthPct}
-                                className="h-1.5"
-                            />
+                            <Progress value={bandwidthPct} className="h-1.5" />
                             <div className="grid grid-cols-2 gap-2">
                                 <div className="rounded-md border border-border bg-muted/30 px-2 py-1.5">
                                     <p className="text-[10px] text-muted-foreground leading-none mb-0.5">
@@ -519,7 +511,7 @@ function OverviewTab({ project }: { project: Project }) {
                                     className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/50 transition-colors"
                                 >
                                     <div
-                                        className={`size-2 rounded-full shrink-0 ${deploy.is_active ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
+                                        className={`size-2 rounded-full shrink-0 ${deploy.is_active ? "bg-foreground" : "bg-muted-foreground/40"}`}
                                     />
                                     <div className="flex-1 min-w-0">
                                         <p className="text-xs font-medium text-foreground truncate">
@@ -838,7 +830,7 @@ function DomainsTab({ project }: { project: Project }) {
                             <div className="space-y-4 p-4">
                                 <div className="rounded-xl border border-border bg-muted/30 p-3">
                                     <div className="flex items-center gap-2">
-                                        <Loader2 className="size-3.5 animate-spin text-blue-500" />
+                                        <Loader2 className="size-3.5 animate-spin text-foreground" />
                                         <p className="text-sm font-medium text-foreground">
                                             Waiting for DNS
                                         </p>
@@ -889,7 +881,7 @@ function DomainsTab({ project }: { project: Project }) {
                                                         >
                                                             {copiedKey ===
                                                             `${record.host}-host` ? (
-                                                                <CheckCircle2 className="size-3 text-emerald-500" />
+                                                                <CheckCircle2 className="size-3 text-foreground" />
                                                             ) : (
                                                                 <Copy className="size-3 text-muted-foreground" />
                                                             )}
@@ -917,7 +909,7 @@ function DomainsTab({ project }: { project: Project }) {
                                                         >
                                                             {copiedKey ===
                                                             `${record.host}-value` ? (
-                                                                <CheckCircle2 className="size-3 text-emerald-500" />
+                                                                <CheckCircle2 className="size-3 text-foreground" />
                                                             ) : (
                                                                 <Copy className="size-3 text-muted-foreground" />
                                                             )}
@@ -2373,8 +2365,7 @@ function UsageTab({ project }: { project: Project }) {
                     <Progress
                         value={
                             usage.requests.limit > 0
-                                ? (usage.requests.used /
-                                      usage.requests.limit) *
+                                ? (usage.requests.used / usage.requests.limit) *
                                   100
                                 : 0
                         }

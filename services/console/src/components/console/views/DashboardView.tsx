@@ -30,13 +30,13 @@ const statusConfig = {
         label: "Active",
         variant: "default" as const,
         icon: CheckCircle2,
-        color: "text-emerald-500",
+        color: "text-foreground",
     },
     building: {
         label: "Building",
         variant: "secondary" as const,
         icon: Loader2,
-        color: "text-blue-500",
+        color: "text-muted-foreground",
     },
     error: {
         label: "Error",
@@ -53,8 +53,8 @@ const statusConfig = {
 };
 
 const activityIcons = {
-    deploy: { icon: GitBranch, color: "bg-emerald-500/10 text-emerald-500" },
-    build: { icon: Zap, color: "bg-blue-500/10 text-blue-500" },
+    deploy: { icon: GitBranch, color: "bg-foreground/10 text-foreground" },
+    build: { icon: Zap, color: "bg-muted text-muted-foreground" },
     error: { icon: AlertCircle, color: "bg-destructive/10 text-destructive" },
     create: { icon: Plus, color: "bg-muted text-muted-foreground" },
     delete: { icon: AlertCircle, color: "bg-muted text-muted-foreground" },

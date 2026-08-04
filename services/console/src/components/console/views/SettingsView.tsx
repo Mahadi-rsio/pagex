@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getInitials } from "@/lib/utils";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 
 export function SettingsView() {
     const { user } = useAppStore();
