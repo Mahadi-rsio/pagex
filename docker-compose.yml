@@ -4,7 +4,9 @@ services:
   # ============================================================================
   api:
     container_name: api
-    image: ghcr.io/mahadi-rsio/pagex/api:latest
+    build:
+      context: ./services/api/
+      dockerfile: Dockerfile
     env_file: .env
     environment:
       - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}

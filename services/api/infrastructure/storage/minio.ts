@@ -107,24 +107,46 @@ export function objectMetaForPath(
     return meta
 }
 
+const BUCKET_ENSURE_RETRIES = 5
+const BUCKET_ENSURE_INITIAL_DELAY_MS = 1000
+const BUCKET_ENSURE_MAX_DELAY_MS = 15000
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
 /**
  * Ensures the shared bucket exists so Caddy's static_s3 plugin can serve files.
- * Non-fatal: if it fails (e.g. MinIO not ready yet), the app still starts.
- * The bucket can be created manually via the MinIO console at :9001.
+ * Retries with exponential backoff to ride out transient network timeouts
+ * (e.g. ETIMEDOUT on a flaky link). Non-fatal: if all retries fail, the app
+ * still starts — the bucket can be created manually via the MinIO console.
  */
 export async function ensureSharedBucket(): Promise<void> {
-    try {
-        // makeBucket is idempotent — it returns without error if the bucket already exists
-        await minioClient.makeBucket(SHARED_BUCKET, process.env.MINIO_REGION ?? 'us-east-1')
-        console.log(`✅ Shared bucket "${SHARED_BUCKET}" ready.`)
-    } catch (err: any) {
-        // BucketAlreadyOwnedByYou / BucketAlreadyExists → bucket is fine, continue
-        if (err?.code === 'BucketAlreadyOwnedByYou' || err?.code === 'BucketAlreadyExists') {
-            console.log(`ℹ️  Shared bucket "${SHARED_BUCKET}" already exists.`)
+    let attempt = 0
+    let delay = BUCKET_ENSURE_INITIAL_DELAY_MS
+    while (true) {
+        attempt++
+        try {
+            // makeBucket is idempotent — it returns without error if the bucket already exists
+            await minioClient.makeBucket(SHARED_BUCKET, process.env.MINIO_REGION ?? 'us-east-1')
+            console.log(`✅ Shared bucket "${SHARED_BUCKET}" ready.`)
+            return
+        } catch (err: any) {
+            // BucketAlreadyOwnedByYou / BucketAlreadyExists → bucket is fine, continue
+            if (err?.code === 'BucketAlreadyOwnedByYou' || err?.code === 'BucketAlreadyExists') {
+                console.log(`ℹ️  Shared bucket "${SHARED_BUCKET}" already exists.`)
+                return
+            }
+            if (attempt < BUCKET_ENSURE_RETRIES) {
+                console.warn(
+                    `⚠️  Failed to ensure bucket "${SHARED_BUCKET}" (attempt ${attempt}/${BUCKET_ENSURE_RETRIES}): ${err?.message ?? err}. Retrying in ${delay}ms`
+                )
+                await sleep(delay)
+                delay = Math.min(delay * 2, BUCKET_ENSURE_MAX_DELAY_MS)
+                continue
+            }
+            // Out of retries: log but don't crash — MinIO may still be starting up
+            console.warn(`⚠️  Could not ensure bucket "${SHARED_BUCKET}": ${err?.message ?? err}`)
+            console.warn('   Create it manually via the MinIO console at http://localhost:9001')
             return
         }
-        // Any other error: log but don't crash — MinIO may still be starting up
-        console.warn(`⚠️  Could not ensure bucket "${SHARED_BUCKET}": ${err?.message ?? err}`)
-        console.warn('   Create it manually via the MinIO console at http://localhost:9001')
     }
 }
