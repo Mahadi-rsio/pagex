@@ -50,6 +50,7 @@ services:
       - CACHE_TTL=${CACHE_TTL:-2m}
       - CACHE_SIZE=${CACHE_SIZE:-1000}
       - MAX_CACHE_SIZE=${MAX_CACHE_SIZE:-512KiB}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
     depends_on:
       api:
         condition: service_started
@@ -170,11 +171,16 @@ services:
   # ============================================================================
   build-worker:
     container_name: build_w
-    image: ghcr.io/mahadi-rsio/pagex/api:latest
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+      target: build-worker
+    image: ghcr.io/mahadi-rsio/pagex/api-build-worker:latest
+    pull_policy: build
     env_file: .env
     environment:
       - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
-    command: ["node","dist/queue/build.worker.js"]
+    command: ["node","dist/queue/workers/build.worker.js"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/cloudisy-builds:/tmp/cloudisy-builds

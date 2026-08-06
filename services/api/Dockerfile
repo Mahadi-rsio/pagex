@@ -19,7 +19,7 @@ COPY drizzle/ ./drizzle/
 COPY infrastructure/ ./infrastructure/
 CMD ["npx", "drizzle-kit", "migrate"]
 
-FROM node:20-alpine AS build-worker
+FROM node:24-alpine AS build-worker
 WORKDIR /app
 RUN apk add --no-cache docker-cli wget git
 COPY package.json ./
@@ -31,7 +31,7 @@ RUN npm install --omit=dev && \
 COPY --from=builder /app/dist ./dist
 CMD ["node", "dist/queue/workers/build.worker.js"]
 
-FROM node:20-alpine AS build-env
+FROM node:24-alpine AS build-env
 WORKDIR /app
 RUN apk add --no-cache git docker-cli && \
     corepack enable && \
