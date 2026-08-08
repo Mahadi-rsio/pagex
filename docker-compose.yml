@@ -38,6 +38,7 @@ services:
       - "2019:2019"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./services/blob-server/tls:/etc/caddy/tls:ro
     environment:
       - S3_ACCESS_KEY=${S3_ACCESS_KEY}
       - S3_SECRET_KEY=${S3_SECRET_KEY}
@@ -51,6 +52,7 @@ services:
       - CACHE_SIZE=${CACHE_SIZE:-1000}
       - MAX_CACHE_SIZE=${MAX_CACHE_SIZE:-512KiB}
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - TLS_CFG=${TLS_CFG:-tls-off}
     depends_on:
       api:
         condition: service_started

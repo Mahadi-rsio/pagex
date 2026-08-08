@@ -33,3 +33,4 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM caddy:2.11.4-alpine
 
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+COPY tls/tls-off.conf tls/tls-on.conf /etc/caddy/tls/
