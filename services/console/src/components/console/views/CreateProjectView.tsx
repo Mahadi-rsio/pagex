@@ -311,7 +311,6 @@ export function CreateProjectView() {
             const project = await createProject({
                 name,
                 status: "inactive",
-                domain: `${slugName}.console.app`,
             });
             setCreatedProjectId(project.id);
             setStep("deploy");

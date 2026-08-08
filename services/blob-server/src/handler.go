@@ -49,7 +49,7 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 			return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("host %q does not match base domain", host))
 		}
 		subdomain := strings.TrimSuffix(host, suffix)
-		if subdomain == "" || strings.Contains(subdomain, ".") {
+		if subdomain == "" || strings.HasPrefix(subdomain, ".") || strings.HasSuffix(subdomain, ".") {
 			return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("invalid subdomain %q", subdomain))
 		}
 

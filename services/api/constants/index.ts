@@ -1,4 +1,4 @@
-export const TOP_LEVEL_DOMAIN = 'localhost'
+export const TOP_LEVEL_DOMAIN = process.env.BASE_DOMAIN || 'localhost'
 export const MAX_FILE_SIZE = 250 * 1024 * 1024
 /** Max size for a single file in a content-addressed deploy */
 export const MAX_DEPLOY_FILE_SIZE = 50 * 1024 * 1024

@@ -24,19 +24,32 @@ export async function createPage(
         return { message: 'token is not valid' }
     }
 
-    // Ensure subdomain uniqueness — append a short random suffix if taken
-    const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz1234567890')
-    const existingSite = await db.select().from(sites).where(eq(sites.subdomain, project_name))
-    if (existingSite.length > 0) {
-        project_name = `${project_name}${nanoid(4)}`.toLowerCase()
+    // Subdomain format: {project_name}.{random_number} — always unique,
+    // so projects never squat a bare slug. Random suffix is digits-only.
+    const subdomainSuffix = customAlphabet('0123456789', 4)
+    let subdomain = ''
+    for (let attempt = 0; attempt < 5; attempt++) {
+        const candidate = `${project_name.toLowerCase()}.${subdomainSuffix()}`
+        const existing = await db
+            .select({ id: sites.id })
+            .from(sites)
+            .where(eq(sites.subdomain, candidate))
+            .limit(1)
+        if (existing.length === 0) {
+            subdomain = candidate
+            break
+        }
+    }
+    if (!subdomain) {
+        throw new Error('Could not generate a unique subdomain')
     }
 
-    const domain = `${project_name}.${TOP_LEVEL_DOMAIN}`
+    const domain = `${subdomain}.${TOP_LEVEL_DOMAIN}`
 
     // 1. Insert into `sites` — this is what the caddy plugin reads.
     //    The returned UUID (site_id) is the MinIO key prefix.
     const [site] = await db.insert(sites).values({
-        subdomain: project_name,
+        subdomain,
         active: true,
     }).returning()
 
@@ -228,7 +241,13 @@ export async function deletePage(pageId: string, tenantId: string) {
         .set({ active: false })
         .where(eq(sites.id, page.site_id))
 
-    await redis.del(`site:${page.project_name}`)
+    const [site] = await db
+        .select({ subdomain: sites.subdomain })
+        .from(sites)
+        .where(eq(sites.id, page.site_id))
+        .limit(1)
+
+    await redis.del(`site:${site?.subdomain ?? page.project_name}`)
     await clearSiteFilesMap(page.site_id)
 
     // 3. Clear usage caches

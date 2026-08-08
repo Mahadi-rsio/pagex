@@ -108,24 +108,6 @@ const worker = new Worker<CloudBuildJob>(
                 let stdoutBuf = '';
                 let stderrBuf = '';
 
-                // Start stats collection interval (every 2 seconds)
-                const statsInterval = setInterval(() => {
-                    const statsProcess = spawn('docker', ['stats', '--no-stream', '--format', 'RAM: {{.MemUsage}} | Net I/O: {{.NetIO}}', containerName]);
-                    let output = '';
-                    statsProcess.stdout?.on('data', (data) => {
-                        output += data.toString();
-                    });
-                    statsProcess.on('close', (code) => {
-                        if (code === 0 && output.trim()) {
-                            job.log(`[Stats] ${output.trim()}`);
-                        }
-                    });
-                }, 2000);
-
-                const cleanup = () => {
-                    clearInterval(statsInterval);
-                };
-
                 const handleData = (data: Buffer, isError: boolean) => {
                     const str = data.toString();
                     const lines = str.split('\n');
@@ -151,14 +133,12 @@ const worker = new Worker<CloudBuildJob>(
                 p.stderr?.on('data', (data) => handleData(data, true));
 
                 p.on('close', (code) => {
-                    cleanup();
                     if (stdoutBuf) job.log(stdoutBuf);
                     if (stderrBuf) job.log(stderrBuf);
                     if (code === 0) resolve();
                     else reject(new Error(`Docker build failed with code ${code}`));
                 });
                 p.on('error', (err) => {
-                    cleanup();
                     reject(err);
                 });
             });

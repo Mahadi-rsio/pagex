@@ -73,6 +73,8 @@ import {
     Terminal,
     RotateCcw,
     FileText,
+    ChevronDown,
+    ChevronUp,
 } from "lucide-react";
 
 const CNAME_TARGET = "cname.console.app";
@@ -1203,10 +1205,15 @@ function FilesTab({ project }: { project: Project }) {
         setLoading(true);
         try {
             const result = await apiClient.getDeploymentFiles(project.id);
-            setElements(pathsToTreeElements(result.files.map((f) => f.path)));
+            const visibleFiles = result.files.filter(
+                (f) => !/\.(br|gz)$/i.test(f.path),
+            );
+            setElements(pathsToTreeElements(visibleFiles.map((f) => f.path)));
             setDeploymentVersion(result.deployment?.version ?? null);
-            setFileCount(result.files.length);
-            setTotalSize(result.total_size ?? 0);
+            setFileCount(visibleFiles.length);
+            setTotalSize(
+                visibleFiles.reduce((sum, f) => sum + (f.size || 0), 0),
+            );
         } catch (error) {
             toast.error(
                 error instanceof Error
@@ -1708,6 +1715,50 @@ function parseEnvVars(text: string): Record<string, string> {
     return result;
 }
 
+function BuildStatusLine({ line }: { line: string }) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("$")) {
+        return (
+            <p className="whitespace-pre-wrap break-all rounded bg-slate-800/70 px-2 py-1 text-slate-100">
+                {line}
+            </p>
+        );
+    }
+    if (
+        /\[error\]|^error\b|error:|failed|failure|npm error|fatal/gi.test(
+            trimmed,
+        )
+    ) {
+        return (
+            <p className="whitespace-pre-wrap break-all text-red-400">{line}</p>
+        );
+    }
+    if (/warning|warn\b/gi.test(trimmed)) {
+        return (
+            <p className="whitespace-pre-wrap break-all text-amber-300">
+                {line}
+            </p>
+        );
+    }
+    if (/^step \d/gi.test(trimmed)) {
+        return (
+            <p className="whitespace-pre-wrap break-all text-cyan-400">
+                {line}
+            </p>
+        );
+    }
+    if (/^\[stats\]|^\[summary\]/i.test(trimmed)) {
+        return (
+            <p className="whitespace-pre-wrap break-all text-slate-500">
+                {line}
+            </p>
+        );
+    }
+    return (
+        <p className="whitespace-pre-wrap break-all text-slate-400">{line}</p>
+    );
+}
+
 function BuildsTab({ project }: { project: Project }) {
     const [builds, setBuilds] = useState<ApiBuild[]>([]);
     const [loading, setLoading] = useState(true);
@@ -1726,6 +1777,7 @@ function BuildsTab({ project }: { project: Project }) {
     const [logs, setLogs] = useState<string[]>([]);
     const [progress, setProgress] = useState(0);
     const [logDone, setLogDone] = useState(false);
+    const [logCollapsed, setLogCollapsed] = useState(false);
     const logBoxRef = useRef<HTMLDivElement>(null);
     const abortRef = useRef<AbortController | null>(null);
 
@@ -1765,6 +1817,7 @@ function BuildsTab({ project }: { project: Project }) {
             setLogs([]);
             setProgress(0);
             setLogDone(false);
+            setLogCollapsed(false);
 
             try {
                 const done = await apiClient.streamBuildLogs(
@@ -1810,6 +1863,16 @@ function BuildsTab({ project }: { project: Project }) {
         },
         [loadBuilds],
     );
+
+    const handleCopyLogs = async () => {
+        if (logs.length === 0) return;
+        try {
+            await navigator.clipboard.writeText(logs.join("\n"));
+            toast.success("Build logs copied to clipboard");
+        } catch {
+            toast.error("Failed to copy build logs");
+        }
+    };
 
     const resetForm = () => {
         setRepoUrl("");
@@ -2121,38 +2184,140 @@ function BuildsTab({ project }: { project: Project }) {
                                         </div>
 
                                         {isActive && (
-                                            <div className="mt-3">
-                                                {progress > 0 && (
-                                                    <Progress
-                                                        value={progress}
-                                                        className="h-1.5 mb-2"
-                                                    />
-                                                )}
-                                                <div className="overflow-hidden rounded-lg border border-[#2d3139] bg-[#0d1117] font-mono text-xs text-slate-300">
-                                                    <div className="h-56 space-y-1 overflow-y-auto p-3">
-                                                        {logs.length === 0 ? (
-                                                            <p className="text-slate-500">
-                                                                Waiting for log
-                                                                output…
-                                                            </p>
-                                                        ) : (
-                                                            logs.map(
-                                                                (line, i) => (
-                                                                    <p
-                                                                        key={`${i}-${line}`}
-                                                                        className="text-slate-400"
-                                                                    >
-                                                                        {line}
-                                                                    </p>
-                                                                ),
-                                                            )
+                                            <div className="mt-3 overflow-hidden rounded-lg border border-border/80 bg-[#0b0f14] shadow-lg">
+                                                <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] bg-[#14181f] px-3 py-2">
+                                                    <div className="flex min-w-0 items-center gap-2">
+                                                        <span className="flex shrink-0 gap-1.5">
+                                                            <span className="size-2.5 rounded-full bg-[#ff5f57]" />
+                                                            <span className="size-2.5 rounded-full bg-[#febc2e]" />
+                                                            <span className="size-2.5 rounded-full bg-[#28c840]" />
+                                                        </span>
+                                                        <span className="truncate font-mono text-xs text-slate-400">
+                                                            {build.framework}
+                                                            {build.build_command
+                                                                ? ` · ${build.build_command}`
+                                                                : ""}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex shrink-0 items-center gap-1">
+                                                        {progress > 0 && (
+                                                            <span className="font-mono text-[11px] tabular-nums text-slate-500">
+                                                                {Math.round(
+                                                                    progress,
+                                                                )}
+                                                                %
+                                                            </span>
                                                         )}
-                                                        {!logDone && (
-                                                            <span className="inline-block h-3 w-1.5 animate-pulse bg-slate-300" />
-                                                        )}
-                                                        <div ref={logBoxRef} />
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="size-6 text-muted-foreground hover:text-foreground"
+                                                            onClick={
+                                                                handleCopyLogs
+                                                            }
+                                                            disabled={
+                                                                logs.length ===
+                                                                0
+                                                            }
+                                                            aria-label="Copy logs"
+                                                        >
+                                                            <Copy className="size-3" />
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="size-6 text-muted-foreground hover:text-foreground"
+                                                            onClick={() =>
+                                                                setLogCollapsed(
+                                                                    (v) => !v,
+                                                                )
+                                                            }
+                                                            aria-label={
+                                                                logCollapsed
+                                                                    ? "Expand logs"
+                                                                    : "Collapse logs"
+                                                            }
+                                                        >
+                                                            {logCollapsed ? (
+                                                                <ChevronUp className="size-3" />
+                                                            ) : (
+                                                                <ChevronDown className="size-3" />
+                                                            )}
+                                                        </Button>
                                                     </div>
                                                 </div>
+
+                                                {!logCollapsed && (
+                                                    <>
+                                                        <div className="h-full max-h-72 overflow-y-auto p-3 font-mono text-xs leading-5">
+                                                            {logs.length ===
+                                                            0 ? (
+                                                                <p className="text-slate-500">
+                                                                    Waiting for
+                                                                    log output…
+                                                                </p>
+                                                            ) : (
+                                                                logs.map(
+                                                                    (
+                                                                        line,
+                                                                        i,
+                                                                    ) => (
+                                                                        <BuildStatusLine
+                                                                            key={`${i}-${line}`}
+                                                                            line={
+                                                                                line
+                                                                            }
+                                                                        />
+                                                                    ),
+                                                                )
+                                                            )}
+                                                            {!logDone && (
+                                                                <span className="mt-1 inline-block h-4 w-1.5 animate-pulse bg-slate-400" />
+                                                            )}
+                                                            <div
+                                                                ref={logBoxRef}
+                                                            />
+                                                        </div>
+                                                        <div className="flex items-center justify-between border-t border-white/[0.06] bg-[#0b0f14] px-3 py-1.5">
+                                                            <span className="flex items-center gap-1.5 font-mono text-[11px]">
+                                                                {logDone ? (
+                                                                    build.status ===
+                                                                    "failed" ? (
+                                                                        <>
+                                                                            <AlertCircle className="size-3 text-red-400" />
+                                                                            <span className="text-red-400">
+                                                                                Build
+                                                                                failed
+                                                                            </span>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <CheckCircle2 className="size-3 text-emerald-400" />
+                                                                            <span className="text-emerald-400">
+                                                                                Build
+                                                                                completed
+                                                                            </span>
+                                                                        </>
+                                                                    )
+                                                                ) : (
+                                                                    <>
+                                                                        <Loader2 className="size-3 animate-spin text-slate-500" />
+                                                                        <span className="text-slate-500">
+                                                                            Building…
+                                                                        </span>
+                                                                    </>
+                                                                )}
+                                                            </span>
+                                                            {build.repo_url && (
+                                                                <span className="truncate font-mono text-[11px] text-slate-600">
+                                                                    {
+                                                                        build.repo_url
+                                                                    }
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </>
+                                                )}
                                             </div>
                                         )}
                                     </div>
