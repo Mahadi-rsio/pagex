@@ -24,6 +24,31 @@ import (
 // siteFilesRebuilding dedupes concurrent site_files:{site_id} Redis rebuilds.
 var siteFilesRebuilding sync.Map // siteID → struct{}
 
+// filesStore abstracts the Redis site_files:{site_id} hash operations used by
+// the multi-tenant read path, so the fallback chain is unit-testable without a
+// real Redis. Production always uses the redis-backed implementation.
+type filesStore interface {
+	exists(ctx context.Context, key string) (int64, error)
+	hget(ctx context.Context, key, field string) (string, bool)
+}
+
+// redisFilesStore is the redis-backed filesStore implementation.
+type redisFilesStore struct {
+	client *redis.Client
+}
+
+func (s *redisFilesStore) exists(ctx context.Context, key string) (int64, error) {
+	return s.client.Exists(ctx, key).Result()
+}
+
+func (s *redisFilesStore) hget(ctx context.Context, key, field string) (string, bool) {
+	val, err := s.client.HGet(ctx, key, field).Result()
+	if err != nil || val == "" {
+		return "", false
+	}
+	return val, true
+}
+
 // blobResolution holds the result of resolving a request path to a content-addressed blob.
 type blobResolution struct {
 	BlobHash        string
@@ -257,23 +282,30 @@ func (p *StaticPlugin) resolveSiteVersion(ctx context.Context, subdomain, siteID
 	return version
 }
 
-// resolveBlob maps a request URL path to a blob hash via the site_files Redis
-// hash, with PostgreSQL rebuild fallback when the Redis key has expired.
+// resolveBlob maps a request URL path to a blob hash. The lookup chain is:
+//
+//	Redis site_files:{site_id}   (hit → Turso/PostgreSQL never queried)
+//	→ Turso read replica          (hit → PostgreSQL never queried, Redis re-warmed)
+//	→ PostgreSQL                  (source of truth, existing behavior; Redis rebuilt)
+//
+// A Turso outage or empty replica must never make a site un-servable: every
+// Turso failure or miss falls back to PostgreSQL.
 func (p *StaticPlugin) resolveBlob(ctx context.Context, siteID, subdomain, urlPath string, r *http.Request) (*blobResolution, error) {
 	candidates := pathCandidates(urlPath)
 	ae := r.Header.Get("Accept-Encoding")
 	accept := r.Header.Get("Accept")
 	encKey := requestEncodingKey(r, urlPath)
 
-	// Try Redis site_files map first
-	if p.redisClient != nil {
+	// 1. Try Redis site_files map first — a hit never queries Turso or PostgreSQL.
+	if p.files != nil {
 		filesKey := "site_files:" + siteID
-		exists, err := p.redisClient.Exists(ctx, filesKey).Result()
+		exists, err := p.files.exists(ctx, filesKey)
 		if err != nil {
 			exists = 0
 		}
 
 		if exists > 0 {
+			p.metrics.incRedisHit()
 			for _, candidate := range candidates {
 				if res := p.pickVariantRedis(ctx, filesKey, candidate, ae, accept); res != nil {
 					res.EncodingKey = encKey
@@ -291,8 +323,8 @@ func (p *StaticPlugin) resolveBlob(ctx context.Context, siteID, subdomain, urlPa
 		}
 	}
 
-	// site_files key missing (or no Redis) → PostgreSQL fallback
-	entries, err := p.loadBlobTreeFromDB(ctx, siteID)
+	// 2–3. site_files key missing (or no Redis) → Turso, then PostgreSQL fallback.
+	entries, _, err := p.resolveBlobTree(ctx, siteID)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +332,9 @@ func (p *StaticPlugin) resolveBlob(ctx context.Context, siteID, subdomain, urlPa
 		return nil, nil
 	}
 
-	// Rebuild Redis in background; serve this request from PG result immediately
+	// Rebuild Redis in background; serve this request from the resolved tree
+	// immediately. Turso hits also warm the Redis map so future requests are
+	// served at Redis/LRU speed instead of going to Turso every time.
 	p.scheduleSiteFilesRebuild(siteID, entries)
 
 	for _, candidate := range candidates {
@@ -318,10 +352,27 @@ func (p *StaticPlugin) resolveBlob(ctx context.Context, siteID, subdomain, urlPa
 	return nil, nil
 }
 
+// resolveBlobTree runs the Turso → PostgreSQL fallback chain (Redis handled by
+// the caller). Returns the entries and the backend that produced them.
+func (p *StaticPlugin) resolveBlobTree(ctx context.Context, siteID string) (map[string]string, blobTreeSource, error) {
+	if p.resolver == nil {
+		// Safety net: fall straight to PostgreSQL with the historical path.
+		entries, err := p.loadBlobTreeFromPG(ctx, siteID)
+		return entries, blobTreeSourcePostgres, err
+	}
+	return p.resolver.Get(ctx, siteID)
+}
+
+// loadBlobTreeFromPG is the historical single-store lookup, kept for the nil
+// resolver safety net.
+func (p *StaticPlugin) loadBlobTreeFromPG(ctx context.Context, siteID string) (map[string]string, error) {
+	return NewPostgreSQLBlobTreeStore(p.db).GetBlobTree(ctx, siteID)
+}
+
 // pickVariantRedis selects the best pre-compressed / format variant via HGET only.
 func (p *StaticPlugin) pickVariantRedis(ctx context.Context, filesKey, candidate, acceptEncoding, accept string) *blobResolution {
 	if isImagePath(candidate) && acceptsWebP(accept) {
-		if hash, ok := p.hget(ctx, filesKey, candidate+".webp"); ok {
+		if hash, ok := p.files.hget(ctx, filesKey, candidate+".webp"); ok {
 			return &blobResolution{
 				BlobHash: hash,
 				FilePath: candidate + ".webp",
@@ -330,45 +381,41 @@ func (p *StaticPlugin) pickVariantRedis(ctx context.Context, filesKey, candidate
 	}
 
 	if acceptsToken(acceptEncoding, "br") {
-		if hash, ok := p.hget(ctx, filesKey, candidate+".br"); ok {
+		if hash, ok := p.files.hget(ctx, filesKey, candidate+".br"); ok {
 			return &blobResolution{
 				BlobHash:        hash,
 				ContentEncoding: "br",
 				FilePath:        candidate,
 			}
 		}
-		if hash, ok := p.hget(ctx, filesKey, candidate); ok {
+		if hash, ok := p.files.hget(ctx, filesKey, candidate); ok {
 			return &blobResolution{BlobHash: hash, FilePath: candidate}
 		}
 		return nil
 	}
 
 	if acceptsToken(acceptEncoding, "gzip") {
-		if hash, ok := p.hget(ctx, filesKey, candidate+".gz"); ok {
+		if hash, ok := p.files.hget(ctx, filesKey, candidate+".gz"); ok {
 			return &blobResolution{
 				BlobHash:        hash,
 				ContentEncoding: "gzip",
 				FilePath:        candidate,
 			}
 		}
-		if hash, ok := p.hget(ctx, filesKey, candidate); ok {
+		if hash, ok := p.files.hget(ctx, filesKey, candidate); ok {
 			return &blobResolution{BlobHash: hash, FilePath: candidate}
 		}
 		return nil
 	}
 
-	if hash, ok := p.hget(ctx, filesKey, candidate); ok {
+	if hash, ok := p.files.hget(ctx, filesKey, candidate); ok {
 		return &blobResolution{BlobHash: hash, FilePath: candidate}
 	}
 	return nil
 }
 
 func (p *StaticPlugin) hget(ctx context.Context, key, field string) (string, bool) {
-	val, err := p.redisClient.HGet(ctx, key, field).Result()
-	if err != nil || val == "" {
-		return "", false
-	}
-	return val, true
+	return p.files.hget(ctx, key, field)
 }
 
 // pickVariantMap is the in-memory equivalent of pickVariantRedis for PG results.
@@ -403,36 +450,6 @@ func pickVariantMap(entries map[string]string, candidate, acceptEncoding, accept
 		return &blobResolution{BlobHash: hash, FilePath: candidate}
 	}
 	return nil
-}
-
-func (p *StaticPlugin) loadBlobTreeFromDB(ctx context.Context, siteID string) (map[string]string, error) {
-	if p.db == nil {
-		return nil, fmt.Errorf("static_s3: multi-tenant mode requires db_dsn")
-	}
-
-	rows, err := p.db.QueryContext(ctx, `
-		SELECT bte.path, bte.blob_hash
-		FROM blob_tree_entries bte
-		INNER JOIN deployments d ON d.id = bte.deployment_id
-		WHERE d.is_active = true AND d.site_id = $1
-	`, siteID)
-	if err != nil {
-		return nil, fmt.Errorf("static_s3: blob tree query error: %w", err)
-	}
-	defer rows.Close()
-
-	entries := make(map[string]string)
-	for rows.Next() {
-		var path, hash string
-		if err := rows.Scan(&path, &hash); err != nil {
-			return nil, fmt.Errorf("static_s3: blob tree scan error: %w", err)
-		}
-		entries[path] = hash
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("static_s3: blob tree rows error: %w", err)
-	}
-	return entries, nil
 }
 
 func (p *StaticPlugin) scheduleSiteFilesRebuild(siteID string, entries map[string]string) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -52,6 +53,14 @@ type StaticPlugin struct {
 	DBDSN      string `json:"db_dsn,omitempty"`
 	RedisURL   string `json:"redis_url,omitempty"`
 
+	// Turso read replica (optional). Falls back to TURSO_DATABASE_URL /
+	// TURSO_AUTH_TOKEN / TURSO_TIMEOUT environment variables. When the
+	// database URL is unset the existing Redis/PostgreSQL architecture is used
+	// unchanged.
+	TursoDatabaseURL string `json:"turso_database_url,omitempty"`
+	TursoAuthToken   string `json:"turso_auth_token,omitempty"`
+	TursoTimeoutStr  string `json:"turso_timeout,omitempty"`
+
 	// Analytics: set to false to disable per-site statistics collection.
 	// Defaults to true when both db_dsn and redis_url are configured.
 	AnalyticsEnabled bool `json:"analytics,omitempty"`
@@ -65,6 +74,14 @@ type StaticPlugin struct {
 	db              *sql.DB
 	redisClient     *redis.Client
 	analytics       *AnalyticsMiddleware
+
+	// Turso read replica internals
+	tursoDB    *sql.DB
+	tursoStore *TursoBlobTreeStore
+	files      filesStore
+	resolver   *blobTreeResolver
+	metrics    *blobTreeMetrics
+	logger     *log.Logger
 }
 
 func (StaticPlugin) CaddyModule() caddy.ModuleInfo {
@@ -106,6 +123,10 @@ func (p *StaticPlugin) Provision(ctx caddy.Context) error {
 		p.RedisURL = os.Getenv("REDIS_URL")
 	}
 
+	// Metrics + minimal diagnostics logger (nil-safe for unit tests).
+	p.metrics = newBlobTreeMetrics()
+	p.logger = log.New(os.Stderr, "static_s3: ", log.LstdFlags)
+
 	// Open PostgreSQL connection if multi-tenant mode is configured
 	if p.BaseDomain != "" && p.DBDSN != "" {
 		db, err := sql.Open("postgres", p.DBDSN)
@@ -133,6 +154,64 @@ func (p *StaticPlugin) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("static_s3: redis ping failed: %w", err)
 		}
 		p.redisClient = rdb
+		p.files = &redisFilesStore{client: rdb}
+	}
+
+	// ── Turso read replica (optional, backward-compatible) ───────────────
+	// When TURSO_DATABASE_URL is unset the plugin behaves exactly as before:
+	// Redis → PostgreSQL. When set but unhealthy, every Turso read falls back
+	// to PostgreSQL automatically — a Turso outage must never break serving.
+	if p.TursoDatabaseURL == "" {
+		p.TursoDatabaseURL = os.Getenv("TURSO_DATABASE_URL")
+	}
+	if p.TursoAuthToken == "" {
+		p.TursoAuthToken = os.Getenv("TURSO_AUTH_TOKEN")
+	}
+	if p.TursoTimeoutStr == "" {
+		p.TursoTimeoutStr = os.Getenv("TURSO_TIMEOUT")
+	}
+	tursoTimeout := DefaultTursoTimeout
+	if p.TursoTimeoutStr != "" {
+		if d, err := time.ParseDuration(p.TursoTimeoutStr); err == nil && d > 0 {
+			tursoTimeout = d
+		}
+	}
+
+	if p.TursoDatabaseURL != "" {
+		tursoDB, err := OpenTurso(TursoConfig{
+			DatabaseURL: p.TursoDatabaseURL,
+			AuthToken:   p.TursoAuthToken,
+			Timeout:     tursoTimeout,
+		})
+		if err != nil {
+			// Misconfiguration is loud but never fatal: keep the existing
+			// Redis/PostgreSQL serving path intact.
+			p.logger.Printf("turso disabled: %v", err)
+		} else {
+			// Best-effort schema bootstrap. If Turso is down at startup the
+			// request path simply falls back to PostgreSQL; the API replicator
+			// creates the schema when Turso returns.
+			schemaCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			if err := EnsureTursoSchema(schemaCtx, tursoDB); err != nil {
+				p.logger.Printf("turso schema init failed (read replica will fall back to postgres): %v", err)
+			}
+			cancel()
+			p.tursoDB = tursoDB
+			p.tursoStore = NewTursoBlobTreeStore(tursoDB, tursoTimeout)
+		}
+	}
+
+	// Wire the read chain resolver (Turso → PostgreSQL). p.db is nil when not
+	// in multi-tenant mode; resolveBlob is only reached in multi-tenant mode.
+	var pgStore *PostgreSQLBlobTreeStore
+	if p.db != nil {
+		pgStore = NewPostgreSQLBlobTreeStore(p.db)
+	}
+	p.resolver = &blobTreeResolver{
+		turso: p.tursoStore,
+		pg:    pgStore,
+		m:     p.metrics,
+		log:   p.logger,
 	}
 
 	// Initialize analytics middleware when both Redis and PostgreSQL are
@@ -228,8 +307,14 @@ func (p *StaticPlugin) Cleanup() error {
 		close(p.analytics.done) // signal both goroutines to stop
 		p.analytics.wg.Wait()  // wait for final flush to complete
 	}
+	if p.metrics != nil && p.logger != nil {
+		p.logger.Printf("blob tree metrics: %s", p.metrics.Snapshot())
+	}
 	if p.db != nil {
 		p.db.Close()
+	}
+	if p.tursoDB != nil {
+		p.tursoDB.Close()
 	}
 	return nil
 }
@@ -339,6 +424,21 @@ func (p *StaticPlugin) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 				p.RedisURL = d.Val()
+			case "turso_database_url":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				p.TursoDatabaseURL = d.Val()
+			case "turso_auth_token":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				p.TursoAuthToken = d.Val()
+			case "turso_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				p.TursoTimeoutStr = d.Val()
 			case "analytics":
 				if !d.NextArg() {
 					return d.ArgErr()
