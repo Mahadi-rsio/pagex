@@ -1,20 +1,26 @@
 import { db } from '../infrastructure/db/db.js'
 import { blobTreeEntries, blobs, deployments, pages } from '../infrastructure/db/schema.js'
 import { and, eq, ne, desc } from 'drizzle-orm'
+import type { PgTransaction } from 'drizzle-orm/pg-core'
 import { HttpError } from '../utils/http-error.js'
 import {
     invalidateSiteCache,
     rebuildSiteFilesMap,
 } from './deploy.service.js'
+import { enqueueDeploymentSync } from './turso-sync/sync.repository.js'
 import { runDeploymentGC } from './gc.service.js'
 
-async function activateDeployment(pageId: string, deploymentId: string): Promise<void> {
-    await db
+async function activateDeploymentInTx(
+    tx: PgTransaction<any, any, any>,
+    pageId: string,
+    deploymentId: string
+): Promise<void> {
+    await tx
         .update(deployments)
         .set({ is_active: true })
         .where(eq(deployments.id, deploymentId))
 
-    await db
+    await tx
         .update(deployments)
         .set({ is_active: false })
         .where(and(eq(deployments.page_id, pageId), ne(deployments.id, deploymentId)))
@@ -41,7 +47,18 @@ export async function rollbackToDeployment(deploymentId: string, tenantId: strin
         throw new HttpError('Deployment has no blob tree; cannot rollback', 400)
     }
 
-    await activateDeployment(dep.page_id, dep.id)
+    // Active-flag flip + Turso sync event are one transaction. A rollback is a
+    // legitimate backward move of the active pointer, which is why the sync
+    // worker trusts PostgreSQL's `is_active` flag rather than raw version order.
+    await db.transaction(async (tx) => {
+        await activateDeploymentInTx(tx, dep.page_id, dep.id)
+        await enqueueDeploymentSync(tx, {
+            siteId: dep.site_id,
+            deploymentId: dep.id,
+            version: dep.version,
+        })
+    })
+
     await rebuildSiteFilesMap(dep.site_id, dep.id)
 
     const [page] = await db.select().from(pages).where(eq(pages.id, dep.page_id)).limit(1)

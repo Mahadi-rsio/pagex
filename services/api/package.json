@@ -7,7 +7,7 @@
     "dev": "tsx watch server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
     "lint": "npx biome format --write",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
@@ -26,6 +26,7 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
+    "@libsql/client": "^0.17.4",
     "axios": "^1.15.0",
     "bullmq": "^5.73.5",
     "dotenv": "^17.4.1",
@@ -54,6 +55,7 @@
     "@types/sharp": "^0.31.1",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.23.1",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "vitest": "^3.2.7"
   }
 }

@@ -169,6 +169,29 @@ services:
       - pagex
 
   # ============================================================================
+  # Turso Sync Worker — PostgreSQL → Turso read-model replication (profile: workers)
+  # ============================================================================
+  # Dispatcher (outbox → BullMQ) + sync consumer + periodic reconciler + stale
+  # recovery in one process. No-op (exit 0) when TURSO_SYNC_ENABLED is unset.
+  turso-sync-worker:
+    container_name: turso_sync
+    image: ghcr.io/mahadi-rsio/pagex/api:latest
+    env_file: .env
+    environment:
+      - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
+    command: ["node", "dist/queue/workers/turso-sync.worker.js"]
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - pagex
+
+  # ============================================================================
   # Build Worker — Cloud Builds (profile: workers)
   # ============================================================================
   build-worker:

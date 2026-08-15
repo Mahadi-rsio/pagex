@@ -25,6 +25,7 @@ import {
     SITE_FILES_TTL_SECONDS,
 } from '../constants/index.js'
 import { runDeploymentGC } from './gc.service.js'
+import { enqueueDeploymentSync } from './turso-sync/sync.repository.js'
 import { validateManifest } from '../utils/deployment-validator.js'
 import { validateFile } from '../utils/file-validator.js'
 import { HttpError } from '../utils/http-error.js'
@@ -505,18 +506,6 @@ export async function clearSiteFilesMap(siteId: string): Promise<void> {
     await redis.del(siteFilesKey(siteId))
 }
 
-async function activateDeployment(pageId: string, deploymentId: string): Promise<void> {
-    await db
-        .update(deployments)
-        .set({ is_active: true })
-        .where(eq(deployments.id, deploymentId))
-
-    await db
-        .update(deployments)
-        .set({ is_active: false })
-        .where(and(eq(deployments.page_id, pageId), ne(deployments.id, deploymentId)))
-}
-
 async function nextVersion(pageId: string): Promise<number> {
     const [latest] = await db
         .select({ version: deployments.version })
@@ -561,40 +550,65 @@ export async function commitBlobTreeDeploy(opts: {
 
     const version = await nextVersion(opts.pageId)
 
-    const [newDep] = await db
-        .insert(deployments)
-        .values({
-            page_id: opts.pageId,
-            site_id: opts.siteId,
-            tenant_id: opts.tenantId,
-            build_id: opts.buildId,
-            version,
-            is_active: false,
-            source: opts.source,
-            file_count: opts.fileManifest.length,
-            filesDeployed: opts.filesDeployed,
-            filesReused: opts.filesReused,
-        })
-        .returning()
+    // Single transaction: deployment row + blob tree + active-flag flip + Turso
+    // sync event. A crash anywhere before COMMIT leaves PostgreSQL (and thus
+    // Turso's source of truth) untouched — never a half-deployed site.
+    const deployment = await db.transaction(async (tx) => {
+        const [newDep] = await tx
+            .insert(deployments)
+            .values({
+                page_id: opts.pageId,
+                site_id: opts.siteId,
+                tenant_id: opts.tenantId,
+                build_id: opts.buildId,
+                version,
+                is_active: false,
+                source: opts.source,
+                file_count: opts.fileManifest.length,
+                filesDeployed: opts.filesDeployed,
+                filesReused: opts.filesReused,
+            })
+            .returning()
 
-    if (!newDep) throw new HttpError('Failed to create deployment record', 500)
+        if (!newDep) throw new HttpError('Failed to create deployment record', 500)
 
-    await db.insert(blobTreeEntries).values(
-        opts.fileManifest.map((f) => ({
+        await tx.insert(blobTreeEntries).values(
+            opts.fileManifest.map((f) => ({
+                deploymentId: newDep.id,
+                path: f.path,
+                blobHash: f.hash,
+            }))
+        )
+
+        // Activate within the same transaction so a reader can never observe a
+        // tree whose deployment is not yet live (and vice versa).
+        await tx
+            .update(deployments)
+            .set({ is_active: true })
+            .where(eq(deployments.id, newDep.id))
+
+        await tx
+            .update(deployments)
+            .set({ is_active: false })
+            .where(and(eq(deployments.page_id, opts.pageId), ne(deployments.id, newDep.id)))
+
+        // Outbox event committed atomically with the activation above.
+        await enqueueDeploymentSync(tx, {
+            siteId: opts.siteId,
             deploymentId: newDep.id,
-            path: f.path,
-            blobHash: f.hash,
-        }))
-    )
+            version,
+        })
 
-    await activateDeployment(opts.pageId, newDep.id)
-    await rebuildSiteFilesMap(opts.siteId, newDep.id)
+        return newDep
+    })
+
+    await rebuildSiteFilesMap(opts.siteId, deployment.id)
     await invalidateSiteCache(opts.subdomain)
 
     const [updated] = await db
         .select()
         .from(deployments)
-        .where(eq(deployments.id, newDep.id))
+        .where(eq(deployments.id, deployment.id))
         .limit(1)
 
     // fire and forget — never await

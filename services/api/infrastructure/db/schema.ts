@@ -132,3 +132,38 @@ export const blobTreeEntries = pgTable('blob_tree_entries', {
     uniqueDeploymentPath: unique('blob_tree_entries_deployment_path_uid').on(t.deploymentId, t.path),
     deploymentIdx: index('idx_blob_tree_entries_deployment').on(t.deploymentId),
 }));
+
+export const outboxStatus = {
+    pending: 'pending',
+    processing: 'processing',
+    completed: 'completed',
+    failed: 'failed',
+} as const
+
+export type OutboxStatus = (typeof outboxStatus)[keyof typeof outboxStatus]
+
+/**
+ * `blob_tree_sync_outbox` — transactional outbox for Turso read-model sync.
+ * A deployment change and its sync event are written in the SAME PostgreSQL
+ * transaction, so a crash can never leave Turso stale without a recovery event.
+ * One row per deployment (unique deployment_id); re-activation (rollback)
+ * re-enqueues by resetting the row to pending.
+ */
+export const blobTreeSyncOutbox = pgTable('blob_tree_sync_outbox', {
+    id: uuid('id').primaryKey().notNull().defaultRandom(),
+    site_id: uuid('site_id').notNull().references(() => sites.id, { onDelete: 'cascade' }),
+    deployment_id: uuid('deployment_id')
+        .notNull()
+        .references(() => deployments.id, { onDelete: 'cascade' })
+        .unique(),
+    version: integer('version').notNull(),
+    event_type: text('event_type').notNull().default('SYNC_DEPLOYMENT'),
+    status: text('status').notNull().default(outboxStatus.pending),
+    attempts: integer('attempts').notNull().default(0),
+    created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    last_attempt_at: timestamp('last_attempt_at', { withTimezone: true }),
+    processed_at: timestamp('processed_at', { withTimezone: true }),
+    last_error: text('last_error'),
+}, (t) => ({
+    outboxStatusIdx: index('idx_blob_tree_sync_outbox_status').on(t.status, t.created_at),
+}));
