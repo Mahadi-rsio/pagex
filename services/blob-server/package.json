@@ -1,6 +1,6 @@
 {
   "name": "@pagex/blob-server",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "PageX Blob Server - Caddy with static_s3 plugin for content-addressed blob serving",
   "private": true,
   "scripts": {
