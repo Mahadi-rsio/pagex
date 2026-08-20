@@ -5,10 +5,12 @@ import (
 	"time"
 )
 
-// manifestCacheEntry holds serialized manifest JSON in the L1 LRU.
+// manifestCacheEntry holds a validated deployment manifest in the L1 LRU.
+// Manifests are immutable and keyed by deployment ID, so storing the parsed
+// object avoids re-parsing JSON on every hot-path L1 hit.
 type manifestCacheEntry struct {
 	key       string
-	data      []byte
+	manifest  *DeploymentManifest
 	expiredAt time.Time
 }
 
@@ -31,7 +33,7 @@ func NewManifestLRUCache(capacity int) *ManifestLRUCache {
 	}
 }
 
-func (c *ManifestLRUCache) Get(key string) ([]byte, bool) {
+func (c *ManifestLRUCache) Get(key string) (*DeploymentManifest, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -46,11 +48,11 @@ func (c *ManifestLRUCache) Get(key string) ([]byte, bool) {
 	}
 
 	c.touch(key)
-	return entry.data, true
+	return entry.manifest, true
 }
 
-func (c *ManifestLRUCache) Set(key string, data []byte, ttl time.Duration) {
-	if ttl <= 0 {
+func (c *ManifestLRUCache) Set(key string, manifest *DeploymentManifest, ttl time.Duration) {
+	if ttl <= 0 || manifest == nil {
 		return
 	}
 
@@ -69,7 +71,7 @@ func (c *ManifestLRUCache) Set(key string, data []byte, ttl time.Duration) {
 
 	c.items[key] = &manifestCacheEntry{
 		key:       key,
-		data:      append([]byte(nil), data...),
+		manifest:  manifest,
 		expiredAt: time.Now().Add(ttl),
 	}
 	c.order = append(c.order, key)

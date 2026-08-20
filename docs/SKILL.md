@@ -16,7 +16,7 @@ Read docs in this order:
 1. **[PROJECT.md](./PROJECT.md)** — File tree, entry points, constants, MinIO/Redis
 2. **[SCHEMA.md](./SCHEMA.md)** — Tables + Redis keys + retention/GC
 3. **[API.md](./API.md)** — HTTP endpoints
-4. **[WORKERS.md](./WORKERS.md)** — Build/sync workers + commit/GC flow
+4. **[WORKERS.md](./WORKERS.md)** — Build worker + commit/GC flow
 5. **[RULES.md](./RULES.md)** — Coding conventions
 6. **[INFRASTRUCTURE.md](./INFRASTRUCTURE.md)** — Docker / Caddy
 
@@ -40,7 +40,7 @@ Rollback: `src/services/deployment.service.ts` → `rollbackToDeployment()`.
 
 Background GC: `src/services/gc.service.ts` → `runDeploymentGC()` — always fire-and-forget, never await at call site.
 
-Serving path: Redis `site_files:{site_id}` → MinIO `blobs/{hash}`. Do not reintroduce `tenant/` copies.
+Serving path: subdomain → site_id → active deployment manifest (MinIO `manifests/{deploymentID}.json` / Redis `manifest:{deploymentId}`) → path lookup → MinIO `blobs/{hash}`. Do not reintroduce `tenant/` copies.
 
 ### Add a New BullMQ Worker
 
@@ -87,10 +87,9 @@ npx tsx src/scripts/migrate-to-blob-serving.ts
 
 | Component | One-liner |
 |-----------|-----------|
-| `deploy.service.ts` | prepare / presign / commit + compress/WebP + Redis map |
+| `deploy.service.ts` | prepare / presign / commit + compress/WebP + manifest |
 | `deployment.service.ts` | list + rollback + fire GC |
 | `gc.service.ts` | prune inactive beyond retention 10 + orphaned MinIO blobs |
 | `build.worker.ts` | clone → docker build → validateOutputDir → deployFromLocalDirectory |
-| `sync.worker.ts` | flush Redis usage → Postgres |
 | `minio.ts` | `blobs/{hash}` helpers + `deleteBlobObjects` |
-| `redis.ts` | DB0 site/site_files · DB2 BullMQ · DB3 tokens/usage |
+| `redis.ts` | DB0 site/active_deployment/manifest · DB2 BullMQ · DB3 tokens/usage |

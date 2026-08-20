@@ -91,7 +91,7 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 		}
 
 		// 3–6. Resolve path via deployment manifest (L1 → Redis → MinIO)
-		resolved, err := p.resolveBlob(r.Context(), siteID, urlPath, r)
+		resolved, err := p.resolveBlob(r.Context(), siteID, version, urlPath, r)
 		if err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
@@ -168,33 +168,48 @@ func (p *StaticPlugin) recordAnalytics(siteID string, r *http.Request, rec caddy
 	)
 }
 
-// resolveSiteID looks up the site UUID for a given subdomain, using Redis as a
-// read-through cache backed by PostgreSQL.
+// resolveSiteID looks up the site UUID for a given subdomain, using a
+// process-local LRU as L1, Redis as L2, and PostgreSQL as the fallback.
 func (p *StaticPlugin) resolveSiteID(ctx context.Context, subdomain string) (string, error) {
 	redisKey := "site:" + subdomain
+	l1Key := subdomain + ":__site__"
 
-	// 1. Redis cache lookup
+	// 1. Process-local L1 (warm hot path = zero Redis/PostgreSQL calls)
+	if p.cacheTTL > 0 && p.cache != nil {
+		if item, ok := p.cache.Get(l1Key); ok {
+			if !item.Exists {
+				return "", nil
+			}
+			if len(item.Content) > 0 {
+				return string(item.Content), nil
+			}
+		}
+	}
+
+	// 2. Redis cache lookup
 	if p.redisClient != nil {
 		val, err := p.redisClient.Get(ctx, redisKey).Result()
 		if err == nil {
 			if val == "NOT_FOUND" {
+				p.cacheSiteIDNegative(subdomain)
 				return "", nil
 			}
+			p.cacheSiteID(subdomain, val)
 			return val, nil
 		}
 		if !errors.Is(err, redis.Nil) {
 			_ = err // unexpected — fall through to DB
 		} else {
-			// Redis miss for site: key → backend invalidated after deploy.
-			// Evict only the cached version so the next lookup fetches site_version fresh.
-			// Old version-scoped LRU entries become unreachable without a prefix scan.
+			// Redis miss for site: key → backend invalidated after deploy/delete.
+			// Evict the L1 site + version entries so the next lookup fetches fresh.
 			if p.cache != nil {
 				p.cache.Delete(subdomain + ":__version__")
+				p.cache.Delete(l1Key)
 			}
 		}
 	}
 
-	// 2. PostgreSQL lookup
+	// 3. PostgreSQL lookup
 	if p.db == nil {
 		return "", fmt.Errorf("static_s3: multi-tenant mode requires db_dsn")
 	}
@@ -210,6 +225,7 @@ func (p *StaticPlugin) resolveSiteID(ctx context.Context, subdomain string) (str
 			if p.redisClient != nil {
 				_ = p.redisClient.Set(ctx, redisKey, "NOT_FOUND", 1*time.Minute).Err()
 			}
+			p.cacheSiteIDNegative(subdomain)
 			return "", nil
 		}
 		return "", fmt.Errorf("static_s3: db query error: %w", err)
@@ -218,8 +234,25 @@ func (p *StaticPlugin) resolveSiteID(ctx context.Context, subdomain string) (str
 	if p.redisClient != nil {
 		_ = p.redisClient.Set(ctx, redisKey, siteID, 5*time.Minute).Err()
 	}
+	p.cacheSiteID(subdomain, siteID)
 
 	return siteID, nil
+}
+
+func (p *StaticPlugin) cacheSiteID(subdomain, siteID string) {
+	if p.cacheTTL <= 0 || p.cache == nil {
+		return
+	}
+	key := subdomain + ":__site__"
+	p.cache.Set(key, &CacheItem{Key: key, Content: []byte(siteID), Exists: true}, siteIDL1TTL)
+}
+
+func (p *StaticPlugin) cacheSiteIDNegative(subdomain string) {
+	if p.cacheTTL <= 0 || p.cache == nil {
+		return
+	}
+	key := subdomain + ":__site__"
+	p.cache.Set(key, &CacheItem{Key: key, Exists: false}, siteIDL1TTL)
 }
 
 // resolveSiteVersion returns the deploy version for a site used to scope LRU keys.
@@ -255,8 +288,8 @@ func (p *StaticPlugin) resolveSiteVersion(ctx context.Context, subdomain, siteID
 
 // resolveBlob maps a request URL path to a blob hash via the active deployment manifest.
 // Runtime path never queries blob_tree_entries.
-func (p *StaticPlugin) resolveBlob(ctx context.Context, siteID, urlPath string, r *http.Request) (*blobResolution, error) {
-	deploymentID, err := p.resolveActiveDeploymentID(ctx, siteID)
+func (p *StaticPlugin) resolveBlob(ctx context.Context, siteID, version, urlPath string, r *http.Request) (*blobResolution, error) {
+	deploymentID, err := p.resolveActiveDeploymentID(ctx, siteID, version)
 	if err != nil {
 		return nil, err
 	}
@@ -339,6 +372,10 @@ func (p *StaticPlugin) serveBlob(w http.ResponseWriter, r *http.Request, blobHas
 		if contentEncoding != "" {
 			hdr.Set("Content-Encoding", contentEncoding)
 			hdr.Set("Vary", "Accept-Encoding")
+		} else if isWebPVariant(filePath) {
+			// WebP is negotiated via Accept (not Content-Encoding) — the client
+			// must be told that the representation varies by Accept.
+			hdr.Set("Vary", "Accept")
 		}
 	}
 
@@ -812,6 +849,8 @@ func (p *StaticPlugin) serveCachedContent(w http.ResponseWriter, r *http.Request
 	if item.ContentEncoding != "" {
 		w.Header().Set("Content-Encoding", item.ContentEncoding)
 		w.Header().Set("Vary", "Accept-Encoding")
+	} else if isWebPVariant(item.FilePath) {
+		w.Header().Set("Vary", "Accept")
 	}
 	if item.FilePath != "" {
 		w.Header().Set("Cache-Control", cacheControlForPath(item.FilePath))
@@ -962,15 +1001,23 @@ func contentTypeForPath(path string) string {
 	return ct
 }
 
+// isWebPVariant reports whether the resolved file path is a WebP representation.
+func isWebPVariant(path string) bool {
+	return strings.HasSuffix(strings.ToLower(path), ".webp")
+}
+
 // cacheControlForPath returns browser Cache-Control based on the original file extension.
+// Compressed variants (.br/.gz) inherit the policy of their source file so that
+// all representations of an asset share the same caching rules.
 func cacheControlForPath(path string) string {
 	ext := strings.ToLower(filepath.Ext(stripCompressionSuffix(path)))
 	switch ext {
 	case ".html", ".htm":
 		return "no-cache"
-	case ".js", ".css", ".woff", ".woff2":
+	case ".js", ".css", ".mjs", ".wasm", ".woff", ".woff2", ".ttf", ".otf", ".eot":
 		return "max-age=31536000, immutable"
-	case ".webp", ".png", ".jpg", ".jpeg", ".gif", ".svg":
+	case ".webp", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".avif",
+		".mp4", ".webm", ".mp3", ".pdf":
 		return "max-age=604800"
 	default:
 		return "max-age=3600"

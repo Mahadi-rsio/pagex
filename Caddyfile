@@ -44,6 +44,11 @@ http:// {
 			redirect_to_s3   {$REDIRECT_TO_S3:false}
 			presign_redirect {$PRESIGN_REDIRECT:false}
 			presign_lifetime {$PRESIGN_LIFETIME:15m}
+			# Media shares the same LRU/body-cache architecture as every other
+			# route — path + blob bodies for images/fonts are cached in-process.
+			cache_ttl       {$CACHE_TTL:2m}
+			cache_size      {$CACHE_SIZE:1000}
+			max_cache_size  {$MAX_CACHE_SIZE:512KiB}
 		}
 	}
 

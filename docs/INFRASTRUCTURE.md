@@ -9,8 +9,7 @@
 | `app` | `express_app` | `Dockerfile` → `runner` | REST API (port 3000) |
 | `caddy` | `caddy_server` | `ghcr.io/mahadi-rsio/cdx_s3` | Caddy + static_s3 (blob-direct) + console `:3080` |
 | `db` | `postgres_db` | `postgres:16-alpine` | PostgreSQL |
-| `redis` | `redis` | `redis:7-alpine` | Cache + BullMQ + `site_files` (port **6379** published) |
-| `sync_worker` | `sync_w` | `Dockerfile` → `runner` | Usage sync cron |
+| `redis` | `redis` | `redis:7-alpine` | Cache + BullMQ + site/active_deployment/manifest (port **6379** published) |
 | `build_worker` | `build_w` | `Dockerfile` → `build-worker` | Cloud builds (`git` + `docker-cli`) |
 | `build_env` | (one-shot) | `Dockerfile` → `build-env` | Tags `cloudisy-build-env:latest` |
 | `migrator` | `drizzle_migrator` | `Dockerfile` → `migrator` | One-shot Drizzle migrations |
@@ -22,7 +21,7 @@
 
 **next-web:** shares `db` + `redis`. `next_web_migrator` runs after Cloudisy’s `migrator` and before `next_web` (table `next_web_drizzle_migrations`). Console UI is served by `caddy_server` on `:3080` (not a second Caddy).
 
-App / sync / build workers set `IN_DOCKER_COMPOSE=1` so `REDIS_URL=redis://redis:6379` keeps the Compose hostname. Host scripts remap `redis` → `localhost`.
+App / build workers set `IN_DOCKER_COMPOSE=1` so `REDIS_URL=redis://redis:6379` keeps the Compose hostname. Host scripts remap `redis` → `localhost`.
 
 Redis and Postgres use healthchecks; workers/app wait on `redis: service_healthy` and migrator success. `build_worker` also waits on `build_env` completing.
 
@@ -35,7 +34,7 @@ FROM node:20-alpine AS build-env     # pnpm pre-installed → cloudisy-build-env
 FROM node:20-alpine AS deps          # npm install
 FROM deps AS migrator                # drizzle-kit migrate
 FROM node:20-alpine AS builder       # tsc → dist/
-FROM node:20-alpine AS runner        # API + sync worker (default: server.js)
+FROM node:20-alpine AS runner        # API (default: server.js)
 FROM node:20-alpine AS build-worker  # git + docker-cli → build.worker.js
 ```
 
@@ -45,7 +44,6 @@ FROM node:20-alpine AS build-worker  # git + docker-cli → build.worker.js
 
 ```
 postgres_db (healthy) ──► drizzle_migrator ──► express_app
-                        │                  └► sync_w
                         │                  └► build_w  ← also waits on build_env
                         └► next_web_migrator ──► next_web
 redis (healthy)       ──┤
@@ -124,10 +122,10 @@ npx tsx src/scripts/migrate-to-blob-serving.ts
 Image: `ghcr.io/mahadi-rsio/cdx_s3`. Config: `config/Caddyfile` (+ `config/next-web/caddy/` for console).
 
 1. **Routing** — `subdomain → site_id` via Redis `site:{subdomain}` → Postgres `sites`
-2. **Path map** — Redis `site_files:{site_id}` field = path → value = blob SHA256
+2. **Path map** — deployment manifest: `files` map of path → blob SHA256 (MinIO `manifests/{deploymentID}.json` / Redis `manifest:{deploymentId}`)
 3. **File serving** — stream / redirect from MinIO `blobs/{sha256}` (with Content-Encoding when set)
 4. **Analytics** — `requests:{domain}` / `bandwidth:{domain}` counters
 5. **API reverse proxy** — `api.{BASE_DOMAIN}` → `app:3000`
 6. **Console** — `:3080` serves next-web static from `/srv`; `/api/*` → `next_web:3000`
 
-No per-tenant Caddy config. A site is live once `sites.active=true` and `site_files` is populated by a deploy.
+No per-tenant Caddy config. A site is live once `sites.active=true` and the active deployment has a persisted manifest.

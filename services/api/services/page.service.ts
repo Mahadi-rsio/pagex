@@ -67,8 +67,9 @@ export async function createPage(
 
     if (!page) throw new Error('Failed to create page record')
 
-    // 3. The caddy static_s3 plugin routes via Redis site_files:{site_id}
-    //    → blobs/{sha256}. No per-tenant Caddy config or tenant/ prefix needed.
+    // 3. The caddy static_s3 plugin resolves subdomain → site_id → active
+    //    deployment manifest → blobs/{sha256}. No per-tenant Caddy config or
+    //    tenant/ prefix needed.
 
     console.log(`✅ Created project "${project_name}" → site_id: ${site.id}`)
 

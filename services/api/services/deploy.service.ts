@@ -22,7 +22,6 @@ import {
     MAX_DEPLOY_FILE_SIZE,
     MAX_FILE_SIZE,
     PRESIGN_EXPIRY_SECONDS,
-    SITE_FILES_TTL_SECONDS,
 } from '../constants/index.js'
 import { runDeploymentGC } from './gc.service.js'
 import {
@@ -470,45 +469,13 @@ async function storeExpandedVariants(
     return { fileManifest, filesDeployed, filesReused, summary }
 }
 
-function siteFilesKey(siteId: string): string {
-    return `site_files:${siteId}`
-}
-
 /**
- * Atomically rebuild the Redis path→blob map for a site.
- * Pipeline: DEL → HSET → EXPIRE (same Redis DB as site:{subdomain}).
+ * Defensive cleanup of the legacy `site_files:{siteId}` Redis hash.
+ * Nothing writes this key anymore — it is only deleted here so orphaned keys
+ * from pre-manifest deployments are removed when a page is destroyed.
  */
-export async function rebuildSiteFilesMap(
-    siteId: string,
-    deploymentId: string
-): Promise<void> {
-    const entries = await db
-        .select({
-            path: blobTreeEntries.path,
-            blobHash: blobTreeEntries.blobHash,
-        })
-        .from(blobTreeEntries)
-        .where(eq(blobTreeEntries.deploymentId, deploymentId))
-
-    const key = siteFilesKey(siteId)
-    const pipeline = redis.pipeline()
-    pipeline.del(key)
-
-    if (entries.length > 0) {
-        const fields: Record<string, string> = {}
-        for (const entry of entries) {
-            fields[entry.path] = entry.blobHash
-        }
-        pipeline.hset(key, fields)
-    }
-
-    pipeline.expire(key, SITE_FILES_TTL_SECONDS)
-    await pipeline.exec()
-}
-
-/** Remove the path→blob map when a page is deleted. */
 export async function clearSiteFilesMap(siteId: string): Promise<void> {
-    await redis.del(siteFilesKey(siteId))
+    await redis.del(`site_files:${siteId}`)
 }
 
 async function activateDeployment(pageId: string, deploymentId: string): Promise<void> {

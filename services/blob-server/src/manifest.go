@@ -22,12 +22,28 @@ const (
 	manifestSchemaVersion = 1
 	maxManifestSizeBytes  = 50 * 1024 * 1024
 	manifestRedisTTL      = 24 * time.Hour
+	// manifestL1TTL is the process-local manifest cache TTL. Manifests are
+	// immutable and keyed by deployment ID, so no invalidation is ever needed —
+	// a long TTL is safe and keeps hot-path requests entirely off Redis/MinIO.
+	manifestL1TTL = 1 * time.Hour
+	// activeDeploymentL1TTL bounds the process-local siteID→active deployment
+	// mapping. Version scoping (siteID:__active__:version) makes entries from a
+	// previous deploy unreachable immediately after activation/rollback.
+	activeDeploymentL1TTL = 5 * time.Minute
+	// siteIDL1TTL bounds the process-local subdomain→siteID mapping. It matches
+	// the Redis site:{subdomain} TTL so a deleted/deactivated site stops being
+	// served within the same window as the legacy Redis cache.
+	siteIDL1TTL = 5 * time.Minute
+	// manifestLoadErrorTTL negative-caches failed manifest loads so a missing or
+	// corrupt manifest cannot stampede MinIO with one fetch per request.
+	manifestLoadErrorTTL = 10 * time.Second
 )
 
 var (
 	sha256HexRE     = regexp.MustCompile(`^[a-f0-9]{64}$`)
 	sha256PrefixRE  = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 	manifestLoading sync.Map // deploymentID → *manifestLoadGroup
+	manifestErrors  sync.Map // deploymentID → manifestErrorEntry
 )
 
 // DeploymentManifest is the immutable runtime index for a finalized deployment.
@@ -42,6 +58,13 @@ type manifestLoadGroup struct {
 	once     sync.Once
 	manifest *DeploymentManifest
 	err      error
+}
+
+// manifestErrorEntry negative-caches a failed manifest load for a short window
+// to absorb concurrent requests for a missing/corrupt manifest.
+type manifestErrorEntry struct {
+	err       error
+	expiresAt time.Time
 }
 
 // ServeMetrics tracks manifest and blob cache observability counters.
@@ -157,14 +180,62 @@ func validateDeploymentManifest(raw []byte, expectedDeploymentID string) (*Deplo
 	return &m, nil
 }
 
-func (p *StaticPlugin) resolveActiveDeploymentID(ctx context.Context, siteID string) (string, error) {
-	if p.redisClient != nil {
-		val, err := p.redisClient.Get(ctx, activeDeploymentRedisKey(siteID)).Result()
-		if err == nil && val != "" {
-			return val, nil
+// activeDeploymentL1Key scopes the process-local active-deployment mapping by
+// site_version. Deploys/rollbacks INCR site_version, so a stale mapping is
+// never reused — the key changes and the next request re-resolves from Redis.
+func activeDeploymentL1Key(siteID, version string) string {
+	return siteID + ":__active__:" + version
+}
+
+func (p *StaticPlugin) cacheActiveDeployment(siteID, version, deploymentID string) {
+	if p.cacheTTL <= 0 || p.cache == nil {
+		return
+	}
+	key := activeDeploymentL1Key(siteID, version)
+	p.cache.Set(key, &CacheItem{
+		Key:     key,
+		Content: []byte(deploymentID),
+		Exists:  true,
+	}, activeDeploymentL1TTL)
+}
+
+func (p *StaticPlugin) cacheActiveDeploymentNegative(siteID, version string) {
+	if p.cacheTTL <= 0 || p.cache == nil {
+		return
+	}
+	key := activeDeploymentL1Key(siteID, version)
+	p.cache.Set(key, &CacheItem{
+		Key:    key,
+		Exists: false,
+	}, activeDeploymentL1TTL)
+}
+
+func (p *StaticPlugin) resolveActiveDeploymentID(ctx context.Context, siteID, version string) (string, error) {
+	// L1: process-local LRU (siteID → active deployment ID), version-scoped.
+	// A hit means zero Redis and zero PostgreSQL work on the hot path.
+	l1Key := activeDeploymentL1Key(siteID, version)
+	if p.cacheTTL > 0 && p.cache != nil {
+		if item, ok := p.cache.Get(l1Key); ok {
+			if !item.Exists {
+				return "", nil
+			}
+			if len(item.Content) > 0 {
+				return string(item.Content), nil
+			}
 		}
 	}
 
+	// L2: Redis read-through cache.
+	if p.redisClient != nil {
+		val, err := p.redisClient.Get(ctx, activeDeploymentRedisKey(siteID)).Result()
+		if err == nil && val != "" {
+			p.cacheActiveDeployment(siteID, version, val)
+			return val, nil
+		}
+		// redis.Nil or transient error → fall through to PostgreSQL
+	}
+
+	// L3: PostgreSQL fallback (control-plane source of truth).
 	if p.db == nil {
 		return "", fmt.Errorf("static_s3: active deployment lookup requires db_dsn or warm Redis cache")
 	}
@@ -177,6 +248,7 @@ func (p *StaticPlugin) resolveActiveDeploymentID(ctx context.Context, siteID str
 	`, siteID)
 	if err := row.Scan(&deploymentID); err != nil {
 		if errors.Is(err, errNoRows) {
+			p.cacheActiveDeploymentNegative(siteID, version)
 			return "", nil
 		}
 		return "", fmt.Errorf("static_s3: active deployment query error: %w", err)
@@ -185,6 +257,7 @@ func (p *StaticPlugin) resolveActiveDeploymentID(ctx context.Context, siteID str
 	if p.redisClient != nil && deploymentID != "" {
 		_ = p.redisClient.Set(ctx, activeDeploymentRedisKey(siteID), deploymentID, 0).Err()
 	}
+	p.cacheActiveDeployment(siteID, version, deploymentID)
 
 	return deploymentID, nil
 }
@@ -194,15 +267,26 @@ func (p *StaticPlugin) loadManifest(ctx context.Context, deploymentID string) (*
 		return nil, errors.New("empty deployment id")
 	}
 
+	// Fast-fail on a recently failed load (missing/corrupt manifest) so a
+	// stampede cannot turn into one MinIO fetch per request.
+	if entry, ok := manifestErrors.Load(deploymentID); ok {
+		e := entry.(manifestErrorEntry)
+		if time.Now().Before(e.expiresAt) {
+			if p.metrics != nil {
+				p.metrics.ManifestLoadErrors++
+			}
+			return nil, e.err
+		}
+		manifestErrors.Delete(deploymentID)
+	}
+
 	l1Key := "manifest:" + deploymentID
 	if p.manifestCache != nil {
-		if raw, ok := p.manifestCache.Get(l1Key); ok {
-			if m, err := validateDeploymentManifest(raw, deploymentID); err == nil {
-				if p.metrics != nil {
-					p.metrics.ManifestL1Hit++
-				}
-				return m, nil
+		if m, ok := p.manifestCache.Get(l1Key); ok {
+			if p.metrics != nil {
+				p.metrics.ManifestL1Hit++
 			}
+			return m, nil
 		}
 		if p.metrics != nil {
 			p.metrics.ManifestL1Miss++
@@ -220,8 +304,20 @@ func (p *StaticPlugin) loadManifestCoalesced(ctx context.Context, deploymentID s
 
 	group.once.Do(func() {
 		defer close(group.done)
+		// Re-check the negative cache inside the single-flight body: a concurrent
+		// load may have failed and recorded the error between our check above and
+		// acquiring the group.
+		if entry, ok := manifestErrors.Load(deploymentID); ok && time.Now().Before(entry.(manifestErrorEntry).expiresAt) {
+			group.err = entry.(manifestErrorEntry).err
+			return
+		}
 		group.manifest, group.err = p.loadManifestFromRemote(ctx, deploymentID)
-		if group.err == nil && group.manifest != nil {
+		if group.err != nil {
+			manifestErrors.Store(deploymentID, manifestErrorEntry{
+				err:       group.err,
+				expiresAt: time.Now().Add(manifestLoadErrorTTL),
+			})
+		} else if group.manifest != nil {
 			p.populateManifestCaches(deploymentID, group.manifest)
 		}
 		manifestLoading.Delete(deploymentID)
@@ -304,13 +400,9 @@ func (p *StaticPlugin) populateManifestCaches(deploymentID string, manifest *Dep
 	if manifest == nil {
 		return
 	}
-	raw, err := json.Marshal(manifest)
-	if err != nil {
-		return
-	}
 	l1Key := "manifest:" + deploymentID
-	if p.manifestCache != nil && p.cacheTTL > 0 {
-		p.manifestCache.Set(l1Key, raw, p.cacheTTL)
+	if p.manifestCache != nil {
+		p.manifestCache.Set(l1Key, manifest, manifestL1TTL)
 	}
 }
 

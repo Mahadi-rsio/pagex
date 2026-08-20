@@ -162,9 +162,9 @@ Upload each object to the presigned URL with the raw file body (object key: `blo
 ---
 
 ### `POST /api/deploy/commit`
-Load blobs, expand Brotli/Gzip/WebP variants, write `blob_tree_entries`, activate deployment, rebuild Redis `site_files:{site_id}`, invalidate `site:{subdomain}`, fire-and-forget GC, and consume the token. Request timeout: **5 minutes**.
+Load blobs, expand Brotli/Gzip/WebP variants, write `blob_tree_entries`, generate + persist the deployment manifest (MinIO `manifests/{deploymentId}.json` + Redis `manifest:{deploymentId}`, validated before activation), activate deployment, set `active_deployment:{site_id}`, `INCR site_version:{site_id}`, invalidate `site:{subdomain}`, fire-and-forget GC, and consume the token. Request timeout: **5 minutes**.
 
-No MinIO `tenant/` materialization — Caddy serves `blobs/{hash}` via the Redis map.
+No MinIO `tenant/` materialization — Caddy resolves subdomain → site_id → active deployment → manifest → `blobs/{hash}`.
 
 **Request body:**
 ```json
@@ -364,10 +364,11 @@ Roll back to a previous deployment using its `blob_tree_entries` (blob-direct; n
 
 **Workflow:**
 1. Load target deployment’s blob tree (tenant-scoped)
-2. Set `is_active = true` on target; deactivate others
-3. Rebuild Redis `site_files:{site_id}` from the target tree
-4. Invalidate Redis `site:{subdomain}`
-5. Fire-and-forget `runDeploymentGC` (retention: 10 inactive)
+2. `generateAndPersistManifest(deploymentId)` — validates/reuses the immutable manifest (throws on failure → no activation)
+3. Set `is_active = true` on target; deactivate others
+4. `setActiveDeploymentCache` + `cacheManifestInRedis` + `INCR site_version:{site_id}`
+5. Invalidate Redis `site:{subdomain}`
+6. Fire-and-forget `runDeploymentGC` (retention: 10 inactive)
 
 **Response `200`:**
 ```json

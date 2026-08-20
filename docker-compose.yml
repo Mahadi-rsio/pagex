@@ -150,27 +150,6 @@ services:
       - pagex
 
   # ============================================================================
-  # Sync Worker — Usage Analytics (profile: workers)
-  # ============================================================================
-  sync-worker:
-    container_name: sync
-    image: ghcr.io/mahadi-rsio/pagex/api:latest
-    env_file: .env
-    environment:
-      - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
-    command: ["node", "dist/queue/workers/sync.worker.js"]
-    depends_on:
-      migrator:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - pagex
-
-  # ============================================================================
   # Build Worker — Cloud Builds (profile: workers)
   # ============================================================================
   build-worker:

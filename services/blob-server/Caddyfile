@@ -32,11 +32,16 @@
             db_dsn          "postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable"
             redis_url       "redis://redis:6379/0"
 
-            # Redirect media directly to S3
+            # Redirect media directly to S3 (metadata + path resolution still cached)
             redirect_to_s3   true
             presign_redirect true
             presign_lifetime 15m
-            
+
+            # Same LRU/body-cache architecture as the fallback handler
+            cache_ttl      2m
+            cache_size     1000
+            max_cache_size 512KiB
+
             # SPA fallback options
             fallback_except png css js svg ico woff woff2 ttf map
         }

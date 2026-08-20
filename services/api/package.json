@@ -7,7 +7,7 @@
     "dev": "tsx watch server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "test": "node --import tsx --test utils/manifest-validation.test.ts",
+    "test": "node --import tsx --test --experimental-test-module-mocks utils/manifest-validation.test.ts services/deployment-safety.test.ts",
     "lint": "npx biome format --write",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

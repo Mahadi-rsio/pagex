@@ -68,9 +68,9 @@ This document provides a comprehensive overview of the PageX platform architectu
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                      Background Processing                              │   │
 │  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐    │   │
-│  │  │  Sync Worker     │  │  Build Worker    │  │  GC Worker       │    │   │
-│  │  │  (Usage Sync)    │  │  (Cloud Builds)   │  │  (Garbage Collect)│    │   │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘    │   │
+│  │  │  Build Worker    │  │  GC Worker       │    │   │
+│  │  │  (Cloud Builds)   │  │  (Garbage Collect)│    │   │
+│  │  └─────────────────┘  └─────────────────┘    │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -120,26 +120,35 @@ Client Request
                   │
                   ▼
 ┌─────────────────────────────────────┐
-│  Redis Cache                         │
-│  6. HGET "site_files:{site_id}"      │
-│     "{path}" → blob_hash              │
-│     (e.g., "index.html" → "a1b2c3...")│
+│  Caddy (Blob Server)                 │
+│  6. Resolve active deployment        │
+│     (L1 → Redis "active_deployment:  │
+│     {site_id}" → PostgreSQL,         │
+│     requires manifest_key)           │
+└─────────────────┬───────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────┐
+│  Manifest (MinIO/Redis)              │
+│  7. Load manifest:{deployment_id}    │
+│     (L1 → coalesced → Redis → MinIO) │
+│     files["{path}"] → blob_hash      │
 └─────────────────┬───────────────────┘
                   │
                   ▼
 ┌─────────────────────────────────────┐
 │  MinIO (S3-compatible)                │
-│  7. GET "blobs/{blob_hash}"           │
+│  8. GET "blobs/{blob_hash}"           │
 │     → Stream file content             │
 └─────────────────┬───────────────────┘
                   │
                   ▼
 ┌─────────────────────────────────────┐
 │  Caddy Response                       │
-│  8. Stream to client with:            │
+│  9. Stream to client with:            │
 │     - Proper Content-Type             │
 │     - Cache-Control headers           │
-│     - Vary: Accept-Encoding          │
+│     - Vary: Accept / Accept-Encoding  │
 │     - Range request support           │
 └─────────────────────────────────────┘
 ```
@@ -534,8 +543,8 @@ Client Request
 
 **Implementation:**
 - SHA256 hash of file content used as blob key
-- Path-to-hash mapping stored in Redis (`site_files:{site_id}`)
-- Blob tree entries stored in PostgreSQL for persistence
+- Path-to-hash mapping stored in a per-deployment manifest (MinIO `manifests/{deploymentID}.json`, cached in Redis `manifest:{deploymentId}`)
+- Blob tree entries stored in PostgreSQL for persistence/control-plane only
 
 ### Multi-Tenant Routing
 
@@ -551,7 +560,7 @@ Client Request
 - Caddy plugin extracts subdomain from Host header
 - Redis lookup maps subdomain to site_id
 - PostgreSQL fallback for cache misses
-- Path resolution through site-specific blob tree
+- Path resolution through the active deployment's manifest
 
 ### Automatic Optimization
 
@@ -580,10 +589,10 @@ Client Request
 - **Consistency:** Uses same serving mechanism as regular deployments
 
 **Implementation:**
-- Each deployment has its own blob tree in PostgreSQL
-- Active deployment marked with `is_active = true`
+- Each deployment has its own blob tree in PostgreSQL (control plane)
+- Active deployment marked with `is_active = true`; manifest persisted before activation
 - Rollback flips `is_active` flags between deployments
-- Redis `site_files:{site_id}` hash rebuilt from target deployment's tree
+- Manifest for the target deployment is reused from `generateAndPersistManifest`; `site_version:{site_id}` is incremented so Caddy's version-scoped L1 cache points at the new active deployment
 - Cache invalidation ensures clients get new content
 
 ### Background Processing
@@ -597,7 +606,7 @@ Client Request
 - **Flexibility:** Support for delayed and recurring jobs
 
 **Implementation:**
-- **Sync Worker:** Flushes Redis usage counters to PostgreSQL
+- **Analytics:** Blob-server flushes Redis usage counters to PostgreSQL `site_daily_stats`
 - **Build Worker:** Processes cloud build jobs
 - **Queue:** Jobs stored in Redis with priority and retry logic
 

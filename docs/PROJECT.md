@@ -6,7 +6,7 @@
 
 ## What This Is
 
-**Cloudisy** is a multi-tenant static-site hosting platform. Each user project ("page") is served as a subdomain (`project.cloudisy.com`) from content-addressed MinIO blobs via a custom Caddy plugin and a Redis `site_files` path→hash map. Zero per-tenant Caddy config changes are needed.
+**Cloudisy** is a multi-tenant static-site hosting platform. Each user project ("page") is served as a subdomain (`project.cloudisy.com`) from content-addressed MinIO blobs via a custom Caddy plugin and deployment manifests. Zero per-tenant Caddy config changes are needed.
 
 ---
 
@@ -18,7 +18,7 @@
 | HTTP Framework | Express 5 |
 | Database | PostgreSQL via Drizzle ORM |
 | Queue / Worker | BullMQ (backed by Redis DB2) |
-| Cache | Redis (ioredis) — DB0 site/site_files, DB3 tokens/usage |
+| Cache | Redis (ioredis) — DB0 site/active_deployment/manifest, DB3 tokens/usage |
 | Object Storage | MinIO (S3-compatible) — external |
 | Auth | JOSE — JWKS from next-web (`AUTH_JWKS_URL`) |
 | Build containers | Docker — `cloudisy-build-env:latest` (pnpm, 1 GB RAM) |
@@ -35,7 +35,7 @@
 pagex/
 ├── src/
 │   ├── app.ts / server.ts
-│   ├── constants/index.ts          # DEPLOYMENT_RETENTION=10, SITE_FILES_TTL, COMMIT_TIMEOUT, …
+│   ├── constants/index.ts          # DEPLOYMENT_RETENTION=10, MANIFEST_REDIS_TTL_SECONDS, COMMIT_TIMEOUT, …
 │   ├── middleware/auth.middleware.ts
 │   ├── infrastructure/
 │   │   ├── db/db.ts, schema.ts     # sites, pages, stats, builds, deployments, blobs, blob_tree_entries
@@ -43,15 +43,14 @@ pagex/
 │   │   └── storage/minio.ts        # blobObjectKey, objectMetaForPath, deleteBlobObjects
 │   ├── controllers/                # page, deploy, build, deployment
 │   ├── services/
-│   │   ├── deploy.service.ts       # prepare / presign / commitBlobTreeDeploy / Redis map / variants
+│   │   ├── deploy.service.ts       # prepare / presign / commitBlobTreeDeploy / manifest / variants
 │   │   ├── deployment.service.ts   # listDeployments, rollbackToDeployment
 │   │   ├── gc.service.ts           # runDeploymentGC (fire-and-forget)
 │   │   ├── build.service.ts
-│   │   ├── page.service.ts
-│   │   └── sync.service.ts
+│   │   └── page.service.ts
 │   ├── queue/
-│   │   ├── jobs/build.queue.ts, sync.job.ts
-│   │   └── workers/build.worker.ts, sync.worker.ts
+│   │   ├── jobs/build.queue.ts
+│   │   └── workers/build.worker.ts
 │   ├── routes/                     # page, deploy, build, deployment (+ /health)
 │   ├── scripts/migrate-to-blob-serving.ts
 │   ├── utils/
@@ -75,7 +74,6 @@ pagex/
 |---------|------|-----------|
 | API server | `dist/src/server.js` | `express_app` |
 | Build worker | `dist/src/queue/workers/build.worker.js` | `build_w` |
-| Sync worker | `dist/src/queue/workers/sync.worker.js` | `sync_w` |
 | Migrations | `drizzle-kit migrate` | `drizzle_migrator` (one-shot) |
 
 No upload worker — CLI blob deploy replaced ZIP uploads.
@@ -92,11 +90,10 @@ No upload worker — CLI blob deploy replaced ZIP uploads.
 | `DEPLOY_TOKEN_TTL_SECONDS` | 10 min | `deploy:token:*` |
 | `PRESIGN_EXPIRY_SECONDS` | 10 min | Presigned PUT lifetime |
 | `DEPLOYMENT_RETENTION` | **10** | Keep this many **inactive** deployments; GC deletes the rest |
-| `SITE_FILES_TTL_SECONDS` | 24 h | Redis `site_files:{siteId}` |
+| `MANIFEST_REDIS_TTL_SECONDS` | 24 h | Redis `manifest:{deploymentId}` |
 | `COMMIT_TIMEOUT_MS` | 5 min | `/api/deploy/commit` only |
 | `BLOB_IO_CONCURRENCY` | 10 | `p-limit` for blob I/O + GC |
 | `RATE_LIMIT_*` | 100 / 15 min | Express rate limit |
-| `SYNC_CRON_PATTERN` | every 2 min | Usage flush |
 
 ---
 
@@ -118,7 +115,7 @@ Every protected endpoint uses `authMiddleware`:
   tenant/{site_id}/...    ← LEGACY — removed by migrate-to-blob-serving.ts
 ```
 
-Caddy never reads `tenant/`. It resolves `site_files:{site_id}` → hash → `blobs/{hash}`.
+Caddy never reads `tenant/`. It resolves path → hash via the active deployment manifest → `blobs/{hash}`.
 
 Blob objects may carry `Content-Type` and `Content-Encoding` (`br` / `gzip`) for precompressed variants.
 
@@ -129,7 +126,9 @@ Blob objects may carry `Content-Type` and `Content-Encoding` (`br` / `gzip`) for
 | Key pattern | Redis DB | Type | TTL | Written by |
 |------------|----------|------|-----|-----------|
 | `site:{subdomain}` | 0 | String (UUID) | short | Caddy / invalidated by API |
-| `site_files:{site_id}` | 0 | Hash path→SHA256 | 24 h | deploy / rollback / cleared on page delete |
+| `active_deployment:{site_id}` | 0 | String (deployment ID) | short | deploy / rollback |
+| `manifest:{deploymentId}` | 0 | JSON (`files` map path→SHA256) | 24 h | generateAndPersistManifest |
+| `site_version:{site_id}` | 0 | Integer (INCR on deploy/rollback) | — | API (cache-bust Caddy L1) |
 | `deploy:token:{token}` | 3 | JSON | 10 min | prepareDeploy |
 | `requests:{domain}` | 3* | counter | — | Caddy |
 | `bandwidth:{domain}` | 3* | counter | — | Caddy |
@@ -142,4 +141,4 @@ Blob objects may carry `Content-Type` and `Content-Encoding` (`br` / `gzip`) for
 
 ## Deploy / GC flow (one-liner)
 
-`commitBlobTreeDeploy` / rollback → activate + rebuild `site_files` + invalidate `site:` → **fire-and-forget** `runDeploymentGC(pageId, siteId)` (never await).
+`commitBlobTreeDeploy` / rollback → `generateAndPersistManifest` → activate → `INCR site_version:{site_id}` + invalidate `site:` → **fire-and-forget** `runDeploymentGC(pageId, siteId)` (never await).

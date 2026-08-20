@@ -10,7 +10,6 @@ import {
     generateAndPersistManifest,
     incrementSiteVersion,
     setActiveDeploymentCache,
-    buildManifestFromBlobTree,
 } from './manifest.service.js'
 import { runDeploymentGC } from './gc.service.js'
 
@@ -47,14 +46,13 @@ export async function rollbackToDeployment(deploymentId: string, tenantId: strin
         throw new HttpError('Deployment has no blob tree; cannot rollback', 400)
     }
 
-    if (!dep.manifestKey) {
-        await generateAndPersistManifest(dep.id)
-    }
+    // Safety: a deployment is only eligible to become active once its immutable
+    // manifest exists and is valid. generateAndPersistManifest throws on any
+    // generation/storage failure, so the current active deployment stays live.
+    const { manifest } = await generateAndPersistManifest(dep.id)
 
     await activateDeployment(dep.page_id, dep.id)
     await setActiveDeploymentCache(dep.site_id, dep.id)
-
-    const manifest = await buildManifestFromBlobTree(dep.id)
     await cacheManifestInRedis(dep.id, manifest)
     await incrementSiteVersion(dep.site_id)
 

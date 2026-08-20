@@ -8,7 +8,7 @@ It is designed for production efficiency, security, and scalability, featuring b
 
 ## Key Features
 
-- **Multi-Tenant Blob-Direct Serving:** Route `tenant-a.cloudisy.com` → resolve `site_id` via Redis/PostgreSQL → look up the file in a Redis path map (`site_files:{site_id}`) → stream `blobs/{sha256}` from MinIO. Zero per-tenant Caddy config.
+- **Multi-Tenant Blob-Direct Serving:** Route `tenant-a.cloudisy.com` → resolve `site_id` via Redis/PostgreSQL → resolve the active deployment's manifest (MinIO `manifests/{deploymentID}.json`, cached in Redis `manifest:{deploymentId}`) → stream `blobs/{sha256}` from MinIO. Zero per-tenant Caddy config.
 - **Pre-compressed & WebP variants:** Automatically selects `.br`, `.gz`, or `.webp` variants from the path map based on `Accept-Encoding` / `Accept`.
 - **Universal S3 Compatibility:** Works with any S3-compliant storage by configuring custom endpoints and region settings.
 - **Memory-Efficient Streaming:** Streams files directly from S3 to the client. Never loads large files entirely into Caddy's memory.
@@ -62,7 +62,7 @@ Add the `static_s3` directive inside your site block.
             # PostgreSQL DSN for site_id and blob-tree lookups. Falls back to DATABASE_URL. (Optional)
             db_dsn "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
             
-            # Redis URL for site:, site_version:, and site_files: keys. Falls back to REDIS_URL. (Optional)
+            # Redis URL for site:, site_version:, active_deployment:, and manifest: keys. Falls back to REDIS_URL. (Optional)
             redis_url "redis://localhost:6379/0"
 
             # --- Routing & Paths ---
@@ -109,7 +109,7 @@ Add the `static_s3` directive inside your site block.
 
 ## Multi-Tenant Mode
 
-When `base_domain` is set, the plugin switches into **multi-tenant blob-direct mode**. Subdomains resolve to a `site_id`; file paths resolve through a Redis hash to content-addressed blobs.
+When `base_domain` is set, the plugin switches into **multi-tenant blob-direct mode**. Subdomains resolve to a `site_id`; file paths resolve through the active deployment's **manifest** (a path→sha256 map) to content-addressed blobs. The runtime never reads `blob_tree_entries` from PostgreSQL.
 
 ### How a request is handled
 
@@ -120,24 +120,39 @@ tenant-a.cloudisy.com/about
   1. Extract subdomain → "tenant-a"
         │
         ▼
-  2. Redis GET "site:tenant-a"
-       hit  → site_id
-       miss → evict LRU "{subdomain}:__version__"
-             → PostgreSQL lookup → cache (TTL 5 min)
-             NOT_FOUND → 404
+  2. Resolve site_id:
+       LRU "{subdomain}:__site__" → hit
+       miss → Redis GET "site:tenant-a"
+              → PostgreSQL lookup → cache (TTL 5 min)
+              NOT_FOUND → negative-cache 10s → 404
         │
         ▼
-  2b. Resolve deploy version:
+  3. Resolve active deployment:
+       LRU "{site_id}:__active__:{version}" → hit
+       miss → Redis GET "active_deployment:{site_id}"
+             → PostgreSQL SELECT ... WHERE is_active AND
+               manifest_key IS NOT NULL → cache
+             (deployments without a valid manifest are never served)
+        │
+        ▼
+  4. Resolve deploy version (for LRU scoping):
        LRU "{subdomain}:__version__" → hit
        miss → Redis GET "site_version:{site_id}" (default "0")
-             → cache in LRU with cache_ttl
         │
         ▼
-  3. Resolve path candidates:
+  5. Load manifest:
+       LRU "manifest:{deployment_id}" (TTL 1h) → hit
+       miss → single-flight coalesced load:
+              Redis GET "manifest:{deployment_id}" (TTL 24h)
+              miss → MinIO GET "manifests/{deployment_id}.json"
+              missing/corrupt manifest → negative-cache 10s → 500
+        │
+        ▼
+  6. Resolve path candidates:
        /about → ["about/index.html", "about.html", "about"]
         │
         ▼
-  4. For each candidate, pick best variant via HGET site_files:{site_id}:
+  7. For each candidate, pick best variant from manifest.files:
        Accept-Encoding: br   → try "{candidate}.br", else "{candidate}"
        Accept-Encoding: gzip → try "{candidate}.gz", else "{candidate}"
        Accept: image/webp    → try "{candidate}.webp" (image paths), else raw
@@ -145,20 +160,13 @@ tenant-a.cloudisy.com/about
        first hit → proceed; all miss → next candidate
         │
         ▼
-  5. All candidates miss → SPA fallback:
+  8. All candidates miss → SPA fallback:
        path has fallback_except extension → 404
-       otherwise → HGET "index.html" (same Accept-Encoding logic)
+       otherwise → "index.html" (same Accept-Encoding logic)
                    miss → 404
         │
         ▼
-  6. site_files:{site_id} key missing (TTL expired):
-       SELECT path, blob_hash FROM blob_tree_entries
-         JOIN deployments ON ... WHERE is_active AND site_id = $1
-       Serve current request from PostgreSQL result immediately
-       Rebuild Redis hash (DEL → HSET → EXPIRE 86400) in background
-        │
-        ▼
-  7. Stream from MinIO: blobs/{blob_hash}
+  9. Stream from MinIO: blobs/{blob_hash}
 ```
 
 ### PostgreSQL schema
@@ -173,12 +181,13 @@ CREATE TABLE sites (
 
 CREATE INDEX idx_sites_subdomain ON sites(subdomain);
 
--- Active deployment + file tree (used when site_files Redis key expires)
+-- Active deployment (runtime resolves this to find its manifest)
 CREATE TABLE deployments (
-    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    site_id    UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
-    is_active  BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    site_id      UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    is_active    BOOLEAN NOT NULL DEFAULT false,
+    manifest_key TEXT,           -- NOT NULL for anything Caddy will serve
+    created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE blob_tree_entries (
@@ -195,22 +204,27 @@ All tenants share one content-addressed blob store. There is no `tenant/{site_id
 
 ```
 my-bucket/
-└── blobs/
-    ├── a1b2c3d4e5f6...   ← SHA256 of file content
-    ├── 9f8e7d6c5b4a...
-    └── ...
+├── blobs/
+│   ├── a1b2c3d4e5f6...   ← SHA256 of file content
+│   ├── 9f8e7d6c5b4a...
+│   └── ...
+└── manifests/
+    └── {deployment_id}.json   ← path→sha256 map (+ .br/.gz/.webp variants)
 ```
+
+The manifest is generated by the API at commit/rollback time (`generateAndPersistManifest`) and stored **before** the deployment is activated. Caddy loads it through its L1 cache → Redis → MinIO (single-flight); it is never rebuilt from PostgreSQL at runtime.
 
 ### Redis keys
 
 | Scenario | Redis key | Value | TTL |
 |---|---|---|---|
 | Tenant found | `site:tenant-a` | site UUID | 5 min |
-| Tenant not found | `site:ghost` | `NOT_FOUND` | 1 min |
+| Tenant not found | `site:ghost` | `NOT_FOUND` | 10 s |
 | Deploy version | `site_version:{site_id}` | integer counter (string) | none (permanent) |
-| File path map | `site_files:{site_id}` | Hash: field=`path` (incl. `.br`/`.gz`/`.webp`), value=`blob_hash` | 24 h (rebuilt from PG on miss) |
+| Active deployment | `active_deployment:{site_id}` | deployment UUID | none (flushed by API on deploy/rollback) |
+| Deployment manifest | `manifest:{deployment_id}` | JSON path→hash map | 24 h |
 
-Path lookups use **HGET per candidate only** — never `HGETALL`.
+Path lookups read from the manifest `files` map in memory — no Redis hash, no `HGETALL`.
 
 `site_version:{site_id}` has no TTL. The backend should `INCR` it after every successful commit/rollback, and `DEL` it when the site is deleted.
 
@@ -218,25 +232,28 @@ Path lookups use **HGET per candidate only** — never `HGETALL`.
 
 | Key | Value | TTL |
 |---|---|---|
+| `{subdomain}:__site__` | site UUID | 5 min |
+| `{site_id}:__active__:{version}` | deployment UUID | 5 min |
 | `{subdomain}:__version__` | deploy version string | `cache_ttl` |
+| `manifest:{deployment_id}` | parsed manifest | 1 h |
 | `{subdomain}:{version}:{path}:{br\|gz\|webp\|raw}` | blob hash | `cache_ttl` |
 | `{subdomain}:{version}:{path}:404` | `NOT_FOUND` | 1 min |
 | `{subdomain}:{version}:{path}:{encoding}:body` | file body and/or metadata | `cache_ttl` |
 
 On LRU path hit: skip all Redis calls, go straight to MinIO (or serve cached body).
 
-The version key is **not** version-scoped. All other keys include the version so a deploy bump makes old entries unreachable without scanning the LRU.
+The version key is **not** version-scoped. All other keys include the version so a deploy bump makes old entries unreachable without scanning the LRU. The active-deployment key is version-scoped too (`{site_id}:__active__:{version}`), so a version bump also invalidates the previously-cached active deployment lookup.
 
 ### Browser Cache-Control
 
 | File | Cache-Control |
 |---|---|
 | `.html` | `no-cache` |
-| `.js`, `.css`, `.woff`, `.woff2` | `max-age=31536000, immutable` |
-| `.webp`, `.png`, `.jpg`, `.gif`, `.svg` | `max-age=604800` |
+| `.js`, `.css`, `.woff`, `.woff2`, `.ttf`, `.otf`, `.mjs`, `.wasm` | `max-age=31536000, immutable` |
+| `.webp`, `.png`, `.jpg`, `.gif`, `.svg`, `.avif`, `.webm`, `.mp3`, `.mp4`, `.ico`, `.pdf` | `max-age=604800` |
 | everything else | `max-age=3600` |
 
-Content-Type is inferred from the original file path (`.br`/`.gz` stripped). Never from the blob key. `Vary: Accept-Encoding` is set when serving br/gz variants.
+Content-Type is inferred from the original file path (`.br`/`.gz` stripped). Never from the blob key. `Vary: Accept-Encoding` is set when serving br/gz variants; `Vary: Accept` is set when a `.webp` variant was negotiated via the `Accept` header.
 
 ### Cache invalidation on deploy
 
@@ -245,16 +262,19 @@ Deploy / rollback succeeds
       ↓
 Backend: INCR site_version:{site_id}  →  "8"
 Backend: DEL site:{subdomain}
-Backend: DEL site_files:{site_id}     (optional; rebuilt on miss)
+Backend: SET active_deployment:{site_id} <new deployment UUID>
+Backend: SET manifest:{deployment_id} <manifest JSON> (TTL 24h)
       ↓
 Next request hits Caddy:
   Redis GET site:mysite → miss
-  → evict LRU "mysite:__version__" only
+  → evict LRU "mysite:__site__" only
   → PostgreSQL lookup → site_id → cache site:mysite
   → Redis GET site_version:{site_id} → "8"
   → LRU store "mysite:__version__" = "8"
-  → subsequent lookups use "mysite:8:..."
-  → old "mysite:7:*" keys are never looked up again
+  → active-deployment LRU (scoped to "8") misses → fresh lookup
+  → manifest for the new deployment is served from Redis/MinIO
+  → subsequent lookups use "mysite:8:..." and "site:8:..."
+  → old "mysite:7:*" / "site:7:*" keys are never looked up again
   → naturally evicted by LRU capacity or TTL
 ```
 
@@ -273,10 +293,9 @@ redis-cli DEL site:tenant-a
 # After deploy / rollback (backend should do this)
 redis-cli INCR site_version:{site_id}
 redis-cli DEL site:tenant-a
-redis-cli DEL site_files:{site_id}
 
 # On site delete
-redis-cli DEL site:tenant-a site_files:{site_id} site_version:{site_id}
+redis-cli DEL site:tenant-a active_deployment:{site_id} site_version:{site_id}
 ```
 
 ### Environment variables (multi-tenant)

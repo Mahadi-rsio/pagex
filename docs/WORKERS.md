@@ -7,11 +7,12 @@
 | Queue name constant | Queue name string | Worker file | Job interface |
 |--------------------|------------------|-------------|--------------|
 | `CLOUDISY_CLOUD_BUILDS_QUEUE` | `"cloudisy-cloud-builds"` | `build.worker.ts` | `CloudBuildJob` |
-| `SYNC_QUEUE` | `"SYNC_QUEUE"` | `sync.worker.ts` | (no data) |
 
 All workers share BullMQ `connection` from `src/infrastructure/cache/redis.ts` (Redis **DB2**).
 
 ZIP **upload worker was removed**. CLI deploys use `/api/deploy/prepare|presign|commit`.
+
+**Sync worker was removed.** Usage analytics are now flushed directly by the blob-server to `site_daily_stats` (via Redis `stats:*` keys) — no BullMQ cron.
 
 ---
 
@@ -57,7 +58,7 @@ Step 4 — Validate + Deploy (90%)
   deployFromLocalDirectory(…)
     → expand Brotli/Gzip/WebP variants
     → store blobs/{sha256}
-    → commitBlobTreeDeploy → Redis site_files map
+    → commitBlobTreeDeploy (generates + persists manifest before activation)
     → fire-and-forget runDeploymentGC
 
 Step 5 — Finalize (100%)
@@ -75,19 +76,6 @@ Step 5 — Finalize (100%)
 
 ---
 
-## Sync Worker
-
-**File:** `src/queue/workers/sync.worker.ts`  
-**Schedule:** Every 2 minutes (`SYNC_CRON_PATTERN`)
-
-```
-For each domain with requests:* keys:
-  flush counters → pages.request / pages.bandwidth_usage
-  DEL requests / bandwidth / db_cache keys
-```
-
----
-
 ## Commit path (`commitBlobTreeDeploy`)
 
 **File:** `src/services/deploy.service.ts`
@@ -96,12 +84,13 @@ Shared by CLI commit and cloud builds:
 
 1. Insert `deployments` row (`is_active: false`)
 2. Insert `blob_tree_entries` (originals + `.br` / `.gz` / `.webp` variants)
-3. Activate deployment (flip `is_active`)
-4. `rebuildSiteFilesMap(siteId, deploymentId)` — Redis pipeline DEL → HSET → EXPIRE 24h
-5. `invalidateSiteCache(subdomain)` — DEL `site:{subdomain}`
-6. **Fire-and-forget** `runDeploymentGC(pageId, siteId)` — never await
+3. `generateAndPersistManifest(deploymentId)` — build + validate + store manifest JSON to MinIO `manifests/{deploymentId}.json` and Redis `manifest:{deploymentId}` (TTL 24h). **Throws on any failure — deployment stays inactive.**
+4. Activate deployment (flip `is_active`)
+5. `setActiveDeploymentCache` (Redis `active_deployment:{site_id}`) + `incrementSiteVersion` (`INCR site_version:{site_id}`)
+6. `invalidateSiteCache(subdomain)` — DEL `site:{subdomain}`
+7. **Fire-and-forget** `runDeploymentGC(pageId, siteId)` — never await
 
-No MinIO `tenant/` copy. Caddy serves `blobs/{hash}` via the Redis map.
+No MinIO `tenant/` copy. Caddy resolves subdomain → site_id → active deployment → manifest → `blobs/{hash}`.
 
 ---
 
@@ -110,10 +99,11 @@ No MinIO `tenant/` copy. Caddy serves `blobs/{hash}` via the Redis map.
 **File:** `src/services/deployment.service.ts`
 
 1. Load deployment (tenant-scoped); require blob tree
-2. Activate target deployment
-3. Rebuild `site_files:{site_id}`
-4. Invalidate `site:{subdomain}`
-5. Fire-and-forget `runDeploymentGC`
+2. `generateAndPersistManifest(deploymentId)` — reuses the manifest (throws on failure → no activation)
+3. Activate target deployment
+4. `setActiveDeploymentCache` + `cacheManifestInRedis` + `incrementSiteVersion`
+5. Invalidate `site:{subdomain}`
+6. Fire-and-forget `runDeploymentGC`
 
 ---
 

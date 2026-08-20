@@ -8,8 +8,6 @@ export const DEPLOY_TOKEN_TTL_SECONDS = 10 * 60
 export const PRESIGN_EXPIRY_SECONDS = 10 * 60
 /** Keep this many recent deployments per page */
 export const DEPLOYMENT_RETENTION = 10
-/** Redis TTL for site_files:{siteId} path→blob map (24 hours) — legacy; runtime uses manifest:{deploymentId} */
-export const SITE_FILES_TTL_SECONDS = 24 * 60 * 60
 /** Redis TTL for manifest:{deploymentId} cached manifest JSON (24 hours) */
 export const MANIFEST_REDIS_TTL_SECONDS = 24 * 60 * 60
 /** Current deployment manifest schema version */
@@ -23,5 +21,3 @@ export const BLOB_IO_CONCURRENCY = 10
 
 export const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
 export const RATE_LIMIT_MAX = 100
-
-export const SYNC_CRON_PATTERN = '0 */2 * * * *'

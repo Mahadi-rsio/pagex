@@ -158,7 +158,7 @@ Always use helpers from `src/infrastructure/storage/minio.ts`:
 - `minioClient` / `SHARED_BUCKET` — raw client + env bucket (never hardcode the name)
 
 **Key layout:**
-- Live serving: `blobs/{sha256}` only (via Redis `site_files` map)
+- Live serving: `blobs/{sha256}` only (path→hash resolved via the active deployment manifest)
 - Legacy `tenant/{siteId}/` — do not write; one-off purge via `migrate-to-blob-serving.ts`
 
 ---

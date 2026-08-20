@@ -21,7 +21,7 @@ INDEX: idx_sites_subdomain ON (subdomain)
 ---
 
 ### `pages`
-Tenant project metadata. `site_id` keys Redis `site_files:{site_id}`.
+Tenant project metadata. `site_id` keys the Redis `active_deployment:{site_id}` / `site_version:{site_id}` values.
 
 ```sql
 id               UUID     PRIMARY KEY
@@ -149,14 +149,15 @@ npm run migrate   # drizzle-kit migrate (also on compose up)
 
 | Key pattern | DB | Type | TTL | Written by | Read by |
 |------------|----|------|-----|-----------|---------|
-| `site:{subdomain}` | 0 | String (UUID) | short | Caddy / API invalidation | Caddy |
-| `site_files:{site_id}` | 0 | Hash `path → sha256` | 24 h | deploy / rollback | Caddy |
+| `site:{subdomain}` | 0 | String (UUID) | 5 m | Caddy / API invalidation | Caddy |
+| `active_deployment:{site_id}` | 0 | String (deployment UUID) | — | deploy / rollback | Caddy |
+| `site_version:{site_id}` | 0 | Integer | — | deploy / rollback (`INCR`) | Caddy |
+| `manifest:{deployment_id}` | 0 | JSON manifest | 24 h | deploy / rollback | Caddy (L1 → Redis → MinIO) |
 | `deploy:token:{token}` | 3 | JSON | 10 min | prepareDeploy | presign / commit |
-| `requests:{domain}` | 3 | counter | — | Caddy | sync / page.service |
-| `bandwidth:{domain}` | 3 | counter | — | Caddy | sync / page.service |
+| `stats:*` | 3 | counters | — | blob-server analytics | blob-server flush → `site_daily_stats` |
 | `db_cache:{domain}` | 3 | JSON | 15 min | page.service | page.service |
 
-**BullMQ (DB2):** queue `cloudisy-cloud-builds`, `SYNC_QUEUE`.
+**BullMQ (DB2):** queue `cloudisy-cloud-builds`.
 
 ---
 

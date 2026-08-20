@@ -69,11 +69,11 @@ func TestValidateDeploymentManifest(t *testing.T) {
 
 func TestManifestLRUCache(t *testing.T) {
 	c := NewManifestLRUCache(2)
-	data := []byte(`{"version":1}`)
-	c.Set("manifest:dep-1", data, manifestRedisTTL)
+	dep := &DeploymentManifest{Version: 1, DeploymentID: "dep-1", Files: map[string]string{"index.html": "abc"}}
+	c.Set("manifest:dep-1", dep, manifestRedisTTL)
 	got, ok := c.Get("manifest:dep-1")
-	if !ok || string(got) != string(data) {
-		t.Fatalf("expected manifest cache hit")
+	if !ok || got == nil || got.DeploymentID != "dep-1" || got.Files["index.html"] != "abc" {
+		t.Fatalf("expected manifest cache hit, got %+v (ok=%v)", got, ok)
 	}
 }
 
