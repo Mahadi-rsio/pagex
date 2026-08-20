@@ -25,6 +25,12 @@ import {
     SITE_FILES_TTL_SECONDS,
 } from '../constants/index.js'
 import { runDeploymentGC } from './gc.service.js'
+import {
+    cacheManifestInRedis,
+    generateAndPersistManifest,
+    incrementSiteVersion,
+    setActiveDeploymentCache,
+} from './manifest.service.js'
 import { validateManifest } from '../utils/deployment-validator.js'
 import { validateFile } from '../utils/file-validator.js'
 import { HttpError } from '../utils/http-error.js'
@@ -587,8 +593,13 @@ export async function commitBlobTreeDeploy(opts: {
         }))
     )
 
+    // Finalize immutable manifest BEFORE activation (deployment not live until manifest persists)
+    const { manifest } = await generateAndPersistManifest(newDep.id)
+
     await activateDeployment(opts.pageId, newDep.id)
-    await rebuildSiteFilesMap(opts.siteId, newDep.id)
+    await setActiveDeploymentCache(opts.siteId, newDep.id)
+    await cacheManifestInRedis(newDep.id, manifest)
+    await incrementSiteVersion(opts.siteId)
     await invalidateSiteCache(opts.subdomain)
 
     const [updated] = await db

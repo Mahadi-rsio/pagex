@@ -46,13 +46,6 @@ temp/
 # Docker
 .docker/
 
-# Nix
-.nix-channels
-.nix-defexpr
-.nix-profile
-.nix-store
-/nix/
-
 # Local development
 local.env
 *.local

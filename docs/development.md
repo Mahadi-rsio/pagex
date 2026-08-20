@@ -4,46 +4,22 @@ This guide covers development setup, workflow, and best practices for the PageX 
 
 ## 🎯 Quick Start
 
-### Option 1: Nix (Recommended)
-
-Nix provides reproducible development environments with all dependencies pre-configured.
+Install dependencies locally, or use Docker Compose for the full stack.
 
 ```bash
-# Install Nix (if not already installed)
-curl -L https://nixos.org/nix/install | sh
-
-# Enable flakes
-echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
-
-# Enter development environment
-nix develop
-
-# Or enter a service-specific shell
-nix develop -c api        # API service
-nix develop -c blob-server # Blob server
-nix develop -c console     # Console service
-```
-
-### Option 2: Manual Setup
-
-If you prefer not to use Nix, you can set up dependencies manually.
-
-```bash
-# Install Node.js 18+
+# Node.js 18+ (nvm recommended)
 nvm install 20
 nvm use 20
 
-# Install pnpm
+# pnpm
 npm install -g pnpm
 
-# Install Go 1.20+
-# Download from https://go.dev/dl/
+# Go 1.20+ — https://go.dev/dl/
 
-# Install Docker
-# Download from https://docs.docker.com/get-docker/
+# Docker — https://docs.docker.com/get-docker/
 
-# Install PostgreSQL and Redis
-# Or use Docker Compose (recommended)
+# Install workspace dependencies
+pnpm install
 ```
 
 ## 🛠️ Development Workflow
@@ -161,64 +137,6 @@ pnpm run db:generate
 
 **Development URL:** http://localhost:3080
 
-## 🔧 Nix Development
-
-### Nix Flakes
-
-This project uses Nix flakes for reproducible development environments.
-
-```bash
-# Show available flakes
-nix flake show
-
-# Build all outputs
-nix build
-
-# Build specific output
-nix build .#api
-nix build .#blob-server
-nix build .#console
-
-# Enter development shell
-nix develop
-
-# Enter service-specific shell
-nix develop -c api
-```
-
-### Nix Shell Customization
-
-Each service has its own `flake.nix` with service-specific dependencies:
-
-- **API:** Node.js, PostgreSQL, Redis, Docker
-- **Blob Server:** Go, Caddy, GCC
-- **Console:** Node.js, PostgreSQL, Redis
-
-### Adding New Dependencies with Nix
-
-To add a new dependency to a service:
-
-1. Edit the service's `flake.nix`
-2. Add the package to `buildInputs`
-3. Rebuild the development shell
-
-Example for API service:
-
-```nix
-# services/api/flake.nix
-devShells.default = pkgs.mkShell {
-  buildInputs = with pkgs; [
-    nodejs_20
-    pnpm
-    postgresql
-    redis
-    # Add new dependency here
-    new-package
-  ];
-  # ...
-};
-```
-
 ## 🐳 Docker Development
 
 ### Docker Compose
@@ -327,67 +245,33 @@ services/
 
 1. Create service directory: `mkdir services/new-service`
 2. Create `package.json` with service name
-3. Create `flake.nix` for Nix development environment
-4. Create `Dockerfile` for Docker builds
-5. Add to root `package.json` workspaces
-6. Update Docker Compose configuration
+3. Create `Dockerfile` for Docker builds
+4. Add the service path to `pnpm-workspace.yaml` if needed
+5. Update Docker Compose configuration
 
 ## 🚀 Build System
 
-### Turbo Build
-
-This project uses Turbo for optimized incremental builds.
+Root scripts use **pnpm workspaces** (`pnpm -r`) to run tasks across packages.
 
 ```bash
-# Build all packages
-turbo run build
+# Build all packages and services
+pnpm run build
 
-# Run dev servers
-turbo run dev
+# Run dev servers (packages with a dev script)
+pnpm run dev
 
-# Run tests
-turbo run test
+# Run tests where defined
+pnpm run test
 
-# Run lint
-turbo run lint
+# Run linters where defined
+pnpm run lint
 
-# Clean build cache
-turbo run clean
+# Build or test a single service
+pnpm run build:api
+pnpm run test:blob-server
 ```
 
-### Turbo Configuration
-
-The `turbo.json` file defines the build pipeline:
-
-```json
-{
-  "pipeline": {
-    "build": {
-      "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**"]
-    },
-    "dev": {
-      "cache": false,
-      "persistent": true
-    }
-  }
-}
-```
-
-### Cache Management
-
-Turbo caches build outputs for faster rebuilds:
-
-```bash
-# Enable caching (default)
-turbo run build
-
-# Disable caching for a task
-turbo run build --no-cache
-
-# Clean cache
-turbo run clean
-```
+Workspace packages build in dependency order when you run `pnpm -r build` from the repo root. Shared packages (`@pagex/types`, `@pagex/utils`, `@pagex/config`) compile with TypeScript before services that depend on them.
 
 ## 🔄 Hot Reloading
 
@@ -554,7 +438,6 @@ services/api/
 │   └── server.ts        # Server entrypoint
 ├── drizzle/            # Database migrations
 ├── Dockerfile          # Docker configuration
-├── flake.nix           # Nix configuration
 └── package.json        # Package configuration
 ```
 
@@ -572,7 +455,7 @@ services/blob-server/
 ├── go.mod              # Go module
 ├── go.sum              # Go dependencies
 ├── Dockerfile          # Docker configuration
-└── flake.nix           # Nix configuration
+└── package.json        # Package scripts
 ```
 
 ### Console Service
@@ -589,7 +472,7 @@ services/console/
 ├── public/            # Static assets
 ├── drizzle/           # Database migrations
 ├── Dockerfile          # Docker configuration
-└── flake.nix           # Nix configuration
+└── package.json        # Package configuration
 ```
 
 ## 🎨 Code Style
@@ -785,45 +668,7 @@ lsof -i :3000
 kill -9 <PID>
 ```
 
-### Nix Troubleshooting
-
-**Issue: Nix command not found**
-
-```bash
-# Check Nix installation
-which nix
-
-# Reinstall Nix
-curl -L https://nixos.org/nix/install | sh
-```
-
-**Issue: Flakes not enabled**
-
-```bash
-# Enable flakes
-echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
-
-# Restart Nix daemon
-nix-daemon --restart
-```
-
-**Issue: Nix build failed**
-
-```bash
-# Clean Nix store
-nix-collect-garbage -d
-
-# Retry build
-nix build
-```
-
 ## 📚 Learning Resources
-
-### Nix
-
-- [Nix Manual](https://nixos.org/manual/nix/stable/)
-- [Nix Flakes](https://nixos.wiki/wiki/Flakes)
-- [Nixpkgs](https://github.com/NixOS/nixpkgs)
 
 ### Docker
 

@@ -2,7 +2,6 @@ node_modules
 .npm
 .next
 out
-.turbo
 dist
 Dockerfile
 .dockerignore

@@ -59,6 +59,8 @@ type StaticPlugin struct {
 	s3Client        *s3.Client
 	s3PresignClient *s3.PresignClient
 	cache           *LRUCache
+	manifestCache   *ManifestLRUCache
+	metrics         *ServeMetrics
 	cacheTTL        time.Duration
 	maxCacheSize    int64
 	presignLifetime time.Duration
@@ -201,6 +203,11 @@ func (p *StaticPlugin) Provision(ctx caddy.Context) error {
 			size = 1000 // Default cache capacity
 		}
 		p.cache = NewLRUCache(size, p.maxCacheSize)
+	}
+
+	if p.BaseDomain != "" {
+		p.manifestCache = NewManifestLRUCache(256)
+		p.metrics = &ServeMetrics{}
 	}
 
 	// Initialize S3 Presign Client if redirect and presign are enabled

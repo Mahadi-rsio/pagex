@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, notInArray } from 'drizzle-orm'
 import { DEPLOYMENT_RETENTION } from '../constants/index.js'
 import { db } from '../infrastructure/db/db.js'
 import { blobTreeEntries, blobs, deployments } from '../infrastructure/db/schema.js'
-import { deleteBlobObjects } from '../infrastructure/storage/minio.js'
+import { deleteBlobObjects, deleteManifestObjects } from '../infrastructure/storage/minio.js'
 
 /**
  * Background GC: drop inactive deployments beyond retention and delete
@@ -65,6 +65,12 @@ export async function runDeploymentGC(pageId: string, _siteId: string): Promise<
         for (const hash of deletedHashes) {
             bytesFreed += sizeByHash.get(hash) ?? 0
         }
+    }
+
+    // Step 4b — delete immutable manifests for permanently removed deployments
+    const deletedManifests = await deleteManifestObjects(expiredIds)
+    if (deletedManifests.length > 0) {
+        console.log(`GC: removed ${deletedManifests.length} manifest object(s)`)
     }
 
     // Step 5 — DB transaction: tree → deployments → blobs (successful MinIO only)

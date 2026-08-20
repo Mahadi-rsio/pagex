@@ -113,6 +113,12 @@ export const deployments = pgTable("deployments", {
     file_count: integer("file_count").notNull(),
     filesDeployed: integer('files_deployed'),
     filesReused: integer('files_reused'),
+    /** MinIO object key for the immutable runtime manifest (null until finalized). */
+    manifestKey: text('manifest_key'),
+    manifestVersion: integer('manifest_version'),
+    manifestSize: integer('manifest_size'),
+    /** SHA-256 hex of the serialized manifest bytes. */
+    manifestHash: text('manifest_hash'),
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

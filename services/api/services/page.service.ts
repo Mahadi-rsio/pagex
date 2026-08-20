@@ -12,6 +12,7 @@ import { customAlphabet } from 'nanoid'
 import { redis } from '../infrastructure/cache/redis.js'
 import { TOP_LEVEL_DOMAIN } from '../constants/index.js'
 import { clearSiteFilesMap } from './deploy.service.js'
+import { clearDeploymentRuntimeCache } from './manifest.service.js'
 import type { CreatePageInput } from '../validators/page.validator.js'
 
 export async function createPage(
@@ -249,6 +250,8 @@ export async function deletePage(pageId: string, tenantId: string) {
 
     await redis.del(`site:${site?.subdomain ?? page.project_name}`)
     await clearSiteFilesMap(page.site_id)
+    await clearDeploymentRuntimeCache(page.site_id)
+    await redis.del(`site_version:${page.site_id}`)
 
     // 3. Clear usage caches
     await redis.del(`db_cache:${page.domain}`)

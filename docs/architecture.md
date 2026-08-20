@@ -815,7 +815,6 @@ See [Development Guide](development.md) for detailed file structure and conventi
 
 ## 📚 References
 
-- [Nix Documentation](https://nixos.org/manual/)
 - [Docker Documentation](https://docs.docker.com/)
 - [Express Documentation](https://expressjs.com/)
 - [Next.js Documentation](https://nextjs.org/docs)

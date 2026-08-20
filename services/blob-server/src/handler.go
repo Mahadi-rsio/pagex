@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -20,9 +19,6 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/redis/go-redis/v9"
 )
-
-// siteFilesRebuilding dedupes concurrent site_files:{site_id} Redis rebuilds.
-var siteFilesRebuilding sync.Map // siteID → struct{}
 
 // blobResolution holds the result of resolving a request path to a content-addressed blob.
 type blobResolution struct {
@@ -94,8 +90,8 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 			}
 		}
 
-		// 3–6. Resolve path via site_files Redis map (with PG rebuild fallback)
-		resolved, err := p.resolveBlob(r.Context(), siteID, subdomain, urlPath, r)
+		// 3–6. Resolve path via deployment manifest (L1 → Redis → MinIO)
+		resolved, err := p.resolveBlob(r.Context(), siteID, urlPath, r)
 		if err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
@@ -257,121 +253,45 @@ func (p *StaticPlugin) resolveSiteVersion(ctx context.Context, subdomain, siteID
 	return version
 }
 
-// resolveBlob maps a request URL path to a blob hash via the site_files Redis
-// hash, with PostgreSQL rebuild fallback when the Redis key has expired.
-func (p *StaticPlugin) resolveBlob(ctx context.Context, siteID, subdomain, urlPath string, r *http.Request) (*blobResolution, error) {
+// resolveBlob maps a request URL path to a blob hash via the active deployment manifest.
+// Runtime path never queries blob_tree_entries.
+func (p *StaticPlugin) resolveBlob(ctx context.Context, siteID, urlPath string, r *http.Request) (*blobResolution, error) {
+	deploymentID, err := p.resolveActiveDeploymentID(ctx, siteID)
+	if err != nil {
+		return nil, err
+	}
+	if deploymentID == "" {
+		return nil, nil
+	}
+
+	manifest, err := p.loadManifest(ctx, deploymentID)
+	if err != nil {
+		return nil, err
+	}
+
 	candidates := pathCandidates(urlPath)
 	ae := r.Header.Get("Accept-Encoding")
 	accept := r.Header.Get("Accept")
 	encKey := requestEncodingKey(r, urlPath)
 
-	// Try Redis site_files map first
-	if p.redisClient != nil {
-		filesKey := "site_files:" + siteID
-		exists, err := p.redisClient.Exists(ctx, filesKey).Result()
-		if err != nil {
-			exists = 0
-		}
-
-		if exists > 0 {
-			for _, candidate := range candidates {
-				if res := p.pickVariantRedis(ctx, filesKey, candidate, ae, accept); res != nil {
-					res.EncodingKey = encKey
-					return res, nil
-				}
-			}
-			// SPA fallback
-			if p.Fallback != "" && !p.isExcludedFromFallback(urlPath) {
-				if res := p.pickVariantRedis(ctx, filesKey, "index.html", ae, accept); res != nil {
-					res.EncodingKey = encKey
-					return res, nil
-				}
-			}
-			return nil, nil
-		}
-	}
-
-	// site_files key missing (or no Redis) → PostgreSQL fallback
-	entries, err := p.loadBlobTreeFromDB(ctx, siteID)
-	if err != nil {
-		return nil, err
-	}
-	if len(entries) == 0 {
-		return nil, nil
-	}
-
-	// Rebuild Redis in background; serve this request from PG result immediately
-	p.scheduleSiteFilesRebuild(siteID, entries)
-
 	for _, candidate := range candidates {
-		if res := pickVariantMap(entries, candidate, ae, accept); res != nil {
+		if res := pickVariantMap(manifest.Files, candidate, ae, accept); res != nil {
 			res.EncodingKey = encKey
 			return res, nil
 		}
 	}
+
 	if p.Fallback != "" && !p.isExcludedFromFallback(urlPath) {
-		if res := pickVariantMap(entries, "index.html", ae, accept); res != nil {
+		if res := pickVariantMap(manifest.Files, "index.html", ae, accept); res != nil {
 			res.EncodingKey = encKey
 			return res, nil
 		}
 	}
+
 	return nil, nil
 }
 
-// pickVariantRedis selects the best pre-compressed / format variant via HGET only.
-func (p *StaticPlugin) pickVariantRedis(ctx context.Context, filesKey, candidate, acceptEncoding, accept string) *blobResolution {
-	if isImagePath(candidate) && acceptsWebP(accept) {
-		if hash, ok := p.hget(ctx, filesKey, candidate+".webp"); ok {
-			return &blobResolution{
-				BlobHash: hash,
-				FilePath: candidate + ".webp",
-			}
-		}
-	}
-
-	if acceptsToken(acceptEncoding, "br") {
-		if hash, ok := p.hget(ctx, filesKey, candidate+".br"); ok {
-			return &blobResolution{
-				BlobHash:        hash,
-				ContentEncoding: "br",
-				FilePath:        candidate,
-			}
-		}
-		if hash, ok := p.hget(ctx, filesKey, candidate); ok {
-			return &blobResolution{BlobHash: hash, FilePath: candidate}
-		}
-		return nil
-	}
-
-	if acceptsToken(acceptEncoding, "gzip") {
-		if hash, ok := p.hget(ctx, filesKey, candidate+".gz"); ok {
-			return &blobResolution{
-				BlobHash:        hash,
-				ContentEncoding: "gzip",
-				FilePath:        candidate,
-			}
-		}
-		if hash, ok := p.hget(ctx, filesKey, candidate); ok {
-			return &blobResolution{BlobHash: hash, FilePath: candidate}
-		}
-		return nil
-	}
-
-	if hash, ok := p.hget(ctx, filesKey, candidate); ok {
-		return &blobResolution{BlobHash: hash, FilePath: candidate}
-	}
-	return nil
-}
-
-func (p *StaticPlugin) hget(ctx context.Context, key, field string) (string, bool) {
-	val, err := p.redisClient.HGet(ctx, key, field).Result()
-	if err != nil || val == "" {
-		return "", false
-	}
-	return val, true
-}
-
-// pickVariantMap is the in-memory equivalent of pickVariantRedis for PG results.
+// pickVariantMap selects the best pre-compressed / format variant from a manifest file map.
 func pickVariantMap(entries map[string]string, candidate, acceptEncoding, accept string) *blobResolution {
 	if isImagePath(candidate) && acceptsWebP(accept) {
 		if hash, ok := entries[candidate+".webp"]; ok && hash != "" {
@@ -405,67 +325,6 @@ func pickVariantMap(entries map[string]string, candidate, acceptEncoding, accept
 	return nil
 }
 
-func (p *StaticPlugin) loadBlobTreeFromDB(ctx context.Context, siteID string) (map[string]string, error) {
-	if p.db == nil {
-		return nil, fmt.Errorf("static_s3: multi-tenant mode requires db_dsn")
-	}
-
-	rows, err := p.db.QueryContext(ctx, `
-		SELECT bte.path, bte.blob_hash
-		FROM blob_tree_entries bte
-		INNER JOIN deployments d ON d.id = bte.deployment_id
-		WHERE d.is_active = true AND d.site_id = $1
-	`, siteID)
-	if err != nil {
-		return nil, fmt.Errorf("static_s3: blob tree query error: %w", err)
-	}
-	defer rows.Close()
-
-	entries := make(map[string]string)
-	for rows.Next() {
-		var path, hash string
-		if err := rows.Scan(&path, &hash); err != nil {
-			return nil, fmt.Errorf("static_s3: blob tree scan error: %w", err)
-		}
-		entries[path] = hash
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("static_s3: blob tree rows error: %w", err)
-	}
-	return entries, nil
-}
-
-func (p *StaticPlugin) scheduleSiteFilesRebuild(siteID string, entries map[string]string) {
-	if p.redisClient == nil {
-		return
-	}
-	if _, loaded := siteFilesRebuilding.LoadOrStore(siteID, struct{}{}); loaded {
-		return
-	}
-	go func() {
-		defer siteFilesRebuilding.Delete(siteID)
-		p.rebuildSiteFiles(siteID, entries)
-	}()
-}
-
-func (p *StaticPlugin) rebuildSiteFiles(siteID string, entries map[string]string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	key := "site_files:" + siteID
-	pipe := p.redisClient.Pipeline()
-	pipe.Del(ctx, key)
-	if len(entries) > 0 {
-		fields := make([]interface{}, 0, len(entries)*2)
-		for path, hash := range entries {
-			fields = append(fields, path, hash)
-		}
-		pipe.HSet(ctx, key, fields...)
-		pipe.Expire(ctx, key, 24*time.Hour)
-	}
-	_, _ = pipe.Exec(ctx)
-}
-
 // serveBlob streams blobs/{hash} from MinIO with correct Content-Type / encoding headers.
 // bodyKey is the version-scoped LRU key for file content/metadata ("…:body").
 // cachedItem, when non-nil, is a warm path-resolution entry (blob hash / encoding / path).
@@ -486,6 +345,9 @@ func (p *StaticPlugin) serveBlob(w http.ResponseWriter, r *http.Request, blobHas
 	// Prefer body cache for content / conditional metadata
 	if p.cacheTTL > 0 && p.cache != nil {
 		if item, ok := p.cache.Get(bodyKey); ok {
+			if p.metrics != nil {
+				p.metrics.BlobCacheHit++
+			}
 			if !item.Exists {
 				return fmt.Errorf("cached 404 for blob: %s", blobHash)
 			}
@@ -526,9 +388,16 @@ func (p *StaticPlugin) serveBlob(w http.ResponseWriter, r *http.Request, blobHas
 			return p.redirectToS3(w, r, s3Key)
 		}
 		if cachedItem.Content != nil {
+			if p.metrics != nil {
+				p.metrics.BlobCacheHit++
+			}
 			applyBlobHeaders(w.Header())
 			return p.serveCachedContent(w, r, cachedItem)
 		}
+	}
+
+	if p.metrics != nil {
+		p.metrics.BlobCacheMiss++
 	}
 
 	if p.RedirectToS3 {

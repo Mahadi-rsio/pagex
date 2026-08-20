@@ -33,6 +33,11 @@ export function blobObjectKey(hash: string): string {
     return `blobs/${hash}`
 }
 
+/** Immutable deployment manifest object key */
+export function manifestObjectKey(deploymentId: string): string {
+    return `manifests/${deploymentId}.manifest.json`
+}
+
 const BLOB_DELETE_BATCH_SIZE = 100
 const BLOB_DELETE_CONCURRENCY = 10
 
@@ -80,6 +85,88 @@ export async function deleteBlobObjects(hashes: string[]): Promise<string[]> {
                 } catch (err) {
                     console.error('MinIO batch delete failed:', err)
                     // Do not mark any hash in this batch as succeeded
+                }
+            })
+        )
+    )
+
+    return succeeded
+}
+
+/**
+ * Store an immutable deployment manifest in MinIO.
+ * Returns false if the object already exists (idempotent finalize).
+ */
+export async function putManifestIfAbsent(
+    deploymentId: string,
+    body: Buffer,
+    contentHash: string
+): Promise<'created' | 'exists'> {
+    const key = manifestObjectKey(deploymentId)
+    try {
+        await minioClient.statObject(SHARED_BUCKET, key)
+        return 'exists'
+    } catch {
+        // object missing — proceed
+    }
+
+    await minioClient.putObject(SHARED_BUCKET, key, body, body.length, {
+        'Content-Type': 'application/json',
+        'X-Manifest-Hash': contentHash,
+    })
+    return 'created'
+}
+
+/** Read a deployment manifest from MinIO. */
+export async function getManifestObject(deploymentId: string): Promise<Buffer> {
+    const stream = await minioClient.getObject(
+        SHARED_BUCKET,
+        manifestObjectKey(deploymentId)
+    )
+    const chunks: Buffer[] = []
+    for await (const chunk of stream) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    }
+    return Buffer.concat(chunks)
+}
+
+/** Delete manifest objects for permanently removed deployments. */
+export async function deleteManifestObjects(deploymentIds: string[]): Promise<string[]> {
+    if (deploymentIds.length === 0) return []
+
+    const batches: string[][] = []
+    for (let i = 0; i < deploymentIds.length; i += BLOB_DELETE_BATCH_SIZE) {
+        batches.push(deploymentIds.slice(i, i + BLOB_DELETE_BATCH_SIZE))
+    }
+
+    const limit = pLimit(BLOB_DELETE_CONCURRENCY)
+    const succeeded: string[] = []
+
+    await Promise.all(
+        batches.map((batch) =>
+            limit(async () => {
+                try {
+                    const keys = batch.map((id) => manifestObjectKey(id))
+                    const results = await minioClient.removeObjects(SHARED_BUCKET, keys)
+                    const failedKeys = new Set<string>()
+                    for (const result of results ?? []) {
+                        const err =
+                            result && typeof result === 'object' && 'Error' in result && result.Error
+                                ? result.Error
+                                : (result as { Key?: string; Message?: string } | null | undefined)
+                        const key = err?.Key
+                        if (key) {
+                            failedKeys.add(key)
+                            console.error(`MinIO manifest delete failed for ${key}: ${err?.Message ?? 'unknown'}`)
+                        }
+                    }
+                    for (const id of batch) {
+                        if (!failedKeys.has(manifestObjectKey(id))) {
+                            succeeded.push(id)
+                        }
+                    }
+                } catch (err) {
+                    console.error('MinIO manifest batch delete failed:', err)
                 }
             })
         )

@@ -33,10 +33,6 @@ Dockerfile
 docker-compose*.yml
 .dockerignore
 
-# Nix
-.nix-profile
-/nix
-
 # Environment files
 .env
 .env.local
