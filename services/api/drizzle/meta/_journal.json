@@ -36,6 +36,13 @@
       "when": 1784811144827,
       "tag": "0004_short_lady_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787214280197,
+      "tag": "0005_deployment_manifest",
+      "breakpoints": true
     }
   ]
 }

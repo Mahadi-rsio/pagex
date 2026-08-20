@@ -102,6 +102,7 @@ services:
     build:
       context: ./services/api
       target: migrator
+    pull_policy: build
     env_file: .env
     environment:
       - DRIZZLE_CONNECTION=${DIRECT_DB:-postgresql://postgres:postgres@db:5432/pagex}
@@ -120,6 +121,7 @@ services:
       context: ./services/console
       dockerfile: Dockerfile
       target: migrator
+    pull_policy: build
     env_file: .env
     environment:
       - DATABASE_URL=${NEXT_WEB_DATABASE_URL:-${DIRECT_DB:-postgresql://postgres:postgres@db:5432/pagex}}
