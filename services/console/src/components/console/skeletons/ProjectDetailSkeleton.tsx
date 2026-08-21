@@ -7,7 +7,7 @@ export function ProjectDetailSkeleton() {
     return (
         <div className="p-6 space-y-6 animate-in fade-in-50">
             <div className="flex items-center gap-3">
-                <Skeleton className="size-10 rounded-xl" />
+                <Skeleton className="size-10 rounded-none" />
                 <div className="space-y-2">
                     <Skeleton className="h-6 w-48" />
                     <Skeleton className="h-4 w-64" />
@@ -25,8 +25,8 @@ export function ProjectDetailSkeleton() {
                 <Card className="lg:col-span-2">
                     <CardContent className="p-6 space-y-4">
                         <Skeleton className="h-6 w-36" />
-                        <Skeleton className="h-24 w-full rounded-lg" />
-                        <Skeleton className="h-32 w-full rounded-lg" />
+                        <Skeleton className="h-24 w-full rounded-none" />
+                        <Skeleton className="h-32 w-full rounded-none" />
                     </CardContent>
                 </Card>
                 <Card>

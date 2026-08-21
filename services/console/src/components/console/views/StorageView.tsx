@@ -29,7 +29,7 @@ export function StorageView() {
             <Card>
                 <CardHeader>
                     <div className="flex items-center gap-3">
-                        <div className="size-10 rounded-lg bg-muted flex items-center justify-center">
+                        <div className="size-10 rounded-none bg-muted flex items-center justify-center">
                             <HardDrive className="size-5 text-foreground" />
                         </div>
                         <div>

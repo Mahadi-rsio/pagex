@@ -30,7 +30,7 @@ export function BillingView() {
                 <Card>
                     <CardContent className="p-6 space-y-4">
                         <div className="flex items-center justify-between">
-                            <div className="size-10 rounded-lg bg-muted flex items-center justify-center">
+                            <div className="size-10 rounded-none bg-muted flex items-center justify-center">
                                 <Wallet className="size-5 text-foreground" />
                             </div>
                             <Button
@@ -59,7 +59,7 @@ export function BillingView() {
                 <Card>
                     <CardContent className="p-6 space-y-4">
                         <div className="flex items-center justify-between">
-                            <div className="size-10 rounded-lg bg-muted flex items-center justify-center">
+                            <div className="size-10 rounded-none bg-muted flex items-center justify-center">
                                 <CreditCard className="size-5 text-foreground" />
                             </div>
                             <Button

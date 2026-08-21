@@ -17,10 +17,28 @@ import {
 } from "better-auth/plugins";
 import { sendEmail, getOtpEmailHtml } from "./email";
 
+/** Atomic INCR with TTL set only on first create (rate-limit windows). */
+const INCREMENT_SCRIPT = `
+local value = redis.call("INCR", KEYS[1])
+if value == 1 then
+  redis.call("EXPIRE", KEYS[1], ARGV[1])
+end
+return value
+`;
+
 const redisSecondaryStorage = {
     get: async (key: string) => {
         await ensureRedis();
         return await redis.get(key);
+    },
+    getAndDelete: async (key: string) => {
+        await ensureRedis();
+        return await redis.getdel(key);
+    },
+    increment: async (key: string, ttl: number) => {
+        await ensureRedis();
+        const value = await redis.eval(INCREMENT_SCRIPT, 1, key, String(ttl));
+        return Number(value);
     },
     set: async (key: string, value: string, ttl?: number) => {
         await ensureRedis();

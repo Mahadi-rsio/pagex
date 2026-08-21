@@ -1,21 +1,21 @@
 "use client";
 
+import {
+    CreditCard,
+    FolderKanban,
+    HardDrive,
+    LayoutDashboard,
+    LogOut,
+    Settings,
+    Zap,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAppStore } from "@/store/useAppStore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { getInitials } from "@/lib/utils";
-import {
-    LayoutDashboard,
-    FolderKanban,
-    CreditCard,
-    Settings,
-    HardDrive,
-    LogOut,
-    Zap,
-} from "lucide-react";
 import { authClient } from "@/modules/auth/utils/auth-client";
+import { useAppStore } from "@/store/useAppStore";
 
 interface MobileSidebarProps {
     onClose: () => void;
@@ -44,19 +44,27 @@ export function MobileSidebar({ onClose }: MobileSidebarProps) {
     };
 
     return (
-        <div className="flex h-full flex-col bg-background p-4">
-            {/* Header */}
-            <div className="flex items-center gap-2 pb-4 border-b border-border/50">
-                <div className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                    <Zap className="size-4" />
+        <div className="relative flex h-full flex-col bg-background">
+            <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 bg-grid opacity-30"
+            />
+
+            <div className="relative flex items-center gap-2.5 border-b border-border px-4 py-4">
+                <div className="flex size-8 items-center justify-center border border-border bg-foreground text-background">
+                    <Zap className="size-3.5" strokeWidth={2.25} />
                 </div>
-                <span className="text-base font-bold tracking-tight text-foreground">
-                    Console
-                </span>
+                <div className="flex flex-col leading-none">
+                    <span className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+                        Cloudisy
+                    </span>
+                    <span className="text-sm font-bold tracking-tight text-foreground">
+                        Console
+                    </span>
+                </div>
             </div>
 
-            {/* Nav */}
-            <nav className="flex-1 py-4">
+            <nav className="relative flex-1 overflow-y-auto px-3 py-4">
                 <ul className="space-y-1">
                     {navItems.map(({ label, href, icon: Icon }) => {
                         const isActive =
@@ -67,10 +75,10 @@ export function MobileSidebar({ onClose }: MobileSidebarProps) {
                                 <Link
                                     href={href}
                                     onClick={onClose}
-                                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                                    className={`flex w-full items-center gap-3 rounded-none border px-3 py-2.5 text-sm transition-colors ${
                                         isActive
-                                            ? "bg-primary/10 font-medium text-primary"
-                                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                                            ? "border-border bg-foreground text-background"
+                                            : "border-transparent text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground"
                                     }`}
                                 >
                                     <Icon className="size-4 shrink-0" />
@@ -82,21 +90,24 @@ export function MobileSidebar({ onClose }: MobileSidebarProps) {
                 </ul>
             </nav>
 
-            {/* User Footer */}
             {user && (
-                <div className="border-t border-border/50 pt-4 space-y-3">
+                <div className="relative space-y-3 border-t border-border px-4 py-4">
                     <div className="flex items-center gap-3">
-                        <Avatar className="size-9">
-                            <AvatarImage src={user.avatarUrl} alt={user.name} />
-                            <AvatarFallback className="bg-muted text-xs font-semibold text-foreground">
+                        <Avatar className="size-9 rounded-none border border-border">
+                            <AvatarImage
+                                src={user.avatarUrl}
+                                alt={user.name}
+                                className="rounded-none"
+                            />
+                            <AvatarFallback className="rounded-none bg-muted text-xs font-semibold text-foreground">
                                 {getInitials(user.name)}
                             </AvatarFallback>
                         </Avatar>
                         <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-foreground">
+                            <p className="truncate text-sm font-semibold tracking-tight text-foreground">
                                 {user.name}
                             </p>
-                            <p className="truncate text-xs text-muted-foreground">
+                            <p className="truncate font-mono text-[11px] text-muted-foreground">
                                 {user.email}
                             </p>
                         </div>
@@ -104,7 +115,7 @@ export function MobileSidebar({ onClose }: MobileSidebarProps) {
 
                     <Button
                         variant="outline"
-                        className="w-full justify-start gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        className="w-full justify-start gap-2 rounded-none text-destructive hover:bg-destructive/10 hover:text-destructive"
                         onClick={handleSignOut}
                     >
                         <LogOut className="size-4" />

@@ -19,7 +19,7 @@ export function ProjectsSkeleton() {
                     <Card key={i} className="p-4 space-y-4">
                         <div className="flex items-start justify-between gap-3">
                             <div className="flex items-center gap-3">
-                                <Skeleton className="size-10 rounded-lg" />
+                                <Skeleton className="size-10 rounded-none" />
                                 <div className="space-y-1.5">
                                     <Skeleton className="h-4 w-28" />
                                     <Skeleton className="h-3 w-20" />

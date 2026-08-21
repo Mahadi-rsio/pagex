@@ -1,18 +1,14 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { ArrowRight, Monitor, Shield, Zap } from "lucide-react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { navigateToDeviceApprove } from "@/lib/navigate";
+import { Suspense, useEffect, useState } from "react";
+import PageSpinner from "@/components/pageloader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from "@/components/ui/card";
-import { Loader2, Monitor, ArrowRight, Shield } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { navigateToDeviceApprove } from "@/lib/navigate";
 import { cn } from "@/lib/utils";
 
 function DeviceAuthContent() {
@@ -53,9 +49,6 @@ function DeviceAuthContent() {
         setIsLoading(true);
         setError("");
         try {
-            // The deviceAuthorizationClient plugin exposes GET /device to verify
-            // a user_code. We call the endpoint directly to avoid TypeScript inference
-            // issues with the ReactAuthClient generic type.
             const res = await fetch(
                 `/api/auth/device?user_code=${encodeURIComponent(formattedCode)}`,
                 { method: "GET", credentials: "include" },
@@ -79,39 +72,58 @@ function DeviceAuthContent() {
     };
 
     return (
-        <div className="min-h-screen bg-background flex items-center justify-center p-4">
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[color:var(--glow)]/10 rounded-full blur-[120px]" />
-            </div>
+        <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
+            <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 bg-grid opacity-40"
+            />
+            <div
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-foreground/20 to-transparent"
+            />
 
-            <Card className="relative w-full max-w-md border border-border shadow-soft">
-                <div className="absolute top-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-[color:var(--glow)]/60 to-transparent rounded-full" />
-
-                <CardHeader className="pb-2 pt-8 px-8">
-                    <div className="flex items-center gap-3 mb-5">
-                        <div className="w-10 h-10 rounded-xl bg-[color:var(--glow)]/10 border border-[color:var(--glow)]/20 flex items-center justify-center">
-                            <Monitor className="w-5 h-5 text-[color:var(--glow)]" />
-                        </div>
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-mono tracking-widest uppercase">
-                            <Shield className="w-3 h-3" />
-                            Secure Authorization
+            <div className="surface-hud edge-frame relative z-10 w-full max-w-md p-6 sm:p-8">
+                <div className="relative z-[1] space-y-6">
+                    <div className="flex items-center justify-between">
+                        <Link
+                            href="/"
+                            className="flex items-center gap-2 transition-opacity hover:opacity-80"
+                        >
+                            <div className="flex size-8 items-center justify-center border border-border bg-foreground text-background">
+                                <Zap className="size-3.5" strokeWidth={2.25} />
+                            </div>
+                            <span className="text-sm font-bold tracking-tight">
+                                Console
+                            </span>
+                        </Link>
+                        <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                            <Shield className="size-3" />
+                            Secure Auth
                         </div>
                     </div>
-                    <CardTitle className="text-2xl font-semibold tracking-tight">
-                        Connect a Device
-                    </CardTitle>
-                    <CardDescription className="text-sm mt-1.5 leading-relaxed">
-                        Enter the code displayed on the device you want to
-                        authorize.
-                    </CardDescription>
-                </CardHeader>
 
-                <CardContent className="px-8 pb-8 pt-4 space-y-4">
                     <div className="space-y-2">
-                        <label className="text-xs font-medium text-muted-foreground tracking-wider uppercase">
+                        <div className="flex size-10 items-center justify-center border border-border bg-muted/40">
+                            <Monitor className="size-5 text-foreground" />
+                        </div>
+                        <h1 className="text-2xl font-semibold tracking-tight">
+                            Connect a Device
+                        </h1>
+                        <p className="text-sm leading-relaxed text-muted-foreground">
+                            Enter the code displayed on the device you want to
+                            authorize.
+                        </p>
+                    </div>
+
+                    <div className="space-y-2">
+                        <label
+                            htmlFor="device-code"
+                            className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+                        >
                             Device Code
                         </label>
                         <Input
+                            id="device-code"
                             value={userCode}
                             onChange={handleInput}
                             onKeyDown={handleKeyDown}
@@ -119,14 +131,14 @@ function DeviceAuthContent() {
                             maxLength={9}
                             autoFocus
                             className={cn(
-                                "h-12 text-center text-xl font-mono tracking-[0.35em] rounded-xl",
-                                "focus-visible:ring-1 transition-all duration-200",
+                                "h-12 rounded-none text-center font-mono text-xl tracking-[0.35em]",
+                                "focus-visible:ring-1",
                                 error &&
                                     "border-destructive focus-visible:ring-destructive",
                             )}
                         />
                         {error && (
-                            <p className="text-xs text-destructive pt-0.5">
+                            <p className="pt-0.5 text-xs text-destructive">
                                 {error}
                             </p>
                         )}
@@ -138,39 +150,33 @@ function DeviceAuthContent() {
                         disabled={
                             isLoading || userCode.replace(/-/g, "").length < 8
                         }
-                        className="w-full h-11 rounded-xl font-medium text-sm tracking-wide disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
+                        className="h-11 w-full rounded-none text-sm font-medium tracking-wide disabled:cursor-not-allowed disabled:opacity-40"
                     >
                         {isLoading ? (
                             <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                <Spinner size="inline" className="mr-2" />
                                 Verifying…
                             </>
                         ) : (
                             <>
                                 <span>Continue</span>
-                                <ArrowRight className="w-4 h-4 ml-2" />
+                                <ArrowRight className="ml-2 size-4" />
                             </>
                         )}
                     </Button>
 
-                    <p className="text-center text-xs text-muted-foreground pt-1">
+                    <p className="text-center text-xs text-muted-foreground">
                         Only authorize devices you own or trust
                     </p>
-                </CardContent>
-            </Card>
+                </div>
+            </div>
         </div>
     );
 }
 
 export default function DeviceAuthorizationPage() {
     return (
-        <Suspense
-            fallback={
-                <div className="min-h-screen bg-background flex items-center justify-center">
-                    <Loader2 className="w-6 h-6 text-[color:var(--glow)] animate-spin" />
-                </div>
-            }
-        >
+        <Suspense fallback={<PageSpinner label="Loading" />}>
             <DeviceAuthContent />
         </Suspense>
     );

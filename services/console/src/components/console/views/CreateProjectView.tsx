@@ -6,6 +6,7 @@ import { useAppStore } from "@/store/useAppStore";
 import { navigateToProjectOverview } from "@/lib/navigate";
 import { apiClient, type BuildDoneEvent } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -26,7 +27,6 @@ import {
     Code2,
     Workflow,
     KeyRound,
-    Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -77,8 +77,7 @@ function LiveBuildTerminal({
     projectName,
     repoName,
     buildId,
-    onComplete,
-}: {
+    onComplete}: {
     projectName: string;
     repoName: string;
     buildId: string;
@@ -119,8 +118,7 @@ function LiveBuildTerminal({
                             `[error] ${event.message}`,
                         ]);
                         onCompleteRef.current();
-                    },
-                },
+                    }},
                 controller.signal,
             )
             .catch(() => {
@@ -144,7 +142,7 @@ function LiveBuildTerminal({
           : "Building";
 
     return (
-        <div className="scan-line overflow-hidden rounded-2xl border border-border bg-[#0a0a0a] font-mono text-xs leading-relaxed text-zinc-300 shadow-[0_32px_80px_-32px_oklch(0_0_0/0.75)]">
+        <div className="scan-line overflow-hidden rounded-none border border-border bg-[#0a0a0a] font-mono text-xs leading-relaxed text-zinc-300 shadow-[0_32px_80px_-32px_oklch(0_0_0/0.75)]">
             <div className="flex items-center justify-between border-b border-white/[0.06] bg-white/[0.03] px-4 py-3">
                 <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1.5">
@@ -204,8 +202,7 @@ function LiveBuildTerminal({
 
 function CopyButton({
     value,
-    label = "Copy",
-}: {
+    label = "Copy"}: {
     value: string;
     label?: string;
 }) {
@@ -246,7 +243,7 @@ function CopyButton({
 
 function CodeBlock({ code, copyLabel }: { code: string; copyLabel?: string }) {
     return (
-        <div className="overflow-hidden rounded-xl border border-border">
+        <div className="overflow-hidden rounded-none border border-border">
             <div className="flex items-center justify-between border-b border-border bg-muted/40 px-3 py-2">
                 <span className="text-xs text-muted-foreground">Workflow</span>
                 <CopyButton value={code} label={copyLabel ?? "Copy"} />
@@ -310,8 +307,7 @@ export function CreateProjectView() {
         try {
             const project = await createProject({
                 name,
-                status: "inactive",
-            });
+                status: "inactive"});
             setCreatedProjectId(project.id);
             setStep("deploy");
         } catch {
@@ -347,8 +343,7 @@ export function CreateProjectView() {
                 gitProvider: "github",
                 framework: "vite",
                 buildCommand: "npm run build",
-                outputDir: "dist",
-            });
+                outputDir: "dist"});
             setActiveBuildId(build.id);
         } catch (buildErr) {
             const message =
@@ -472,7 +467,7 @@ export function CreateProjectView() {
                         >
                             {isCreating ? (
                                 <>
-                                    <Loader2 className="size-4 animate-spin" />
+                                    <Spinner size="inline" />
                                     Creating project...
                                 </>
                             ) : (
@@ -510,7 +505,7 @@ export function CreateProjectView() {
                                         {activeBuildId && !isDeploying ? (
                                             <CheckCircle2 className="size-4 text-foreground" />
                                         ) : (
-                                            <Loader2 className="size-4 animate-spin text-foreground" />
+                                            <Spinner size="inline" />
                                         )}
                                         {activeBuildId && !isDeploying
                                             ? "Deployment complete"
@@ -522,7 +517,7 @@ export function CreateProjectView() {
                                 </CardHeader>
                                 <CardContent className="space-y-4 px-6 pb-6">
                                     {buildError && !activeBuildId ? (
-                                        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+                                        <div className="rounded-none border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
                                             {buildError}
                                         </div>
                                     ) : activeBuildId ? (
@@ -533,9 +528,9 @@ export function CreateProjectView() {
                                             onComplete={handleBuildComplete}
                                         />
                                     ) : (
-                                        <div className="flex h-64 items-center justify-center rounded-xl border border-border bg-[#0a0a0a]">
+                                        <div className="flex h-64 items-center justify-center rounded-none border border-border bg-[#0a0a0a]">
                                             <div className="flex items-center gap-2 text-zinc-500">
-                                                <Loader2 className="size-4 animate-spin" />
+                                                <Spinner size="inline" />
                                                 Starting build…
                                             </div>
                                         </div>
@@ -627,26 +622,23 @@ export function CreateProjectView() {
                                         title: "Log in",
                                         description:
                                             "Authenticate the CLI with your Evolo account.",
-                                        command: "evolo login",
-                                    },
+                                        command: "evolo login"},
                                     {
                                         step: "2",
                                         title: "Initialize",
                                         description:
                                             "Link this folder to your project.",
-                                        command: "evolo init",
-                                    },
+                                        command: "evolo init"},
                                     {
                                         step: "3",
                                         title: "Deploy",
                                         description:
                                             "Build and ship your app to production.",
-                                        command: "evolo deploy",
-                                    },
+                                        command: "evolo deploy"},
                                 ].map((item) => (
                                     <div
                                         key={item.step}
-                                        className="space-y-2 rounded-xl border border-border p-4"
+                                        className="space-y-2 rounded-none border border-border p-4"
                                     >
                                         <div className="flex items-start gap-3">
                                             <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
@@ -662,13 +654,13 @@ export function CreateProjectView() {
                                             </div>
                                             <CopyButton value={item.command} />
                                         </div>
-                                        <pre className="overflow-x-auto rounded-lg bg-[#0a0a0a] px-3 py-2.5 font-mono text-xs text-zinc-300">
+                                        <pre className="overflow-x-auto rounded-none bg-[#0a0a0a] px-3 py-2.5 font-mono text-xs text-zinc-300">
                                             <code>$ {item.command}</code>
                                         </pre>
                                     </div>
                                 ))}
 
-                                <div className="rounded-xl border border-border bg-muted/30 p-4">
+                                <div className="rounded-none border border-border bg-muted/30 p-4">
                                     <p className="mb-2 text-xs font-medium text-foreground">
                                         Tip
                                     </p>
@@ -723,7 +715,7 @@ export function CreateProjectView() {
                                     </div>
                                 </div>
 
-                                <div className="rounded-xl border border-border bg-muted/30 p-3">
+                                <div className="rounded-none border border-border bg-muted/30 p-3">
                                     <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
                                         <KeyRound className="size-3.5" />
                                         Deploy action

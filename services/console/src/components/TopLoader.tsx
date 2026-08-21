@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import PageSpinner from "@/components/pageloader";
 import { PAGE_LOADING_EVENT } from "@/lib/navigate";
 
 function isInternalNavigation(anchor: HTMLAnchorElement) {
@@ -73,9 +74,5 @@ export function TopLoader() {
 
     if (!loading) return null;
 
-    return (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-background">
-            <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-        </div>
-    );
+    return <PageSpinner label="Loading" />;
 }

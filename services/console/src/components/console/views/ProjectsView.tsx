@@ -83,7 +83,7 @@ function EmptyProjects({ onCreateClick }: { onCreateClick: () => void }) {
                 <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background" />
 
                 <div className="relative z-10">
-                    <div className="size-20 rounded-2xl bg-muted border border-border flex items-center justify-center mx-auto mb-6">
+                    <div className="size-20 rounded-none bg-muted border border-border flex items-center justify-center mx-auto mb-6">
                         <FolderKanban className="size-10 text-foreground" />
                     </div>
                     <h2 className="text-xl font-bold text-foreground mb-2">
@@ -176,14 +176,14 @@ export function ProjectsView() {
                             onClick={() =>
                                 navigateToProjectOverview(project.id)
                             }
-                            className="group text-left rounded-lg border border-border bg-card hover:border-primary/30 hover:shadow-lg transition-all duration-200 overflow-hidden cursor-pointer"
+                            className="group text-left rounded-none border border-border bg-card hover:border-primary/30 hover:shadow-lg transition-all duration-200 overflow-hidden cursor-pointer"
                         >
                             <div className="h-1.5 bg-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
 
                             <div className="p-5">
                                 <div className="flex items-start justify-between mb-4">
                                     <div className="flex items-center gap-3">
-                                        <div className="size-10 rounded-xl bg-muted border border-border flex items-center justify-center">
+                                        <div className="size-10 rounded-none bg-muted border border-border flex items-center justify-center">
                                             <FolderKanban className="size-5 text-foreground" />
                                         </div>
                                         <div className="min-w-0">
@@ -220,7 +220,7 @@ export function ProjectsView() {
                                 )}
 
                                 {project.domain && (
-                                    <div className="flex items-center gap-1.5 mb-4 py-2 px-3 rounded-lg bg-muted/50 border border-border/50">
+                                    <div className="flex items-center gap-1.5 mb-4 py-2 px-3 rounded-none bg-muted/50 border border-border/50">
                                         <ExternalLink className="size-3.5 text-muted-foreground shrink-0" />
                                         <span className="text-xs text-foreground font-medium truncate">
                                             {project.domain}

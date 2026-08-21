@@ -6,6 +6,8 @@ import { useAppStore } from "@/store/useAppStore";
 import type { Project } from "@/store/useAppStore";
 import { formatRelativeTime } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PageSpinner from "@/components/pageloader";
+import { Spinner } from "@/components/ui/spinner";
 import {
     Card,
     CardContent,
@@ -268,7 +270,7 @@ function LiveUsageSummary({ project }: { project: Project }) {
             <CardContent className="space-y-4 pt-0">
                 {loading && !usage ? (
                     <div className="flex items-center justify-center py-6 gap-2 text-sm text-muted-foreground">
-                        <Loader2 className="size-4 animate-spin" />
+                        <Spinner size="inline" />
                         Loading usage…
                     </div>
                 ) : !usage ? (
@@ -292,7 +294,7 @@ function LiveUsageSummary({ project }: { project: Project }) {
                             </div>
                             <Progress value={requestPct} className="h-1.5" />
                             <div className="grid grid-cols-2 gap-2">
-                                <div className="rounded-md border border-border bg-muted/30 px-2 py-1.5">
+                                <div className="rounded-none border border-border bg-muted/30 px-2 py-1.5">
                                     <p className="text-[10px] text-muted-foreground leading-none mb-0.5">
                                         DB (flushed)
                                     </p>
@@ -300,7 +302,7 @@ function LiveUsageSummary({ project }: { project: Project }) {
                                         {usage.requests.flushed.toLocaleString()}
                                     </p>
                                 </div>
-                                <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 px-2 py-1.5">
+                                <div className="rounded-none border border-emerald-500/20 bg-emerald-500/5 px-2 py-1.5">
                                     <p className="text-[10px] text-emerald-600 dark:text-emerald-400 leading-none mb-0.5">
                                         Redis (live)
                                     </p>
@@ -325,7 +327,7 @@ function LiveUsageSummary({ project }: { project: Project }) {
                             </div>
                             <Progress value={bandwidthPct} className="h-1.5" />
                             <div className="grid grid-cols-2 gap-2">
-                                <div className="rounded-md border border-border bg-muted/30 px-2 py-1.5">
+                                <div className="rounded-none border border-border bg-muted/30 px-2 py-1.5">
                                     <p className="text-[10px] text-muted-foreground leading-none mb-0.5">
                                         DB (flushed)
                                     </p>
@@ -335,7 +337,7 @@ function LiveUsageSummary({ project }: { project: Project }) {
                                         )}
                                     </p>
                                 </div>
-                                <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 px-2 py-1.5">
+                                <div className="rounded-none border border-emerald-500/20 bg-emerald-500/5 px-2 py-1.5">
                                     <p className="text-[10px] text-emerald-600 dark:text-emerald-400 leading-none mb-0.5">
                                         Redis (live)
                                     </p>
@@ -498,7 +500,7 @@ function OverviewTab({ project }: { project: Project }) {
                 <CardContent className="pt-0">
                     {deploymentsLoading ? (
                         <div className="flex items-center justify-center py-8">
-                            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                            <Spinner size="inline" />
                         </div>
                     ) : deployments.length === 0 ? (
                         <p className="py-8 text-center text-sm text-muted-foreground">
@@ -510,7 +512,7 @@ function OverviewTab({ project }: { project: Project }) {
                             {deployments.map((deploy) => (
                                 <div
                                     key={deploy.id}
-                                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/50 transition-colors"
+                                    className="flex items-center gap-3 p-2 rounded-none hover:bg-accent/50 transition-colors"
                                 >
                                     <div
                                         className={`size-2 rounded-full shrink-0 ${deploy.is_active ? "bg-foreground" : "bg-muted-foreground/40"}`}
@@ -714,7 +716,7 @@ function DomainsTab({ project }: { project: Project }) {
                 <CardContent>
                     {loading ? (
                         <div className="flex items-center justify-center py-10">
-                            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                            <Spinner size="default" />
                         </div>
                     ) : domains.length === 0 ? (
                         <p className="text-sm text-muted-foreground py-6 text-center">
@@ -725,7 +727,7 @@ function DomainsTab({ project }: { project: Project }) {
                             {domains.map((d) => (
                                 <div
                                     key={d.domain}
-                                    className="flex items-center gap-3 rounded-xl border border-border p-3"
+                                    className="flex items-center gap-3 rounded-none border border-border p-3"
                                 >
                                     <Globe className="size-4 shrink-0 text-muted-foreground" />
                                     <div className="min-w-0 flex-1">
@@ -768,7 +770,7 @@ function DomainsTab({ project }: { project: Project }) {
             <Sheet open={drawerOpen} onOpenChange={handleDrawerOpenChange}>
                 <SheetContent
                     side="bottom"
-                    className="mx-auto max-h-[85vh] max-w-lg gap-0 overflow-y-auto rounded-t-2xl p-0"
+                    className="mx-auto max-h-[85vh] max-w-lg gap-0 overflow-y-auto rounded-none p-0"
                 >
                     <SheetHeader className="border-b border-border p-4">
                         <SheetTitle>
@@ -830,9 +832,9 @@ function DomainsTab({ project }: { project: Project }) {
                     ) : (
                         <>
                             <div className="space-y-4 p-4">
-                                <div className="rounded-xl border border-border bg-muted/30 p-3">
+                                <div className="rounded-none border border-border bg-muted/30 p-3">
                                     <div className="flex items-center gap-2">
-                                        <Loader2 className="size-3.5 animate-spin text-foreground" />
+                                        <Spinner size="inline" />
                                         <p className="text-sm font-medium text-foreground">
                                             Waiting for DNS
                                         </p>
@@ -848,7 +850,7 @@ function DomainsTab({ project }: { project: Project }) {
                                     {dnsRecords.map((record) => (
                                         <div
                                             key={record.host}
-                                            className="space-y-2 rounded-xl border border-border p-3"
+                                            className="space-y-2 rounded-none border border-border p-3"
                                         >
                                             <div className="flex items-center justify-between gap-2">
                                                 <p className="truncate text-sm font-medium text-foreground">
@@ -866,7 +868,7 @@ function DomainsTab({ project }: { project: Project }) {
                                                     <p className="text-xs text-muted-foreground">
                                                         Name / Host
                                                     </p>
-                                                    <div className="flex items-center gap-1.5 rounded-lg bg-muted/50 px-2.5 py-2">
+                                                    <div className="flex items-center gap-1.5 rounded-none bg-muted/50 px-2.5 py-2">
                                                         <code className="min-w-0 flex-1 truncate text-xs text-foreground">
                                                             {record.host}
                                                         </code>
@@ -894,7 +896,7 @@ function DomainsTab({ project }: { project: Project }) {
                                                     <p className="text-xs text-muted-foreground">
                                                         Value / Target
                                                     </p>
-                                                    <div className="flex items-center gap-1.5 rounded-lg bg-muted/50 px-2.5 py-2">
+                                                    <div className="flex items-center gap-1.5 rounded-none bg-muted/50 px-2.5 py-2">
                                                         <code className="min-w-0 flex-1 truncate text-xs text-foreground">
                                                             {record.value}
                                                         </code>
@@ -1044,7 +1046,7 @@ function EnvTab() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                     {isAdding && (
-                        <div className="space-y-3 border border-border p-3 bg-muted/20 rounded-lg">
+                        <div className="space-y-3 border border-border p-3 bg-muted/20 rounded-none">
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div className="space-y-1.5">
                                     <Label htmlFor="env-key">Key</Label>
@@ -1088,7 +1090,7 @@ function EnvTab() {
                                                     .value as EnvVar["environment"],
                                             )
                                         }
-                                        className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        className="h-9 w-full rounded-none border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                     >
                                         <option value="All">All</option>
                                         <option value="Production">
@@ -1131,7 +1133,7 @@ function EnvTab() {
                             envVars.map((env) => (
                                 <div
                                     key={env.id}
-                                    className="flex items-center gap-3 p-3 border border-border rounded-lg"
+                                    className="flex items-center gap-3 p-3 border border-border rounded-none"
                                 >
                                     <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-2">
                                         <p className="text-sm font-mono font-medium text-foreground truncate">
@@ -1264,17 +1266,17 @@ function FilesTab({ project }: { project: Project }) {
                 </CardHeader>
                 <CardContent>
                     {loading ? (
-                        <div className="flex h-80 items-center justify-center rounded-xl border border-border bg-muted/20">
-                            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                        <div className="flex h-80 items-center justify-center rounded-none border border-border bg-muted/20">
+                            <Spinner size="default" />
                         </div>
                     ) : elements.length === 0 ? (
-                        <div className="flex h-80 items-center justify-center rounded-xl border border-border bg-muted/20">
+                        <div className="flex h-80 items-center justify-center rounded-none border border-border bg-muted/20">
                             <p className="text-sm text-muted-foreground">
                                 No deployed files yet.
                             </p>
                         </div>
                     ) : (
-                        <div className="h-80 rounded-xl border border-border bg-muted/20 p-2">
+                        <div className="h-80 rounded-none border border-border bg-muted/20 p-2">
                             <Tree
                                 elements={elements}
                                 initialExpandedItems={topLevelExpandedIds(
@@ -1476,7 +1478,7 @@ function DeployTab({ project }: { project: Project }) {
                         <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
-                            className="w-full rounded-xl border border-dashed border-border p-8 text-center hover:border-primary/40 hover:bg-accent/40 transition-colors"
+                            className="w-full rounded-none border border-dashed border-border p-8 text-center hover:border-primary/40 hover:bg-accent/40 transition-colors"
                         >
                             <Upload className="mx-auto mb-2 size-5 text-muted-foreground" />
                             <p className="text-sm font-medium text-foreground">
@@ -1494,7 +1496,7 @@ function DeployTab({ project }: { project: Project }) {
                                 {files.map((f) => (
                                     <div
                                         key={f.path}
-                                        className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
+                                        className="flex items-center gap-3 rounded-none border border-border px-3 py-2"
                                     >
                                         <FileText className="size-3.5 shrink-0 text-muted-foreground" />
                                         <span className="min-w-0 flex-1 truncate text-sm text-foreground">
@@ -1522,7 +1524,7 @@ function DeployTab({ project }: { project: Project }) {
                             >
                                 {isDeploying ? (
                                     <>
-                                        <Loader2 className="size-4 animate-spin" />
+                                        <Spinner size="inline" />
                                         {deployStep || "Deploying…"}
                                     </>
                                 ) : (
@@ -1543,7 +1545,7 @@ function DeployTab({ project }: { project: Project }) {
                     )}
 
                     {deployResult && (
-                        <div className="rounded-xl border border-border bg-muted/30 p-4">
+                        <div className="rounded-none border border-border bg-muted/30 p-4">
                             <div className="flex items-center gap-2 mb-2">
                                 <CheckCircle2 className="size-4 text-emerald-500" />
                                 <p className="text-sm font-medium text-foreground">
@@ -1613,7 +1615,7 @@ function DeployTab({ project }: { project: Project }) {
                 <CardContent>
                     {deploymentsLoading ? (
                         <div className="flex items-center justify-center py-8">
-                            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                            <Spinner size="inline" />
                         </div>
                     ) : deployments.length === 0 ? (
                         <p className="py-8 text-center text-sm text-muted-foreground">
@@ -1624,7 +1626,7 @@ function DeployTab({ project }: { project: Project }) {
                             {deployments.map((deployment) => (
                                 <div
                                     key={deployment.id}
-                                    className="flex items-center gap-3 rounded-lg border border-border p-3"
+                                    className="flex items-center gap-3 rounded-none border border-border p-3"
                                 >
                                     <div
                                         className={`size-2 rounded-full shrink-0 ${deployment.is_active ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
@@ -1671,7 +1673,7 @@ function DeployTab({ project }: { project: Project }) {
                                             }
                                         >
                                             {rollingBack === deployment.id ? (
-                                                <Loader2 className="size-3.5 animate-spin" />
+                                                <Spinner size="inline" />
                                             ) : (
                                                 <RotateCcw className="size-3.5" />
                                             )}
@@ -1955,7 +1957,7 @@ function BuildsTab({ project }: { project: Project }) {
                 </CardHeader>
                 <CardContent className="space-y-3">
                     {showTrigger && (
-                        <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
+                        <div className="space-y-3 rounded-none border border-border bg-muted/20 p-4">
                             <div className="flex items-center justify-between">
                                 <p className="text-sm font-medium text-foreground">
                                     Trigger a build
@@ -1997,7 +1999,7 @@ function BuildsTab({ project }: { project: Project }) {
                                         disabled={isTriggering}
                                     >
                                         {isTriggering ? (
-                                            <Loader2 className="size-3.5 animate-spin" />
+                                            <Spinner size="inline" />
                                         ) : (
                                             <Play className="size-3.5" />
                                         )}
@@ -2112,7 +2114,7 @@ function BuildsTab({ project }: { project: Project }) {
 
                     {loading ? (
                         <div className="flex items-center justify-center py-8">
-                            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                            <Spinner size="inline" />
                         </div>
                     ) : builds.length === 0 ? (
                         <p className="py-8 text-center text-sm text-muted-foreground">
@@ -2129,12 +2131,12 @@ function BuildsTab({ project }: { project: Project }) {
                                 return (
                                     <div
                                         key={build.id}
-                                        className="rounded-lg border border-border p-3"
+                                        className="rounded-none border border-border p-3"
                                     >
                                         <div className="flex items-center gap-3">
-                                            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+                                            <div className="flex size-8 shrink-0 items-center justify-center rounded-none bg-muted">
                                                 {build.status === "active" ? (
-                                                    <Loader2 className="size-4 animate-spin text-blue-500" />
+                                                    <Spinner size="inline" />
                                                 ) : build.status ===
                                                   "completed" ? (
                                                     <CheckCircle2 className="size-4 text-emerald-500" />
@@ -2184,7 +2186,7 @@ function BuildsTab({ project }: { project: Project }) {
                                         </div>
 
                                         {isActive && (
-                                            <div className="mt-3 overflow-hidden rounded-lg border border-border/80 bg-[#0b0f14] shadow-lg">
+                                            <div className="mt-3 overflow-hidden rounded-none border border-border/80 bg-[#0b0f14] shadow-lg">
                                                 <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] bg-[#14181f] px-3 py-2">
                                                     <div className="flex min-w-0 items-center gap-2">
                                                         <span className="flex shrink-0 gap-1.5">
@@ -2301,7 +2303,7 @@ function BuildsTab({ project }: { project: Project }) {
                                                                     )
                                                                 ) : (
                                                                     <>
-                                                                        <Loader2 className="size-3 animate-spin text-slate-500" />
+                                                                        <Spinner size="inline" />
                                                                         <span className="text-slate-500">
                                                                             Building…
                                                                         </span>
@@ -2404,7 +2406,7 @@ function UsageTab({ project }: { project: Project }) {
             <Card>
                 <CardContent className="py-12">
                     <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                        <Loader2 className="size-4 animate-spin" />
+                        <Spinner size="inline" />
                         Loading usage…
                     </div>
                 </CardContent>
@@ -2492,7 +2494,7 @@ function UsageTab({ project }: { project: Project }) {
                     </div>
                     {usage.traffic && (
                         <div className="grid grid-cols-2 gap-3">
-                            <div className="rounded-lg border border-border bg-muted/20 p-2.5">
+                            <div className="rounded-none border border-border bg-muted/20 p-2.5">
                                 <p className="text-xs text-muted-foreground">
                                     Humans
                                 </p>
@@ -2500,7 +2502,7 @@ function UsageTab({ project }: { project: Project }) {
                                     {usage.traffic.humans.toLocaleString()}
                                 </p>
                             </div>
-                            <div className="rounded-lg border border-border bg-muted/20 p-2.5">
+                            <div className="rounded-none border border-border bg-muted/20 p-2.5">
                                 <p className="text-xs text-muted-foreground">
                                     Bots (incl. curl)
                                 </p>
@@ -2537,7 +2539,7 @@ function UsageTab({ project }: { project: Project }) {
                         className="h-2"
                     />
                     <div className="mt-3 grid grid-cols-2 gap-3">
-                        <div className="rounded-lg border border-border bg-muted/20 p-2.5">
+                        <div className="rounded-none border border-border bg-muted/20 p-2.5">
                             <p className="text-xs text-muted-foreground">
                                 Flushed (DB)
                             </p>
@@ -2545,7 +2547,7 @@ function UsageTab({ project }: { project: Project }) {
                                 {usage.requests.flushed.toLocaleString()}
                             </p>
                         </div>
-                        <div className="rounded-lg border border-border bg-muted/20 p-2.5">
+                        <div className="rounded-none border border-border bg-muted/20 p-2.5">
                             <p className="text-xs text-muted-foreground">
                                 Live (Redis)
                             </p>
@@ -2580,7 +2582,7 @@ function UsageTab({ project }: { project: Project }) {
                         className="h-2"
                     />
                     <div className="mt-3 grid grid-cols-2 gap-3">
-                        <div className="rounded-lg border border-border bg-muted/20 p-2.5">
+                        <div className="rounded-none border border-border bg-muted/20 p-2.5">
                             <p className="text-xs text-muted-foreground">
                                 Flushed (DB)
                             </p>
@@ -2588,7 +2590,7 @@ function UsageTab({ project }: { project: Project }) {
                                 {formatBytes(usage.bandwidth.flushed_bytes)}
                             </p>
                         </div>
-                        <div className="rounded-lg border border-border bg-muted/20 p-2.5">
+                        <div className="rounded-none border border-border bg-muted/20 p-2.5">
                             <p className="text-xs text-muted-foreground">
                                 Live (Redis)
                             </p>
@@ -2680,7 +2682,7 @@ function SettingsTab({ project }: { project: Project }) {
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <div className="flex items-center justify-between p-4 rounded-xl border border-destructive/30 bg-destructive/5">
+                    <div className="flex items-center justify-between p-4 rounded-none border border-destructive/30 bg-destructive/5">
                         <div>
                             <p className="text-sm font-medium text-foreground">
                                 Delete this project
@@ -2698,7 +2700,7 @@ function SettingsTab({ project }: { project: Project }) {
                                     disabled={isDeleting}
                                 >
                                     {isDeleting ? (
-                                        <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                                        <Spinner size="inline" className="mr-1.5" />
                                     ) : (
                                         <Trash2 className="size-3.5 mr-1.5" />
                                     )}
@@ -2755,11 +2757,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
 
     if (!project) {
         if (isLoading || !fetchedRef.current) {
-            return (
-                <div className="flex h-svh items-center justify-center bg-background">
-                    <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-                </div>
-            );
+            return <PageSpinner label="Loading project" />;
         }
         return (
             <div className="flex flex-col items-center justify-center h-full p-6 text-center">
@@ -2821,7 +2819,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                         href={`https://${project.domain}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors border border-border rounded-lg px-3 py-2"
+                        className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors border border-border rounded-none px-3 py-2"
                     >
                         <ExternalLink className="size-3.5" />
                         {project.domain}

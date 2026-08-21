@@ -4,7 +4,9 @@ function Skeleton({
     className,
     ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
-    return <div className={cn("skeleton rounded-lg", className)} {...props} />;
+    return (
+        <div className={cn("skeleton rounded-none", className)} {...props} />
+    );
 }
 
 export { Skeleton };

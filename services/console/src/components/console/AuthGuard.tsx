@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
-import { authClient } from "@/modules/auth/utils/auth-client";
-import { useAppStore } from "@/store/useAppStore";
-import { Button } from "@/components/ui/button";
 import { Zap } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import PageSpinner from "@/components/pageloader";
+import { Button } from "@/components/ui/button";
+import { authClient } from "@/modules/auth/utils/auth-client";
+import { useAppStore } from "@/store/useAppStore";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
     const { data: session, isPending } = authClient.useSession();
@@ -38,18 +39,14 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }, [isPending, session, setUser]);
 
     if (isPending || (session?.user && !user)) {
-        return (
-            <div className="flex h-svh items-center justify-center bg-background">
-                <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-            </div>
-        );
+        return <PageSpinner label="Authenticating" />;
     }
 
     if (!session?.user) {
         return (
             <div className="flex h-svh flex-col items-center justify-center gap-6 bg-background px-4">
                 <div className="flex items-center gap-2.5">
-                    <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                    <div className="flex size-9 items-center justify-center rounded-none bg-primary text-primary-foreground">
                         <Zap className="size-5" />
                     </div>
                     <span className="text-lg font-bold tracking-tight text-foreground">

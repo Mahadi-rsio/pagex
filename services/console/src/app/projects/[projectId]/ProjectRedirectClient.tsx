@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import PageSpinner from "@/components/pageloader";
 import { getProjectIdFromPathname } from "@/lib/navigate";
 
 export function ProjectRedirectClient() {
@@ -12,9 +13,5 @@ export function ProjectRedirectClient() {
         }
     }, []);
 
-    return (
-        <div className="flex h-svh items-center justify-center bg-background">
-            <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-        </div>
-    );
+    return <PageSpinner label="Redirecting" />;
 }

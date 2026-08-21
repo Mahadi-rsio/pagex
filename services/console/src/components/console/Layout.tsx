@@ -67,7 +67,7 @@ export function Layout({ children }: LayoutProps) {
                                     <li key={href}>
                                         <Link
                                             href={href}
-                                            className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-all ${
+                                            className={`flex w-full items-center gap-2.5 rounded-none px-3 py-2 text-sm transition-all ${
                                                 isActive
                                                     ? "bg-primary/10 font-medium text-primary"
                                                     : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
@@ -88,7 +88,7 @@ export function Layout({ children }: LayoutProps) {
                             <DropdownMenuTrigger asChild>
                                 <button
                                     type="button"
-                                    className="flex w-full items-center gap-2.5 rounded-lg px-1 py-1.5 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                                    className="flex w-full items-center gap-2.5 rounded-none px-1 py-1.5 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
                                 >
                                     <Avatar className="size-8">
                                         <AvatarImage

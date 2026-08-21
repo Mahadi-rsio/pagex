@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { getProjectIdFromPathname } from "@/lib/navigate";
-import { ConsoleShell } from "@/components/console/ConsoleShell";
+import { useEffect, useState } from "react";
 import { LazyProjectDetailPage } from "@/components/console/ConsolePageWrappers";
+import { ConsoleShell } from "@/components/console/ConsoleShell";
+import PageSpinner from "@/components/pageloader";
+import { getProjectIdFromPathname } from "@/lib/navigate";
 
 export function ProjectOverviewClient() {
     const params = useParams<{ projectId: string }>();
@@ -27,11 +28,7 @@ export function ProjectOverviewClient() {
     }, [params.projectId]);
 
     if (!projectId) {
-        return (
-            <div className="flex h-svh items-center justify-center bg-background">
-                <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-            </div>
-        );
+        return <PageSpinner label="Loading project" />;
     }
 
     return (

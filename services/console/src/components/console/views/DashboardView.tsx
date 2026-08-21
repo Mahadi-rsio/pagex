@@ -88,7 +88,7 @@ export function DashboardView() {
                 <Card>
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between mb-3">
-                            <div className="size-9 rounded-lg bg-muted flex items-center justify-center">
+                            <div className="size-9 rounded-none bg-muted flex items-center justify-center">
                                 <FolderKanban className="size-4.5 text-foreground" />
                             </div>
                             <TrendingUp className="size-4 text-muted-foreground" />
@@ -108,7 +108,7 @@ export function DashboardView() {
                 <Card>
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between mb-3">
-                            <div className="size-9 rounded-lg bg-muted flex items-center justify-center">
+                            <div className="size-9 rounded-none bg-muted flex items-center justify-center">
                                 <Wallet className="size-4.5 text-foreground" />
                             </div>
                             <TrendingUp className="size-4 text-muted-foreground" />
@@ -131,7 +131,7 @@ export function DashboardView() {
                 <Card>
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between mb-3">
-                            <div className="size-9 rounded-lg bg-muted flex items-center justify-center">
+                            <div className="size-9 rounded-none bg-muted flex items-center justify-center">
                                 <HardDrive className="size-4.5 text-foreground" />
                             </div>
                         </div>
@@ -151,7 +151,7 @@ export function DashboardView() {
                 <Card>
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between mb-3">
-                            <div className="size-9 rounded-lg bg-muted flex items-center justify-center">
+                            <div className="size-9 rounded-none bg-muted flex items-center justify-center">
                                 <Activity className="size-4.5 text-foreground" />
                             </div>
                         </div>
@@ -210,9 +210,9 @@ export function DashboardView() {
                                                     project.id,
                                                 )
                                             }
-                                            className="w-full flex items-center gap-3 p-3 rounded-xl border border-border hover:bg-accent/50 transition-all group text-left cursor-pointer"
+                                            className="w-full flex items-center gap-3 p-3 rounded-none border border-border hover:bg-accent/50 transition-all group text-left cursor-pointer"
                                         >
-                                            <div className="size-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                                            <div className="size-9 rounded-none bg-muted flex items-center justify-center shrink-0">
                                                 <FolderKanban className="size-4 text-foreground" />
                                             </div>
                                             <div className="flex-1 min-w-0">
