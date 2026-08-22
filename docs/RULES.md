@@ -206,5 +206,5 @@ Loaded via `dotenv`. All env access should use `process.env.VAR_NAME`.
 - ❌ Do not copy blobs into `tenant/{siteId}/` — blob-direct serving only
 - ❌ Do not `await runDeploymentGC(...)` in commit/rollback — fire-and-forget only
 - ❌ Do not delete MinIO `blobs/{hash}` except via GC after cross-check
-- ❌ Do not run two simultaneous builds for the same page (no deploy lock yet)
+- ❌ Do not run two simultaneous deployments for the same page — take `deploy:lock:{pageId}` (see `deployment-lock.service.ts`)
 - ❌ Do not edit `drizzle/` migration files manually after they've been applied

@@ -12,6 +12,10 @@ import {
     setActiveDeploymentCache,
 } from './manifest.service.js'
 import { runDeploymentGC } from './gc.service.js'
+import {
+    DEPLOY_LOCK_COMMIT_TTL_SECONDS,
+    pageDeploymentLock,
+} from './deployment-lock.service.js'
 
 async function activateDeployment(pageId: string, deploymentId: string): Promise<void> {
     await db
@@ -46,33 +50,44 @@ export async function rollbackToDeployment(deploymentId: string, tenantId: strin
         throw new HttpError('Deployment has no blob tree; cannot rollback', 400)
     }
 
-    // Safety: a deployment is only eligible to become active once its immutable
-    // manifest exists and is valid. generateAndPersistManifest throws on any
-    // generation/storage failure, so the current active deployment stays live.
-    const { manifest } = await generateAndPersistManifest(dep.id)
+    const lockHolder = `rollback:${dep.id}`
 
-    await activateDeployment(dep.page_id, dep.id)
-    await setActiveDeploymentCache(dep.site_id, dep.id)
-    await cacheManifestInRedis(dep.id, manifest)
-    await incrementSiteVersion(dep.site_id)
+    return pageDeploymentLock.withLock(
+        dep.page_id,
+        lockHolder,
+        DEPLOY_LOCK_COMMIT_TTL_SECONDS,
+        async () => {
+            // Safety: a deployment is only eligible to become active once its immutable
+            // manifest exists and is valid. generateAndPersistManifest throws on any
+            // generation/storage failure, so the current active deployment stays live.
+            const { manifest } = await generateAndPersistManifest(dep.id)
 
-    const [page] = await db.select().from(pages).where(eq(pages.id, dep.page_id)).limit(1)
-    if (page) {
-        await invalidateSiteCache(page.project_name)
-    }
+            await pageDeploymentLock.assertHeld(dep.page_id, lockHolder)
 
-    const [updated] = await db
-        .select()
-        .from(deployments)
-        .where(eq(deployments.id, dep.id))
-        .limit(1)
+            await activateDeployment(dep.page_id, dep.id)
+            await setActiveDeploymentCache(dep.site_id, dep.id)
+            await cacheManifestInRedis(dep.id, manifest)
+            await incrementSiteVersion(dep.site_id)
 
-    // fire and forget — never await
-    runDeploymentGC(dep.page_id, dep.site_id).catch((err) =>
-        console.error('GC failed silently', err)
+            const [page] = await db.select().from(pages).where(eq(pages.id, dep.page_id)).limit(1)
+            if (page) {
+                await invalidateSiteCache(page.project_name)
+            }
+
+            const [updated] = await db
+                .select()
+                .from(deployments)
+                .where(eq(deployments.id, dep.id))
+                .limit(1)
+
+            // fire and forget — never await
+            runDeploymentGC(dep.page_id, dep.site_id).catch((err) =>
+                console.error('GC failed silently', err)
+            )
+
+            return updated
+        },
     )
-
-    return updated
 }
 
 export async function listDeployments(pageId: string, tenantId: string) {

@@ -142,10 +142,10 @@ These are the important items to finish before calling the core production-ready
 
 ## P0 — Deployment Safety
 
-- [ ] Add per-project/page deployment lock
-- [ ] Prevent concurrent deployments for the same page
-- [ ] Add deployment generation/version validation
-- [ ] Prevent stale builds from activating over newer deployments
+- [x] Add per-project/page deployment lock
+- [x] Prevent concurrent deployments for the same page
+- [x] Add deployment generation/version validation
+- [x] Prevent stale builds from activating over newer deployments
 - [ ] Make deployment commit idempotent
 - [ ] Make retrying the same deploy safe
 
@@ -165,12 +165,12 @@ A must NOT overwrite B.
 
 ## P0 — Database Invariants
 
-- [ ] Enforce only one active deployment per page at DB level
-- [ ] Add appropriate unique indexes
-- [ ] Review foreign-key consistency
-- [ ] Review cascading deletes
-- [ ] Review tenant-scoped constraints
-- [ ] Verify indexes for all hot queries
+- [x] Enforce only one active deployment per page at DB level
+- [x] Add appropriate unique indexes
+- [x] Review foreign-key consistency
+- [x] Review cascading deletes
+- [x] Review tenant-scoped constraints
+- [x] Verify indexes for all hot queries
 
 Important invariant:
 
@@ -334,7 +334,7 @@ Keep documentation synchronized with implementation.
 - [ ] Document GC behavior
 - [ ] Document rollback behavior
 - [ ] Document tenant isolation rules
-- [ ] Document deployment locking
+- [x] Document deployment locking
 - [ ] Document failure/recovery behavior
 
 Documentation must reflect the actual code.
@@ -614,8 +614,8 @@ Until the current core is stable:
 
 The project is ready for the next phase when all of these are true:
 
-- [ ] Deployment locking works
-- [ ] Active deployment DB invariant is enforced
+- [x] Deployment locking works
+- [x] Active deployment DB invariant is enforced
 - [ ] Tenant isolation is verified
 - [ ] Deployment commit is idempotent
 - [ ] Manifest validation is robust

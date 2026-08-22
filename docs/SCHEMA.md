@@ -154,6 +154,7 @@ npm run migrate   # drizzle-kit migrate (also on compose up)
 | `site_version:{site_id}` | 0 | Integer | — | deploy / rollback (`INCR`) | Caddy |
 | `manifest:{deployment_id}` | 0 | JSON manifest | 24 h | deploy / rollback | Caddy (L1 → Redis → MinIO) |
 | `deploy:token:{token}` | 3 | JSON | 10 min | prepareDeploy | presign / commit |
+| `deploy:lock:{pageId}` | 3 | String (holder id) | 10 min prepare / ~6 min commit | prepare / commit / rollback | prepare / commit / rollback |
 | `stats:*` | 3 | counters | — | blob-server analytics | blob-server flush → `site_daily_stats` |
 | `db_cache:{domain}` | 3 | JSON | 15 min | page.service | page.service |
 

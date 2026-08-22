@@ -87,7 +87,7 @@ Get live + DB-persisted request and bandwidth usage for a domain.
 Client-side file deploy: **prepare → presign → commit**. Files are validated via magic bytes, stored as SHA256 blobs (`blobs/{hash}`), and assembled into the live prefix from `blob_tree_entries`.
 
 ### `POST /api/deploy/prepare`
-Validate the file manifest, check which blobs already exist, and issue a 10-minute deployment token (Redis DB3: `deploy:token:{token}`).
+Validate the file manifest, check which blobs already exist, issue a 10-minute deployment token (Redis DB3: `deploy:token:{token}`), and take the per-page deployment lock (`deploy:lock:{pageId}`, same TTL). A second prepare/commit/rollback for the same page returns **409** until the lock is released or expires.
 
 **Request body:**
 ```json
@@ -135,6 +135,8 @@ Validate the file manifest, check which blobs already exist, and issue a 10-minu
 
 Blocked: `.env`, executables, archives (zip/tar/gz/…), and MIME/extension mismatches.
 
+**Response `409`:** `{ "error": "A deployment is already in progress for this page" }` — another prepare, commit, cloud-build commit, or rollback holds `deploy:lock:{pageId}`.
+
 ---
 
 ### `POST /api/deploy/presign`
@@ -162,7 +164,7 @@ Upload each object to the presigned URL with the raw file body (object key: `blo
 ---
 
 ### `POST /api/deploy/commit`
-Load blobs, expand Brotli/Gzip/WebP variants, write `blob_tree_entries`, generate + persist the deployment manifest (MinIO `manifests/{deploymentId}.json` + Redis `manifest:{deploymentId}`, validated before activation), activate deployment, set `active_deployment:{site_id}`, `INCR site_version:{site_id}`, invalidate `site:{subdomain}`, fire-and-forget GC, and consume the token. Request timeout: **5 minutes**.
+Refreshes the per-page deployment lock (same holder as the prepare token), load blobs, expand Brotli/Gzip/WebP variants, write `blob_tree_entries`, generate + persist the deployment manifest (MinIO `manifests/{deploymentId}.json` + Redis `manifest:{deploymentId}`, validated before activation), refuse activation if a newer deployment version already exists, activate deployment, set `active_deployment:{site_id}`, `INCR site_version:{site_id}`, invalidate `site:{subdomain}`, fire-and-forget GC, consume the token, and release the lock. Request timeout: **5 minutes**.
 
 No MinIO `tenant/` materialization — Caddy resolves subdomain → site_id → active deployment → manifest → `blobs/{hash}`.
 
@@ -211,6 +213,8 @@ No MinIO `tenant/` materialization — Caddy resolves subdomain → site_id → 
 ```
 
 Compression/WebP savings are computed at commit (after blobs are available). `sizeReduced` uses the best of Brotli/Gzip per text file; `imageSizeReduced` is original − WebP.
+
+**Response `409`:** concurrent deployment in progress, lock lost before activation, or this deploy is stale (a newer version was committed after prepare).
 
 | Status | Meaning |
 |--------|---------|

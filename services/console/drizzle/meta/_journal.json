@@ -1,13 +1,27 @@
 {
-    "version": "7",
-    "dialect": "postgresql",
-    "entries": [
-        {
-            "idx": 0,
-            "version": "7",
-            "when": 1784123969956,
-            "tag": "0000_sweet_mister_sinister",
-            "breakpoints": true
-        }
-    ]
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1784123969956,
+      "tag": "0000_sweet_mister_sinister",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787380189428,
+      "tag": "0001_colorful_payback",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787381050676,
+      "tag": "0002_long_preak",
+      "breakpoints": true
+    }
+  ]
 }

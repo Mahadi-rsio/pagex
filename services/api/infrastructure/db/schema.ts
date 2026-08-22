@@ -65,7 +65,14 @@ export const pages = pgTable("pages", {
         .default(2147483648),
 
     createdAt: timestamp("createdAt").defaultNow().notNull()
-});
+}, (t) => ({
+    // Index for tenant-scoped page listing
+    tenantIdx: index("idx_pages_tenant").on(t.tenant_id),
+    // Index for domain lookups
+    domainIdx: index("idx_pages_domain").on(t.domain),
+    // Index for project name + tenant lookups
+    projectTenantIdx: index("idx_pages_project_tenant").on(t.project_name, t.tenant_id),
+}));
 
 /**
  * `builds` — records of page build jobs and their status.
@@ -120,7 +127,14 @@ export const deployments = pgTable("deployments", {
     /** SHA-256 hex of the serialized manifest bytes. */
     manifestHash: text('manifest_hash'),
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => ({
+    // Index for page + active deployment lookups
+    pageActiveIdx: index("idx_deployments_page_active").on(t.page_id, t.is_active),
+    // Index for page + tenant + version lookups
+    pageTenantVersionIdx: index("idx_deployments_page_tenant_version").on(t.page_id, t.tenant_id, t.version),
+    // Index for tenant-scoped deployment listing
+    pageTenantIdx: index("idx_deployments_page_tenant").on(t.page_id, t.tenant_id),
+}));
 
 /**
  * `blob_tree_entries` — file tree per deployment (path → blob hash).

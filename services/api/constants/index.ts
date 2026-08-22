@@ -16,6 +16,12 @@ export const DEPLOYMENT_MANIFEST_VERSION = 1
 export const MAX_MANIFEST_SIZE_BYTES = 50 * 1024 * 1024
 /** Commit endpoint request timeout (5 minutes) */
 export const COMMIT_TIMEOUT_MS = 5 * 60 * 1000
+/** Redis TTL for deploy:lock:{pageId} taken at prepare (matches token window) */
+export const DEPLOY_LOCK_PREPARE_TTL_SECONDS = DEPLOY_TOKEN_TTL_SECONDS
+/** Redis TTL while commit/rollback holds the lock (commit timeout + 60s buffer) */
+export const DEPLOY_LOCK_COMMIT_TTL_SECONDS = Math.ceil(COMMIT_TIMEOUT_MS / 1000) + 60
+/** Heartbeat interval to refresh a held deployment lock */
+export const DEPLOY_LOCK_HEARTBEAT_MS = 30_000
 /** Concurrency limit for parallel blob I/O */
 export const BLOB_IO_CONCURRENCY = 10
 

@@ -80,15 +80,19 @@ Step 5 — Finalize (100%)
 
 **File:** `src/services/deploy.service.ts`
 
-Shared by CLI commit and cloud builds:
+Shared by CLI commit and cloud builds. Serialized per page by Redis `deploy:lock:{pageId}` (DB3).
 
-1. Insert `deployments` row (`is_active: false`)
-2. Insert `blob_tree_entries` (originals + `.br` / `.gz` / `.webp` variants)
-3. `generateAndPersistManifest(deploymentId)` — build + validate + store manifest JSON to MinIO `manifests/{deploymentId}.json` and Redis `manifest:{deploymentId}` (TTL 24h). **Throws on any failure — deployment stays inactive.**
-4. Activate deployment (flip `is_active`)
-5. `setActiveDeploymentCache` (Redis `active_deployment:{site_id}`) + `incrementSiteVersion` (`INCR site_version:{site_id}`)
-6. `invalidateSiteCache(subdomain)` — DEL `site:{subdomain}`
-7. **Fire-and-forget** `runDeploymentGC(pageId, siteId)` — never await
+1. Acquire/refresh `deploy:lock:{pageId}` (SET NX, re-entrant for the same holder). Concurrent holders get HTTP 409.
+2. If the caller provided `baseVersion`, abort when a newer `deployments.version` already exists (stale deploy).
+3. Insert `deployments` row (`is_active: false`)
+4. Insert `blob_tree_entries` (originals + `.br` / `.gz` / `.webp` variants)
+5. `generateAndPersistManifest(deploymentId)` — build + validate + store manifest JSON to MinIO `manifests/{deploymentId}.json` and Redis `manifest:{deploymentId}` (TTL 24h). **Throws on any failure — deployment stays inactive.**
+6. Abort (409) if a higher version row exists, or if the lock is no longer held.
+7. Activate deployment (flip `is_active`)
+8. `setActiveDeploymentCache` (Redis `active_deployment:{site_id}`) + `incrementSiteVersion` (`INCR site_version:{site_id}`)
+9. `invalidateSiteCache(subdomain)` — DEL `site:{subdomain}`
+10. **Fire-and-forget** `runDeploymentGC(pageId, siteId)` — never await
+11. Release the lock (CLI prepare holds it from token issue until commit `finally`)
 
 No MinIO `tenant/` copy. Caddy resolves subdomain → site_id → active deployment → manifest → `blobs/{hash}`.
 
@@ -99,11 +103,13 @@ No MinIO `tenant/` copy. Caddy resolves subdomain → site_id → active deploym
 **File:** `src/services/deployment.service.ts`
 
 1. Load deployment (tenant-scoped); require blob tree
-2. `generateAndPersistManifest(deploymentId)` — reuses the manifest (throws on failure → no activation)
-3. Activate target deployment
-4. `setActiveDeploymentCache` + `cacheManifestInRedis` + `incrementSiteVersion`
-5. Invalidate `site:{subdomain}`
-6. Fire-and-forget `runDeploymentGC`
+2. Acquire `deploy:lock:{pageId}` (409 if a deploy is in progress)
+3. `generateAndPersistManifest(deploymentId)` — reuses the manifest (throws on failure → no activation)
+4. Assert lock still held, then activate target deployment
+5. `setActiveDeploymentCache` + `cacheManifestInRedis` + `incrementSiteVersion`
+6. Invalidate `site:{subdomain}`
+7. Fire-and-forget `runDeploymentGC`
+8. Release the lock
 
 ---
 

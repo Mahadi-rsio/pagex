@@ -48,6 +48,6 @@ export const redis = attachErrorHandler(new Redis(REDIS_URL), 'db0')
 
 /**
  * Usage / deploy-token Redis (DB3).
- * Keys: deploy:token:*, requests:*, bandwidth:*, db_cache:*.
+ * Keys: deploy:token:*, deploy:lock:*, requests:*, bandwidth:*, db_cache:*.
  */
 export const usageRedis = attachErrorHandler(new Redis(REDIS_URL, { db: 3 }), 'db3')

@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { brotliCompress, gzip } from 'node:zlib'
-import { and, desc, eq, inArray, ne } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, ne } from 'drizzle-orm'
 import { lookup } from 'mime-types'
 import pLimit from 'p-limit'
 import sharp from 'sharp'
@@ -18,6 +18,8 @@ import {
 } from '../infrastructure/storage/minio.js'
 import {
     BLOB_IO_CONCURRENCY,
+    DEPLOY_LOCK_COMMIT_TTL_SECONDS,
+    DEPLOY_LOCK_PREPARE_TTL_SECONDS,
     DEPLOY_TOKEN_TTL_SECONDS,
     MAX_DEPLOY_FILE_SIZE,
     MAX_FILE_SIZE,
@@ -33,6 +35,12 @@ import {
 import { validateManifest } from '../utils/deployment-validator.js'
 import { validateFile } from '../utils/file-validator.js'
 import { HttpError } from '../utils/http-error.js'
+import {
+    DEPLOYMENT_IN_PROGRESS_MESSAGE,
+    STALE_DEPLOYMENT_MESSAGE,
+    newLockHolder,
+    pageDeploymentLock,
+} from './deployment-lock.service.js'
 import type {
     CommitDeployInput,
     DeployFileInput,
@@ -61,6 +69,8 @@ export interface DeployTokenPayload {
     userId: string
     siteId: string
     subdomain: string
+    /** Max `deployments.version` for the page when the lock was taken. */
+    baseVersion: number
     fileManifest: Array<{
         path: string
         hash: string
@@ -490,7 +500,7 @@ async function activateDeployment(pageId: string, deploymentId: string): Promise
         .where(and(eq(deployments.page_id, pageId), ne(deployments.id, deploymentId)))
 }
 
-async function nextVersion(pageId: string): Promise<number> {
+async function currentMaxVersion(pageId: string): Promise<number> {
     const [latest] = await db
         .select({ version: deployments.version })
         .from(deployments)
@@ -498,7 +508,11 @@ async function nextVersion(pageId: string): Promise<number> {
         .orderBy(desc(deployments.version))
         .limit(1)
 
-    return latest ? latest.version + 1 : 1
+    return latest ? latest.version : 0
+}
+
+async function nextVersion(pageId: string): Promise<number> {
+    return (await currentMaxVersion(pageId)) + 1
 }
 
 export async function invalidateSiteCache(subdomain: string): Promise<void> {
@@ -527,60 +541,99 @@ export async function commitBlobTreeDeploy(opts: {
     fileManifest: BlobManifestFile[]
     filesDeployed: number
     filesReused: number
+    /** When set, the caller already holds `deploy:lock:{pageId}` as this holder. */
+    lockHolder?: string
+    /** Max version observed when this deploy started; reject if a newer one exists. */
+    baseVersion?: number
 }) {
     if (opts.fileManifest.length === 0) {
         throw new HttpError('Cannot deploy an empty file tree', 400)
     }
 
-    const version = await nextVersion(opts.pageId)
+    const acquiredHere = !opts.lockHolder
+    const lockHolder = opts.lockHolder ?? newLockHolder('commit')
 
-    const [newDep] = await db
-        .insert(deployments)
-        .values({
-            page_id: opts.pageId,
-            site_id: opts.siteId,
-            tenant_id: opts.tenantId,
-            build_id: opts.buildId,
-            version,
-            is_active: false,
-            source: opts.source,
-            file_count: opts.fileManifest.length,
-            filesDeployed: opts.filesDeployed,
-            filesReused: opts.filesReused,
-        })
-        .returning()
+    const run = async () => {
+        if (opts.baseVersion !== undefined) {
+            const latest = await currentMaxVersion(opts.pageId)
+            if (latest > opts.baseVersion) {
+                throw new HttpError(STALE_DEPLOYMENT_MESSAGE, 409)
+            }
+        }
 
-    if (!newDep) throw new HttpError('Failed to create deployment record', 500)
+        const version = await nextVersion(opts.pageId)
 
-    await db.insert(blobTreeEntries).values(
-        opts.fileManifest.map((f) => ({
-            deploymentId: newDep.id,
-            path: f.path,
-            blobHash: f.hash,
-        }))
-    )
+        const [newDep] = await db
+            .insert(deployments)
+            .values({
+                page_id: opts.pageId,
+                site_id: opts.siteId,
+                tenant_id: opts.tenantId,
+                build_id: opts.buildId,
+                version,
+                is_active: false,
+                source: opts.source,
+                file_count: opts.fileManifest.length,
+                filesDeployed: opts.filesDeployed,
+                filesReused: opts.filesReused,
+            })
+            .returning()
 
-    // Finalize immutable manifest BEFORE activation (deployment not live until manifest persists)
-    const { manifest } = await generateAndPersistManifest(newDep.id)
+        if (!newDep) throw new HttpError('Failed to create deployment record', 500)
 
-    await activateDeployment(opts.pageId, newDep.id)
-    await setActiveDeploymentCache(opts.siteId, newDep.id)
-    await cacheManifestInRedis(newDep.id, manifest)
-    await incrementSiteVersion(opts.siteId)
-    await invalidateSiteCache(opts.subdomain)
+        await db.insert(blobTreeEntries).values(
+            opts.fileManifest.map((f) => ({
+                deploymentId: newDep.id,
+                path: f.path,
+                blobHash: f.hash,
+            }))
+        )
 
-    const [updated] = await db
-        .select()
-        .from(deployments)
-        .where(eq(deployments.id, newDep.id))
-        .limit(1)
+        // Finalize immutable manifest BEFORE activation (deployment not live until manifest persists)
+        const { manifest } = await generateAndPersistManifest(newDep.id)
 
-    // fire and forget — never await
-    runDeploymentGC(opts.pageId, opts.siteId).catch((err) =>
-        console.error('GC failed silently', err)
-    )
+        const [newer] = await db
+            .select({ id: deployments.id })
+            .from(deployments)
+            .where(and(eq(deployments.page_id, opts.pageId), gt(deployments.version, newDep.version)))
+            .limit(1)
 
-    return updated
+        if (newer) {
+            throw new HttpError(STALE_DEPLOYMENT_MESSAGE, 409)
+        }
+
+        await pageDeploymentLock.assertHeld(opts.pageId, lockHolder)
+
+        await activateDeployment(opts.pageId, newDep.id)
+        await setActiveDeploymentCache(opts.siteId, newDep.id)
+        await cacheManifestInRedis(newDep.id, manifest)
+        await incrementSiteVersion(opts.siteId)
+        await invalidateSiteCache(opts.subdomain)
+
+        const [updated] = await db
+            .select()
+            .from(deployments)
+            .where(eq(deployments.id, newDep.id))
+            .limit(1)
+
+        // fire and forget — never await
+        runDeploymentGC(opts.pageId, opts.siteId).catch((err) =>
+            console.error('GC failed silently', err)
+        )
+
+        return updated
+    }
+
+    if (acquiredHere) {
+        return pageDeploymentLock.withLock(
+            opts.pageId,
+            lockHolder,
+            DEPLOY_LOCK_COMMIT_TTL_SECONDS,
+            run,
+        )
+    }
+
+    return run()
 }
 
 /**
@@ -611,32 +664,40 @@ export async function deployFromLocalDirectory(opts: {
         sources.push({ path: relativePath, body })
     }
 
-    const { fileManifest, filesDeployed, filesReused, summary } = await storeExpandedVariants(
-        sources,
-        log
+    const lockHolder = `build:${opts.buildId}`
+
+    return pageDeploymentLock.withLock(
+        opts.pageId,
+        lockHolder,
+        DEPLOY_LOCK_COMMIT_TTL_SECONDS,
+        async () => {
+            const { fileManifest, filesDeployed, filesReused, summary } =
+                await storeExpandedVariants(sources, log)
+
+            await log?.(`Committing blob tree (${fileManifest.length} files)…`)
+
+            const deployment = await commitBlobTreeDeploy({
+                pageId: opts.pageId,
+                tenantId: opts.tenantId,
+                siteId: opts.siteId,
+                subdomain: opts.subdomain,
+                source: 'build',
+                buildId: opts.buildId,
+                fileManifest,
+                filesDeployed,
+                filesReused,
+                lockHolder,
+            })
+
+            return {
+                deployment,
+                filesDeployed,
+                filesReused,
+                fileCount: fileManifest.length,
+                summary,
+            }
+        },
     )
-
-    await log?.(`Committing blob tree (${fileManifest.length} files)…`)
-
-    const deployment = await commitBlobTreeDeploy({
-        pageId: opts.pageId,
-        tenantId: opts.tenantId,
-        siteId: opts.siteId,
-        subdomain: opts.subdomain,
-        source: 'build',
-        buildId: opts.buildId,
-        fileManifest,
-        filesDeployed,
-        filesReused,
-    })
-
-    return {
-        deployment,
-        filesDeployed,
-        filesReused,
-        fileCount: fileManifest.length,
-        summary,
-    }
 }
 
 export async function prepareDeploy(
@@ -693,11 +754,13 @@ export async function prepareDeploy(
     const filesToUpload = neededHashes.size
 
     const token = randomBytes(24).toString('hex')
+    const baseVersion = await currentMaxVersion(page.id)
     const payload: DeployTokenPayload = {
         pageId: page.id,
         userId: tenantId,
         siteId: page.site_id,
         subdomain: site.subdomain,
+        baseVersion,
         fileManifest: input.files.map((f: DeployFileInput) => ({
             path: f.path,
             hash: f.hash,
@@ -705,12 +768,26 @@ export async function prepareDeploy(
         })),
     }
 
-    await usageRedis.set(
-        deployTokenKey(token),
-        JSON.stringify(payload),
-        'EX',
-        DEPLOY_TOKEN_TTL_SECONDS
+    const locked = await pageDeploymentLock.acquire(
+        page.id,
+        token,
+        DEPLOY_LOCK_PREPARE_TTL_SECONDS
     )
+    if (!locked) {
+        throw new HttpError(DEPLOYMENT_IN_PROGRESS_MESSAGE, 409)
+    }
+
+    try {
+        await usageRedis.set(
+            deployTokenKey(token),
+            JSON.stringify(payload),
+            'EX',
+            DEPLOY_TOKEN_TTL_SECONDS
+        )
+    } catch (err) {
+        await pageDeploymentLock.release(page.id, token)
+        throw err
+    }
 
     return {
         deploymentToken: token,
@@ -768,41 +845,52 @@ export async function presignDeploy(input: PresignDeployInput, tenantId: string)
 
 export async function commitDeploy(input: CommitDeployInput, tenantId: string) {
     const payload = await loadDeployToken(input.deploymentToken, tenantId)
+    const lockHolder = input.deploymentToken
 
-    // Load original blob bodies in parallel, then expand with Brotli/Gzip/WebP variants
-    const limit = pLimit(BLOB_IO_CONCURRENCY)
-    const sources = await Promise.all(
-        payload.fileManifest.map((file) =>
-            limit(async () => {
-                const body = await readBlobBuffer(file.hash)
-                return { path: file.path, body }
+    return pageDeploymentLock.withLock(
+        payload.pageId,
+        lockHolder,
+        DEPLOY_LOCK_COMMIT_TTL_SECONDS,
+        async () => {
+            // Load original blob bodies in parallel, then expand with Brotli/Gzip/WebP variants
+            const limit = pLimit(BLOB_IO_CONCURRENCY)
+            const sources = await Promise.all(
+                payload.fileManifest.map((file) =>
+                    limit(async () => {
+                        const body = await readBlobBuffer(file.hash)
+                        return { path: file.path, body }
+                    })
+                )
+            )
+
+            const { fileManifest, filesDeployed, filesReused, summary } =
+                await storeExpandedVariants(sources)
+
+            const deployment = await commitBlobTreeDeploy({
+                pageId: payload.pageId,
+                tenantId,
+                siteId: payload.siteId,
+                subdomain: payload.subdomain,
+                source: 'upload',
+                buildId: null,
+                fileManifest,
+                filesDeployed,
+                filesReused,
+                lockHolder,
+                ...(typeof payload.baseVersion === 'number'
+                    ? { baseVersion: payload.baseVersion }
+                    : {}),
             })
-        )
+
+            await usageRedis.del(deployTokenKey(input.deploymentToken))
+
+            return {
+                success: true,
+                deployment,
+                filesDeployed,
+                filesReused,
+                summary,
+            }
+        },
     )
-
-    const { fileManifest, filesDeployed, filesReused, summary } = await storeExpandedVariants(
-        sources
-    )
-
-    const deployment = await commitBlobTreeDeploy({
-        pageId: payload.pageId,
-        tenantId,
-        siteId: payload.siteId,
-        subdomain: payload.subdomain,
-        source: 'upload',
-        buildId: null,
-        fileManifest,
-        filesDeployed,
-        filesReused,
-    })
-
-    await usageRedis.del(deployTokenKey(input.deploymentToken))
-
-    return {
-        success: true,
-        deployment,
-        filesDeployed,
-        filesReused,
-        summary,
-    }
 }

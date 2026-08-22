@@ -44,6 +44,7 @@ pagex/
 │   ├── controllers/                # page, deploy, build, deployment
 │   ├── services/
 │   │   ├── deploy.service.ts       # prepare / presign / commitBlobTreeDeploy / manifest / variants
+│   │   ├── deployment-lock.service.ts # per-page Redis deploy:lock:{pageId}
 │   │   ├── deployment.service.ts   # listDeployments, rollbackToDeployment
 │   │   ├── gc.service.ts           # runDeploymentGC (fire-and-forget)
 │   │   ├── build.service.ts

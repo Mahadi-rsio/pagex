@@ -35,6 +35,7 @@ Read docs in this order:
 ### Modify the Deployment Flow
 
 Shared commit path: `src/services/deploy.service.ts` → `commitBlobTreeDeploy()`.
+Per-page lock: `src/services/deployment-lock.service.ts` (`deploy:lock:{pageId}` on Redis DB3). Prepare acquires; commit/rollback/cloud-build commit refresh and release. Concurrent deploys for the same page return 409.
 
 Rollback: `src/services/deployment.service.ts` → `rollbackToDeployment()`.
 
