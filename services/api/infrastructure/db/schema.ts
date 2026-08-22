@@ -1,4 +1,5 @@
-import { bigint, boolean, date, index, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { sql } from 'drizzle-orm'
+import { bigint, boolean, date, index, integer, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 
 /**
@@ -98,6 +99,7 @@ export const builds = pgTable("builds", {
 
 /**
  * `blobs` — content-addressed blob store (SHA256 → MinIO object).
+ * Invariant 4: blob hashes are unique (enforced by PRIMARY KEY on hash).
  */
 export const blobs = pgTable('blobs', {
     hash: text('hash').primaryKey(),
@@ -107,6 +109,16 @@ export const blobs = pgTable('blobs', {
 
 /**
  * `deployments` — active deployment history (file trees via blob_tree_entries).
+ *
+ * Invariants enforced at DB level:
+ *  - Invariant 1: deployments_page_id_is_active_uid — partial unique index WHERE is_active = true
+ *    → only one active deployment per page at any time.
+ *  - Invariant 2: deployments_page_id_version_uid — UNIQUE(page_id, version)
+ *    → no duplicate version numbers per page.
+ *  - Invariant 4b: deployments_build_id_uid — partial unique index WHERE build_id IS NOT NULL
+ *    → one deployment per build job (prevents retry double-writes).
+ *  - Invariant 5: deployments_active_requires_manifest CHECK
+ *    → active deployments must have all manifest fields set.
  */
 export const deployments = pgTable("deployments", {
     id: uuid("id").primaryKey().notNull().defaultRandom(),
@@ -139,12 +151,24 @@ export const deployments = pgTable("deployments", {
     buildIdIdx: index("idx_deployments_build_id").on(t.build_id),
     // Index for deployments by status
     statusIdx: index("idx_deployments_status").on(t.status),
-    // UNIQUE(page_id, version) - each page has unique version numbers
+    // Invariant 2: UNIQUE(page_id, version) — each page has unique version numbers
     uniquePageVersion: unique("deployments_page_id_version_uid").on(t.page_id, t.version),
+    // Invariant 1: partial unique index — only one active deployment per page
+    // (enforced at DB level; application must deactivate old before activating new)
+    uniquePageActive: uniqueIndex("deployments_page_id_is_active_uid")
+        .on(t.page_id)
+        .where(sql`is_active = true`),
+    // Invariant 4b: partial unique index — one deployment per build job
+    // (NULL build_id excluded so upload-source deployments are unrestricted)
+    uniqueBuildDeployment: uniqueIndex("deployments_build_id_uid")
+        .on(t.build_id)
+        .where(sql`build_id IS NOT NULL`),
 }));
 
 /**
  * `blob_tree_entries` — file tree per deployment (path → blob hash).
+ * Invariant 3: uniqueDeploymentPath UNIQUE(deployment_id, path)
+ *   → a deployment cannot have two entries for the same path.
  */
 export const blobTreeEntries = pgTable('blob_tree_entries', {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -163,6 +187,10 @@ export const blobTreeEntries = pgTable('blob_tree_entries', {
 /**
  * `idempotency_keys` — ensures deployment/build requests are idempotent.
  * Scoped by (tenant_id, page_id, idempotency_key) to allow same key across different pages/tenants.
+ *
+ * Invariant 7: resource_id is UUID | NULL.
+ *   NULL  → operation reserved but still in progress.
+ *   UUID  → operation completed; points to the created resource.
  */
 export const idempotencyKeys = pgTable('idempotency_keys', {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -170,7 +198,8 @@ export const idempotencyKeys = pgTable('idempotency_keys', {
     page_id: uuid('page_id').notNull().references(() => pages.id, { onDelete: 'cascade' }),
     idempotency_key: text('idempotency_key').notNull(),
     resource_type: text('resource_type').notNull(), // 'deployment' | 'build'
-    resource_id: uuid('resource_id').notNull(),
+    // NULL = in progress, UUID = completed (points to created resource)
+    resource_id: uuid('resource_id'),
     request_hash: text('request_hash'), // hash of request body for additional safety
     created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     expires_at: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -180,3 +209,29 @@ export const idempotencyKeys = pgTable('idempotency_keys', {
     tenantPageIdx: index('idx_idempotency_keys_tenant_page').on(t.tenant_id, t.page_id),
     resourceIdx: index('idx_idempotency_keys_resource').on(t.resource_type, t.resource_id),
 }));
+
+/**
+ * `build_failures` — durable failure records written by the DLQ worker when a
+ * build job exhausts all BullMQ retries. This table must NEVER contain secrets
+ * (no env_vars, no tokens, no passwords).
+ */
+export const buildFailures = pgTable('build_failures', {
+    id: uuid('id').primaryKey().defaultRandom().notNull(),
+    original_job_id: text('original_job_id').notNull(),
+    queue_name: text('queue_name').notNull(),
+    tenant_id: text('tenant_id').notNull(),
+    page_id: uuid('page_id').notNull().references(() => pages.id, { onDelete: 'cascade' }),
+    build_id: uuid('build_id').references(() => builds.id, { onDelete: 'set null' }),
+    deployment_id: uuid('deployment_id').references(() => deployments.id, { onDelete: 'set null' }),
+    attempts: integer('attempts').notNull().default(0),
+    error_type: text('error_type').notNull(), // 'permanent' | 'unknown'
+    error_message: text('error_message').notNull(),
+    failed_at: timestamp('failed_at', { withTimezone: true }).notNull().defaultNow(),
+    created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+    pageIdx: index('idx_build_failures_page_id').on(t.page_id),
+    buildIdx: index('idx_build_failures_build_id').on(t.build_id),
+    failedAtIdx: index('idx_build_failures_failed_at').on(t.failed_at),
+}));
+
+

@@ -4,7 +4,7 @@ import "dotenv/config";
 
 const connectionString = process.env.DB!;
 
-const client = postgres(connectionString, {
+export const dbClient = postgres(connectionString, {
     // CRITICAL for transaction mode: disable prepared statements
     prepare: false,
     max: 10,
@@ -12,4 +12,4 @@ const client = postgres(connectionString, {
     max_lifetime: 1800,
 });
 
-export const db = drizzle(client);
+export const db = drizzle(dbClient);

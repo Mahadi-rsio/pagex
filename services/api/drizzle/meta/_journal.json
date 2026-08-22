@@ -64,6 +64,13 @@
       "when": 1787386203233,
       "tag": "0008_nervous_shadowcat",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787405036683,
+      "tag": "0009_db_invariants",
+      "breakpoints": true
     }
   ]
 }

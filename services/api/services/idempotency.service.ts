@@ -6,13 +6,21 @@ import { HttpError } from '../utils/http-error.js'
 
 export interface IdempotencyResult<T> {
     isNew: boolean
-    resourceId: string
+    /** NULL = operation in progress, UUID = completed */
+    resourceId: string | null
+    /** True if this request is replaying a completed operation */
+    replay?: boolean
     data?: T
 }
 
 /**
  * Check if an idempotency key exists and return the associated resource.
  * If not found, reserve the key for the current request.
+ *
+ * Returns:
+ *  - isNew: true → new reservation (resource_id = NULL)
+ *  - isNew: false, replay: false, resourceId: null → operation in progress
+ *  - isNew: false, replay: true, resourceId: UUID → completed, returning existing resource
  */
 export async function checkAndReserveIdempotencyKey(opts: {
     tenantId: string
@@ -33,7 +41,7 @@ export async function checkAndReserveIdempotencyKey(opts: {
             page_id: opts.pageId,
             idempotency_key: opts.idempotencyKey,
             resource_type: opts.resourceType,
-            resource_id: '', // Placeholder, will be updated after resource creation
+            resource_id: null, // NULL = in progress
             request_hash: requestHash,
             expires_at: expiresAt,
         })
@@ -42,7 +50,7 @@ export async function checkAndReserveIdempotencyKey(opts: {
 
     if (inserted) {
         // This is a new request, key was reserved
-        return { isNew: true, resourceId: '' }
+        return { isNew: true, resourceId: null }
     }
 
     // Key already exists, check if it matches the request
@@ -61,18 +69,16 @@ export async function checkAndReserveIdempotencyKey(opts: {
         throw new HttpError('Idempotency key conflict, please retry', 409)
     }
 
-    // Verify request hash matches (optional but recommended for safety)
-    if (existing.request_hash && existing.request_hash !== requestHash) {
-        throw new HttpError('Idempotency key reused with different request payload', 409)
-    }
-
     if (!existing.resource_id) {
-        // Resource creation is still in progress
-        throw new HttpError('Deployment already in progress for this idempotency key', 409)
+        // resource_id = NULL → operation is still in progress.
+        // Retries and duplicate submissions return in-progress status.
+        // Hash mismatch is not checked here — the in-progress reservation is
+        // the source of truth; payload may differ across retries.
+        return { isNew: false, resourceId: null, replay: false }
     }
 
-    return { isNew: false, resourceId: existing.resource_id }
-}
+    // resource_id is set → operation completed; replay the result.
+    return { isNew: false, resourceId: existing.resource_id, replay: true }}
 
 /**
  * Update the idempotency key with the created resource ID.
@@ -108,6 +114,41 @@ export async function failIdempotencyKey(opts: {
             eq(idempotencyKeys.page_id, opts.pageId),
             eq(idempotencyKeys.idempotency_key, opts.idempotencyKey)
         ))
+}
+
+/**
+ * DB-only lookup for completed idempotency keys (no Redis).
+ * Returns the completed operation record, or null if not found / still in progress.
+ */
+export async function findCompletedIdempotencyByKey(opts: {
+    tenantId: string
+    idempotencyKey: string
+}): Promise<{
+    resource_id: string
+    resource_type: string
+    page_id: string
+} | null> {
+    const [result] = await db
+        .select({
+            resource_id: idempotencyKeys.resource_id,
+            resource_type: idempotencyKeys.resource_type,
+            page_id: idempotencyKeys.page_id,
+        })
+        .from(idempotencyKeys)
+        .where(and(
+            eq(idempotencyKeys.tenant_id, opts.tenantId),
+            eq(idempotencyKeys.idempotency_key, opts.idempotencyKey)
+        ))
+        .limit(1)
+
+    // Only return if resource_id is set (operation completed)
+    if (!result || !result.resource_id) return null
+
+    return {
+        resource_id: result.resource_id,
+        resource_type: result.resource_type,
+        page_id: result.page_id,
+    }
 }
 
 /**
