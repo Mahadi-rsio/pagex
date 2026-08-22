@@ -7,18 +7,6 @@ FROM deps AS builder
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine AS migrator
-WORKDIR /app
-RUN npm init -y && \
-    npm install drizzle-kit@^0.31.10 drizzle-orm@^0.45.2 dotenv pg --omit=optional && \
-    find /app/node_modules -type f \( -name "*.ts" -not -name "*.d.ts" -o -name "*.js.map" -o -name "CHANGELOG*" -o -name "README*" -o -name "SECURITY*" \) -delete 2>/dev/null; \
-    npm cache clean --force && \
-    rm -f package.json package-lock.json
-COPY drizzle.config.ts ./
-COPY drizzle/ ./drizzle/
-COPY infrastructure/ ./infrastructure/
-CMD ["npx", "drizzle-kit", "migrate"]
-
 FROM node:24-alpine AS build-worker
 WORKDIR /app
 RUN apk add --no-cache docker-cli wget git
@@ -53,6 +41,8 @@ RUN npm install --omit=dev && \
     npm cache clean --force; \
     rm -f /app/package-lock.json
 COPY --from=builder /app/dist ./dist
+# Migrations are run at startup via drizzle-orm migrate()
+COPY --from=builder /app/drizzle ./drizzle
 USER pagex
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \

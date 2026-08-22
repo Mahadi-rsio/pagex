@@ -15,8 +15,6 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      migrator:
-        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -96,24 +94,6 @@ services:
       start_period: 20s
 
   # ============================================================================
-  # Database Migrator — API Service
-  # ============================================================================
-  migrator:
-    build:
-      context: ./services/api
-      target: migrator
-    pull_policy: build
-    env_file: .env
-    environment:
-      - DRIZZLE_CONNECTION=${DIRECT_DB:-postgresql://postgres:postgres@db:5432/pagex}
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: "no"
-    networks:
-      - pagex
-
-  # ============================================================================
   # Database Migrator — Console Service
   # ============================================================================
   console-migrator:
@@ -128,8 +108,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      migrator:
-        condition: service_completed_successfully
     restart: "no"
     networks:
       - pagex
@@ -168,8 +146,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/cloudisy-builds:/tmp/cloudisy-builds
     depends_on:
-      migrator:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
       build-env:
