@@ -188,9 +188,14 @@ export const blobTreeEntries = pgTable('blob_tree_entries', {
  * `idempotency_keys` — ensures deployment/build requests are idempotent.
  * Scoped by (tenant_id, page_id, idempotency_key) to allow same key across different pages/tenants.
  *
- * Invariant 7: resource_id is UUID | NULL.
- *   NULL  → operation reserved but still in progress.
- *   UUID  → operation completed; points to the created resource.
+ * Invariant 7: resource_id and status together encode operation state.
+ *   status = 'in_progress', resource_id = NULL  → operation reserved but still running.
+ *   status = 'completed',   resource_id = UUID  → operation finished; points to the created resource.
+ *   status = 'failed',      resource_id = NULL  → terminal failure; key is blocked from silent re-use.
+ *
+ * The 'failed' status prevents a race where a concurrent caller that was blocked
+ * waiting for INSERT conflict sees the key disappear (via DELETE) and then inserts
+ * a fresh reservation — double-executing the operation.
  */
 export const idempotencyKeys = pgTable('idempotency_keys', {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -198,7 +203,9 @@ export const idempotencyKeys = pgTable('idempotency_keys', {
     page_id: uuid('page_id').notNull().references(() => pages.id, { onDelete: 'cascade' }),
     idempotency_key: text('idempotency_key').notNull(),
     resource_type: text('resource_type').notNull(), // 'deployment' | 'build'
-    // NULL = in progress, UUID = completed (points to created resource)
+    // 'in_progress' | 'completed' | 'failed'
+    status: text('status').notNull().default('in_progress'),
+    // NULL = in progress or failed, UUID = completed (points to created resource)
     resource_id: uuid('resource_id'),
     request_hash: text('request_hash'), // hash of request body for additional safety
     created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -208,6 +215,7 @@ export const idempotencyKeys = pgTable('idempotency_keys', {
     expiresIdx: index('idx_idempotency_keys_expires').on(t.expires_at),
     tenantPageIdx: index('idx_idempotency_keys_tenant_page').on(t.tenant_id, t.page_id),
     resourceIdx: index('idx_idempotency_keys_resource').on(t.resource_type, t.resource_id),
+    statusIdx: index('idx_idempotency_keys_status').on(t.status),
 }));
 
 /**

@@ -45,6 +45,7 @@ import {
     checkAndReserveIdempotencyKey,
     completeIdempotencyKey,
     failIdempotencyKey,
+    findCompletedIdempotencyByKey,
 } from './idempotency.service.js'
 import type {
     CommitDeployInput,
@@ -603,38 +604,41 @@ export async function commitBlobTreeDeploy(opts: {
 
         await pageDeploymentLock.assertHeld(opts.pageId, lockHolder)
 
-        // ATOMIC ACTIVATION: Use a database transaction to ensure consistency
+        // ATOMIC ACTIVATION
+        //
         // PostgreSQL is the source of truth; Redis is only cache.
-        // Update Redis ONLY after successful DB commit.
+        // Redis is updated ONLY after a successful DB commit.
+        //
+        // Correct order required by the partial unique index
+        // `deployments_page_id_is_active_uid` (WHERE is_active = true):
+        //   1. Deactivate the currently-active deployment (if any).
+        //   2. Activate the new deployment.
+        //
+        // Reversing the order would momentarily create two active rows and trigger
+        // a unique-constraint violation. The transaction guarantees atomicity: if
+        // anything fails the old deployment stays active.
         const activatedDeployment = await db.transaction(async (tx) => {
-            // Find current active deployment for this page
+            // Step 1 — find and deactivate the current active deployment.
             const [currentActive] = await tx
                 .select({ id: deployments.id })
                 .from(deployments)
                 .where(and(eq(deployments.page_id, opts.pageId), eq(deployments.is_active, true)))
                 .limit(1)
 
-            // Mark new deployment as active
-            await tx
-                .update(deployments)
-                .set({
-                    is_active: true,
-                    status: 'active',
-                })
-                .where(eq(deployments.id, newDep.id))
-
-            // Mark previous active deployment as superseded (not failed)
             if (currentActive && currentActive.id !== newDep.id) {
                 await tx
                     .update(deployments)
-                    .set({
-                        is_active: false,
-                        status: 'superseded',
-                    })
+                    .set({ is_active: false, status: 'superseded' })
                     .where(eq(deployments.id, currentActive.id))
             }
 
-            // Return the updated new deployment
+            // Step 2 — activate the new deployment (unique constraint now satisfied).
+            await tx
+                .update(deployments)
+                .set({ is_active: true, status: 'active' })
+                .where(eq(deployments.id, newDep.id))
+
+            // Return the fully-updated deployment row.
             const [updated] = await tx
                 .select()
                 .from(deployments)
@@ -841,7 +845,50 @@ export async function prepareDeploy(
     })
 
     if (!idempotencyResult.isNew) {
-        // Return existing deployment token if available
+        if (idempotencyResult.replay && idempotencyResult.resourceId) {
+            // CASE 3 — operation already completed.
+            //
+            // The completed result comes from PostgreSQL (not Redis) so this path
+            // survives Redis restarts and API restarts.
+            //
+            // We look up the completed deployment from the DB and reconstruct just
+            // enough of the prepare response for the caller to know the deploy is
+            // done. The deploy token in Redis may have already been cleaned up; we
+            // do NOT require it to exist here.
+            const [completedDep] = await db
+                .select({ id: deployments.id, version: deployments.version })
+                .from(deployments)
+                .where(eq(deployments.id, idempotencyResult.resourceId))
+                .limit(1)
+
+            if (completedDep) {
+                // Return a stable response indicating deployment already completed.
+                return {
+                    deploymentToken: idempotencyKey,
+                    expiresIn: 0,
+                    uploadRequired: [],
+                    filesReused: input.files.length,
+                    filesToUpload: 0,
+                    alreadyCompleted: true,
+                    existingDeploymentId: completedDep.id,
+                    summary: {
+                        totalFiles: input.files.length,
+                        totalSize,
+                        totalSizeHuman: formatBytes(totalSize),
+                        uploadSize: 0,
+                        uploadSizeHuman: formatBytes(0),
+                        reusedSize: totalSize,
+                    },
+                }
+            }
+            // If the deployment record is gone (deleted/GC'd), fall through to
+            // treat as in-progress so the caller can proceed — better than an
+            // opaque error.
+        }
+
+        // CASE 2 — operation is still in progress, OR completed but deployment record
+        // no longer exists. Re-check whether there is a live Redis token the caller
+        // can use to proceed (upload + commit).
         const existingToken = await usageRedis.get(deployTokenKey(idempotencyKey))
         if (existingToken) {
             return {
@@ -864,6 +911,11 @@ export async function prepareDeploy(
                 },
             }
         }
+
+        // In-progress but no Redis token exists — the previous attempt may have
+        // crashed before writing it. The deployment lock will guard against a
+        // true concurrent conflict; fall through to re-acquire the lock and
+        // reissue the token.
     }
 
     const locked = await pageDeploymentLock.acquire(

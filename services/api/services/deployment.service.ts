@@ -57,34 +57,39 @@ export async function rollbackToDeployment(deploymentId: string, tenantId: strin
 
             await pageDeploymentLock.assertHeld(dep.page_id, lockHolder)
 
-            // ATOMIC ACTIVATION: Use a database transaction
+            // ATOMIC ACTIVATION
+            //
+            // PostgreSQL is the source of truth; Redis is only cache.
+            // Redis is updated ONLY after a successful DB commit.
+            //
+            // Correct order required by the partial unique index
+            // `deployments_page_id_is_active_uid` (WHERE is_active = true):
+            //   1. Deactivate the currently-active deployment (if any).
+            //   2. Activate the rollback target.
+            //
+            // Reversing the order would momentarily create two active rows and trigger
+            // a unique-constraint violation. The transaction guarantees atomicity: if
+            // anything fails the original active deployment stays live.
             const activatedDeployment = await db.transaction(async (tx) => {
-                // Find current active deployment for this page
+                // Step 1 — find and deactivate the current active deployment.
                 const [currentActive] = await tx
                     .select({ id: deployments.id })
                     .from(deployments)
                     .where(and(eq(deployments.page_id, dep.page_id), eq(deployments.is_active, true)))
                     .limit(1)
 
-                // Mark rollback deployment as active
-                await tx
-                    .update(deployments)
-                    .set({
-                        is_active: true,
-                        status: 'active',
-                    })
-                    .where(eq(deployments.id, dep.id))
-
-                // Mark previous active deployment as superseded
                 if (currentActive && currentActive.id !== dep.id) {
                     await tx
                         .update(deployments)
-                        .set({
-                            is_active: false,
-                            status: 'superseded',
-                        })
+                        .set({ is_active: false, status: 'superseded' })
                         .where(eq(deployments.id, currentActive.id))
                 }
+
+                // Step 2 — activate the rollback target.
+                await tx
+                    .update(deployments)
+                    .set({ is_active: true, status: 'active' })
+                    .where(eq(deployments.id, dep.id))
 
                 const [updated] = await tx
                     .select()
