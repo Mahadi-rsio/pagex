@@ -8,7 +8,7 @@ import { lookup } from 'mime-types'
 import pLimit from 'p-limit'
 import sharp from 'sharp'
 import { db } from '../infrastructure/db/db.js'
-import { blobTreeEntries, blobs, deployments, pages, sites } from '../infrastructure/db/schema.js'
+import { blobTreeEntries, blobs, deployments, idempotencyKeys, pages, sites } from '../infrastructure/db/schema.js'
 import { usageRedis, redis } from '../infrastructure/cache/redis.js'
 import {
     SHARED_BUCKET,
@@ -41,6 +41,11 @@ import {
     newLockHolder,
     pageDeploymentLock,
 } from './deployment-lock.service.js'
+import {
+    checkAndReserveIdempotencyKey,
+    completeIdempotencyKey,
+    failIdempotencyKey,
+} from './idempotency.service.js'
 import type {
     CommitDeployInput,
     DeployFileInput,
@@ -488,18 +493,6 @@ export async function clearSiteFilesMap(siteId: string): Promise<void> {
     await redis.del(`site_files:${siteId}`)
 }
 
-async function activateDeployment(pageId: string, deploymentId: string): Promise<void> {
-    await db
-        .update(deployments)
-        .set({ is_active: true })
-        .where(eq(deployments.id, deploymentId))
-
-    await db
-        .update(deployments)
-        .set({ is_active: false })
-        .where(and(eq(deployments.page_id, pageId), ne(deployments.id, deploymentId)))
-}
-
 async function currentMaxVersion(pageId: string): Promise<number> {
     const [latest] = await db
         .select({ version: deployments.version })
@@ -572,6 +565,7 @@ export async function commitBlobTreeDeploy(opts: {
                 build_id: opts.buildId,
                 version,
                 is_active: false,
+                status: 'pending',
                 source: opts.source,
                 file_count: opts.fileManifest.length,
                 filesDeployed: opts.filesDeployed,
@@ -599,29 +593,73 @@ export async function commitBlobTreeDeploy(opts: {
             .limit(1)
 
         if (newer) {
+            // Mark this deployment as superseded since a newer one exists
+            await db
+                .update(deployments)
+                .set({ status: 'superseded' })
+                .where(eq(deployments.id, newDep.id))
             throw new HttpError(STALE_DEPLOYMENT_MESSAGE, 409)
         }
 
         await pageDeploymentLock.assertHeld(opts.pageId, lockHolder)
 
-        await activateDeployment(opts.pageId, newDep.id)
-        await setActiveDeploymentCache(opts.siteId, newDep.id)
-        await cacheManifestInRedis(newDep.id, manifest)
+        // ATOMIC ACTIVATION: Use a database transaction to ensure consistency
+        // PostgreSQL is the source of truth; Redis is only cache.
+        // Update Redis ONLY after successful DB commit.
+        const activatedDeployment = await db.transaction(async (tx) => {
+            // Find current active deployment for this page
+            const [currentActive] = await tx
+                .select({ id: deployments.id })
+                .from(deployments)
+                .where(and(eq(deployments.page_id, opts.pageId), eq(deployments.is_active, true)))
+                .limit(1)
+
+            // Mark new deployment as active
+            await tx
+                .update(deployments)
+                .set({
+                    is_active: true,
+                    status: 'active',
+                })
+                .where(eq(deployments.id, newDep.id))
+
+            // Mark previous active deployment as superseded (not failed)
+            if (currentActive && currentActive.id !== newDep.id) {
+                await tx
+                    .update(deployments)
+                    .set({
+                        is_active: false,
+                        status: 'superseded',
+                    })
+                    .where(eq(deployments.id, currentActive.id))
+            }
+
+            // Return the updated new deployment
+            const [updated] = await tx
+                .select()
+                .from(deployments)
+                .where(eq(deployments.id, newDep.id))
+                .limit(1)
+
+            if (!updated) {
+                throw new HttpError('Failed to activate deployment', 500)
+            }
+
+            return updated
+        })
+
+        // Redis updates ONLY after successful DB commit
+        await setActiveDeploymentCache(opts.siteId, activatedDeployment.id)
+        await cacheManifestInRedis(activatedDeployment.id, manifest)
         await incrementSiteVersion(opts.siteId)
         await invalidateSiteCache(opts.subdomain)
-
-        const [updated] = await db
-            .select()
-            .from(deployments)
-            .where(eq(deployments.id, newDep.id))
-            .limit(1)
 
         // fire and forget — never await
         runDeploymentGC(opts.pageId, opts.siteId).catch((err) =>
             console.error('GC failed silently', err)
         )
 
-        return updated
+        return activatedDeployment
     }
 
     if (acquiredHere) {
@@ -676,25 +714,48 @@ export async function deployFromLocalDirectory(opts: {
 
             await log?.(`Committing blob tree (${fileManifest.length} files)…`)
 
-            const deployment = await commitBlobTreeDeploy({
-                pageId: opts.pageId,
-                tenantId: opts.tenantId,
-                siteId: opts.siteId,
-                subdomain: opts.subdomain,
-                source: 'build',
-                buildId: opts.buildId,
-                fileManifest,
-                filesDeployed,
-                filesReused,
-                lockHolder,
-            })
+            try {
+                const deployment = await commitBlobTreeDeploy({
+                    pageId: opts.pageId,
+                    tenantId: opts.tenantId,
+                    siteId: opts.siteId,
+                    subdomain: opts.subdomain,
+                    source: 'build',
+                    buildId: opts.buildId,
+                    fileManifest,
+                    filesDeployed,
+                    filesReused,
+                    lockHolder,
+                })
 
-            return {
-                deployment,
-                filesDeployed,
-                filesReused,
-                fileCount: fileManifest.length,
-                summary,
+                if (!deployment) {
+                    throw new HttpError('Deployment failed to activate', 500)
+                }
+
+                return {
+                    deployment,
+                    filesDeployed,
+                    filesReused,
+                    fileCount: fileManifest.length,
+                    summary,
+                }
+            } catch (err) {
+                // The deployment record was created in commitBlobTreeDeploy but failed to activate
+                // Find the pending deployment for this build and mark it as failed
+                const [failedDep] = await db
+                    .select({ id: deployments.id })
+                    .from(deployments)
+                    .where(and(eq(deployments.build_id, opts.buildId), eq(deployments.status, 'pending')))
+                    .orderBy(desc(deployments.created_at))
+                    .limit(1)
+
+                if (failedDep) {
+                    await db
+                        .update(deployments)
+                        .set({ status: 'failed' })
+                        .where(eq(deployments.id, failedDep.id))
+                }
+                throw err
             }
         },
     )
@@ -753,7 +814,8 @@ export async function prepareDeploy(
     const filesReused = hashes.filter((h) => existingSet.has(h)).length
     const filesToUpload = neededHashes.size
 
-    const token = randomBytes(24).toString('hex')
+    // Idempotency key handling
+    const idempotencyKey = input.idempotencyKey ?? randomBytes(24).toString('hex')
     const baseVersion = await currentMaxVersion(page.id)
     const payload: DeployTokenPayload = {
         pageId: page.id,
@@ -768,29 +830,72 @@ export async function prepareDeploy(
         })),
     }
 
+    // Check idempotency key
+    const idempotencyResult = await checkAndReserveIdempotencyKey({
+        tenantId,
+        pageId: page.id,
+        idempotencyKey,
+        resourceType: 'deployment',
+        requestBody: input,
+        ttlSeconds: DEPLOY_TOKEN_TTL_SECONDS,
+    })
+
+    if (!idempotencyResult.isNew) {
+        // Return existing deployment token if available
+        const existingToken = await usageRedis.get(deployTokenKey(idempotencyKey))
+        if (existingToken) {
+            return {
+                deploymentToken: idempotencyKey,
+                expiresIn: DEPLOY_TOKEN_TTL_SECONDS,
+                uploadRequired,
+                filesReused,
+                filesToUpload,
+                summary: {
+                    totalFiles: input.files.length,
+                    totalSize,
+                    totalSizeHuman: formatBytes(totalSize),
+                    uploadSize: uploadRequired.reduce((sum, f) => sum + f.size, 0),
+                    uploadSizeHuman: formatBytes(
+                        uploadRequired.reduce((sum, f) => sum + f.size, 0)
+                    ),
+                    reusedSize: input.files
+                        .filter((f) => existingSet.has(f.hash))
+                        .reduce((sum, f) => sum + f.size, 0),
+                },
+            }
+        }
+    }
+
     const locked = await pageDeploymentLock.acquire(
         page.id,
-        token,
+        idempotencyKey,
         DEPLOY_LOCK_PREPARE_TTL_SECONDS
     )
     if (!locked) {
+        // If we created the idempotency key, clean it up on lock failure
+        if (idempotencyResult.isNew) {
+            await failIdempotencyKey({ tenantId, pageId: page.id, idempotencyKey })
+        }
         throw new HttpError(DEPLOYMENT_IN_PROGRESS_MESSAGE, 409)
     }
 
     try {
         await usageRedis.set(
-            deployTokenKey(token),
+            deployTokenKey(idempotencyKey),
             JSON.stringify(payload),
             'EX',
             DEPLOY_TOKEN_TTL_SECONDS
         )
     } catch (err) {
-        await pageDeploymentLock.release(page.id, token)
+        await pageDeploymentLock.release(page.id, idempotencyKey)
+        if (idempotencyResult.isNew) {
+            await failIdempotencyKey({ tenantId, pageId: page.id, idempotencyKey })
+        }
         throw err
     }
 
     return {
-        deploymentToken: token,
+        deploymentToken: idempotencyKey,
         expiresIn: DEPLOY_TOKEN_TTL_SECONDS,
         uploadRequired,
         filesReused,
@@ -846,6 +951,7 @@ export async function presignDeploy(input: PresignDeployInput, tenantId: string)
 export async function commitDeploy(input: CommitDeployInput, tenantId: string) {
     const payload = await loadDeployToken(input.deploymentToken, tenantId)
     const lockHolder = input.deploymentToken
+    const idempotencyKey = input.idempotencyKey ?? input.deploymentToken
 
     return pageDeploymentLock.withLock(
         payload.pageId,
@@ -880,6 +986,14 @@ export async function commitDeploy(input: CommitDeployInput, tenantId: string) {
                 ...(typeof payload.baseVersion === 'number'
                     ? { baseVersion: payload.baseVersion }
                     : {}),
+            })
+
+            // Complete the idempotency key with the deployment ID
+            await completeIdempotencyKey({
+                tenantId,
+                pageId: payload.pageId,
+                idempotencyKey,
+                resourceId: deployment.id,
             })
 
             await usageRedis.del(deployTokenKey(input.deploymentToken))

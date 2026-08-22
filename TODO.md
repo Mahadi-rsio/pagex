@@ -146,8 +146,8 @@ These are the important items to finish before calling the core production-ready
 - [x] Prevent concurrent deployments for the same page
 - [x] Add deployment generation/version validation
 - [x] Prevent stale builds from activating over newer deployments
-- [ ] Make deployment commit idempotent
-- [ ] Make retrying the same deploy safe
+- [x] Make deployment commit idempotent
+- [x] Make retrying the same deploy safe
 
 Expected behavior:
 
@@ -188,17 +188,17 @@ Every tenant-owned resource must be tenant-scoped.
 
 Review:
 
-- [ ] pages
-- [ ] sites
-- [ ] builds
-- [ ] deployments
-- [ ] blob tree entries
-- [ ] domains
-- [ ] deployment tokens
-- [ ] rollback
-- [ ] deployment status
-- [ ] build status
-- [ ] analytics
+- [x] pages
+- [x] sites
+- [x] builds
+- [x] deployments
+- [x] blob tree entries
+- [x] domains
+- [x] deployment tokens
+- [x] rollback
+- [x] deployment status
+- [x] build status
+- [x] analytics
 
 Never trust only a resource ID.
 
@@ -215,15 +215,15 @@ AND tenant_id = $tenantId
 
 Before activation verify:
 
-- [ ] Every path is valid
-- [ ] No duplicate paths
-- [ ] Every blob hash is valid SHA-256
-- [ ] Every referenced blob exists
-- [ ] Blob metadata is consistent
-- [ ] File count matches deployment metadata
-- [ ] Compression variants are valid
-- [ ] Manifest schema/version is valid
-- [ ] Manifest size has reasonable limits
+- [x] Every path is valid
+- [x] No duplicate paths
+- [x] Every blob hash is valid SHA-256
+- [x] Every referenced blob exists
+- [x] Blob metadata is consistent
+- [x] File count matches deployment metadata
+- [x] Compression variants are valid
+- [x] Manifest schema/version is valid
+- [x] Manifest size has reasonable limits
 
 A deployment must never become active with an invalid manifest.
 
@@ -233,16 +233,16 @@ A deployment must never become active with an invalid manifest.
 
 Review failure scenarios:
 
-- [ ] API crashes during deployment
-- [ ] MinIO unavailable
-- [ ] Redis unavailable
-- [ ] PostgreSQL unavailable
-- [ ] Process crashes after blob upload
-- [ ] Process crashes after manifest creation
-- [ ] Process crashes before activation
-- [ ] Process crashes after activation
-- [ ] GC crashes midway
-- [ ] Rollback crashes midway
+- [x] API crashes during deployment
+- [x] MinIO unavailable
+- [x] Redis unavailable
+- [x] PostgreSQL unavailable
+- [x] Process crashes after blob upload
+- [x] Process crashes after manifest creation
+- [x] Process crashes before activation
+- [x] Process crashes after activation
+- [x] GC crashes midway
+- [x] Rollback crashes midway
 
 Add reconciliation where necessary.
 
@@ -326,16 +326,18 @@ Do NOT redesign the core blob/manifest architecture specifically for Cloud Build
 
 Keep documentation synchronized with implementation.
 
-- [ ] Update `docs/architecture.md`
-- [ ] Ensure request flow describes manifest-first serving
-- [ ] Remove obsolete `blob_tree_entries` request-time references
-- [ ] Document current Redis cache hierarchy
-- [ ] Document deployment state transitions
-- [ ] Document GC behavior
-- [ ] Document rollback behavior
-- [ ] Document tenant isolation rules
+- [x] Update `docs/architecture.md`
+- [x] Ensure request flow describes manifest-first serving
+- [x] Remove obsolete `blob_tree_entries` request-time references
+- [x] Document current Redis cache hierarchy
+- [x] Document deployment state transitions
+- [x] Document GC behavior
+- [x] Document rollback behavior
+- [x] Document tenant isolation rules
 - [x] Document deployment locking
-- [ ] Document failure/recovery behavior
+- [x] Document failure/recovery behavior
+- [x] Update `docs/SCHEMA.md`
+- [x] Update `docs/WORKERS.md`
 
 Documentation must reflect the actual code.
 

@@ -610,6 +610,63 @@ Client Request
 - **Build Worker:** Processes cloud build jobs
 - **Queue:** Jobs stored in Redis with priority and retry logic
 
+### Deployment Safety (Production Hardening)
+
+**Decision:** Add database-level invariants, atomic deployment activation, idempotency, and robust queue retry/DLQ
+
+**Rationale:**
+- **Correctness:** Prevent race conditions and data corruption at DB level
+- **Reliability:** Ensure exactly-one-active-deployment, no stale overwrites
+- **Observability:** DLQ captures failed builds with full context for debugging
+- **Idempotency:** Safe retries without duplicate deployments
+
+**Database Invariants (enforced by PostgreSQL):**
+- `UNIQUE(page_id, version)` — no duplicate versions per page
+- `UNIQUE(page_id) WHERE is_active = true` — exactly one active deployment per page (partial index)
+- `UNIQUE(tenant_id, page_id, idempotency_key)` — scoped idempotency keys
+- `CHECK builds.status IN ('queued','running','completed','failed','cancelled')`
+- `CHECK deployments.status IN ('pending','active','failed','superseded')`
+- `CHECK deployments.source IN ('build','upload')`
+- `CHECK active deployments require manifest` — `is_active` → all manifest fields NOT NULL
+- `FK deployments.build_id ON DELETE SET NULL` — build deletion doesn't orphan deployments
+
+**Deployment State Machine:**
+```
+pending
+  │
+  ├──→ active (atomic DB transaction, manifest validated)
+  │
+  ├──→ failed (build/deploy error, NEVER becomes active)
+  │
+  └──→ superseded (newer deployment activated, or rollback to older)
+```
+- FAILED deployment can NEVER become ACTIVE (enforced by CHECK constraint)
+- ACTIVE deployment MUST have finalized manifest (enforced by CHECK constraint)
+- Previous ACTIVE deployment remains ACTIVE if new deployment fails (atomic transaction)
+
+**Atomic Activation (PostgreSQL transaction):**
+1. Mark new deployment `is_active: true, status: 'active'`
+2. Mark previous active `is_active: false, status: 'superseded'`
+3. **Redis updates ONLY after successful DB commit** — `setActiveDeploymentCache`, `cacheManifestInRedis`, `incrementSiteVersion`, `invalidateSiteCache`
+
+**Idempotency Keys:**
+- Scoped by `(tenant_id, page_id, idempotency_key)`
+- `checkAndReserveIdempotencyKey()` — inserts if new, returns existing if duplicate
+- `completeIdempotencyKey()` — sets `resource_id` after successful creation
+- `failIdempotencyKey()` — deletes reservation on failure
+- Request hash verification prevents silent corruption
+
+**Queue Retry & DLQ:**
+- 3 attempts with exponential backoff (10s base)
+- Error classification: `classifyBuildError()` distinguishes retryable (network, MinIO, Redis, git) vs permanent (auth, validation, config) errors
+- Permanent errors fail immediately → DLQ
+- DLQ queue: `cloudisy-cloud-builds-dlq` with `FailedBuildJob` containing:
+  - job_id, build_id, page_id, tenant_id, site_id
+  - failureReason, failedAt, attemptsMade, errorType ('retryable'|'permanent')
+  - Full context for debugging/alerting
+- **No secrets** in DLQ — gitToken excluded
+- DLQ worker logs full context for ops review
+
 ### Caching Strategy
 
 **Decision:** Multi-level caching with smart invalidation

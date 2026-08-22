@@ -17,18 +17,6 @@ import {
     pageDeploymentLock,
 } from './deployment-lock.service.js'
 
-async function activateDeployment(pageId: string, deploymentId: string): Promise<void> {
-    await db
-        .update(deployments)
-        .set({ is_active: true })
-        .where(eq(deployments.id, deploymentId))
-
-    await db
-        .update(deployments)
-        .set({ is_active: false })
-        .where(and(eq(deployments.page_id, pageId), ne(deployments.id, deploymentId)))
-}
-
 export async function rollbackToDeployment(deploymentId: string, tenantId: string) {
     const [dep] = await db
         .select()
@@ -50,6 +38,11 @@ export async function rollbackToDeployment(deploymentId: string, tenantId: strin
         throw new HttpError('Deployment has no blob tree; cannot rollback', 400)
     }
 
+    // Cannot rollback to a failed deployment
+    if (dep.status === 'failed') {
+        throw new HttpError('Cannot rollback to a failed deployment', 400)
+    }
+
     const lockHolder = `rollback:${dep.id}`
 
     return pageDeploymentLock.withLock(
@@ -64,9 +57,51 @@ export async function rollbackToDeployment(deploymentId: string, tenantId: strin
 
             await pageDeploymentLock.assertHeld(dep.page_id, lockHolder)
 
-            await activateDeployment(dep.page_id, dep.id)
-            await setActiveDeploymentCache(dep.site_id, dep.id)
-            await cacheManifestInRedis(dep.id, manifest)
+            // ATOMIC ACTIVATION: Use a database transaction
+            const activatedDeployment = await db.transaction(async (tx) => {
+                // Find current active deployment for this page
+                const [currentActive] = await tx
+                    .select({ id: deployments.id })
+                    .from(deployments)
+                    .where(and(eq(deployments.page_id, dep.page_id), eq(deployments.is_active, true)))
+                    .limit(1)
+
+                // Mark rollback deployment as active
+                await tx
+                    .update(deployments)
+                    .set({
+                        is_active: true,
+                        status: 'active',
+                    })
+                    .where(eq(deployments.id, dep.id))
+
+                // Mark previous active deployment as superseded
+                if (currentActive && currentActive.id !== dep.id) {
+                    await tx
+                        .update(deployments)
+                        .set({
+                            is_active: false,
+                            status: 'superseded',
+                        })
+                        .where(eq(deployments.id, currentActive.id))
+                }
+
+                const [updated] = await tx
+                    .select()
+                    .from(deployments)
+                    .where(eq(deployments.id, dep.id))
+                    .limit(1)
+
+                if (!updated) {
+                    throw new HttpError('Failed to activate deployment', 500)
+                }
+
+                return updated
+            })
+
+            // Redis updates ONLY after successful DB commit
+            await setActiveDeploymentCache(dep.site_id, activatedDeployment.id)
+            await cacheManifestInRedis(activatedDeployment.id, manifest)
             await incrementSiteVersion(dep.site_id)
 
             const [page] = await db.select().from(pages).where(eq(pages.id, dep.page_id)).limit(1)
@@ -74,18 +109,12 @@ export async function rollbackToDeployment(deploymentId: string, tenantId: strin
                 await invalidateSiteCache(page.project_name)
             }
 
-            const [updated] = await db
-                .select()
-                .from(deployments)
-                .where(eq(deployments.id, dep.id))
-                .limit(1)
-
             // fire and forget — never await
             runDeploymentGC(dep.page_id, dep.site_id).catch((err) =>
                 console.error('GC failed silently', err)
             )
 
-            return updated
+            return activatedDeployment
         },
     )
 }

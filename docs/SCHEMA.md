@@ -67,12 +67,13 @@ page_id       UUID      FK → pages(id) ON DELETE CASCADE
 tenant_id     TEXT      NOT NULL
 job_id        TEXT      -- BullMQ job ID
 status        TEXT      NOT NULL DEFAULT 'queued'
-              -- queued | active | completed | failed
+              -- queued | running | completed | failed | cancelled
 repo_url / git_provider / framework / build_command / output_dir / error / triggered_by
 created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 completed_at  TIMESTAMPTZ
 
 INDEX: idx_builds_page_tenant_status ON (page_id, tenant_id, status)
+CHECK: builds_status_check (status IN ('queued','running','completed','failed','cancelled'))
 ```
 
 ---
@@ -96,14 +97,31 @@ id               UUID     PRIMARY KEY
 page_id          UUID     FK → pages(id) ON DELETE CASCADE
 site_id          UUID     FK → sites(id)
 tenant_id        TEXT     NOT NULL
-build_id         UUID     FK → builds(id)  -- NULL for CLI uploads
+build_id         UUID     FK → builds(id) ON DELETE SET NULL  -- NULL for CLI uploads
 version          INTEGER  NOT NULL
 is_active        BOOLEAN  NOT NULL DEFAULT false
+status           TEXT     NOT NULL DEFAULT 'pending'
+                 -- pending | active | failed | superseded
 source           TEXT     NOT NULL  -- 'build' | 'upload'
 file_count       INTEGER  NOT NULL
 files_deployed   INTEGER
 files_reused     INTEGER
+manifest_key     TEXT     -- MinIO object key (immutable manifest)
+manifest_version INTEGER
+manifest_size    INTEGER
+manifest_hash    TEXT     -- SHA256 of serialized manifest
 created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+
+UNIQUE (page_id, version)
+UNIQUE (page_id) WHERE (is_active = true)  -- partial index: one active per page
+CHECK: deployments_status_check (status IN ('pending','active','failed','superseded'))
+CHECK: deployments_source_check (source IN ('build','upload'))
+CHECK: deployments_active_requires_manifest (is_active → manifest fields NOT NULL)
+INDEX: idx_deployments_page_active ON (page_id, is_active)
+INDEX: idx_deployments_page_tenant_version ON (page_id, tenant_id, version)
+INDEX: idx_deployments_page_tenant ON (page_id, tenant_id)
+INDEX: idx_deployments_build_id ON (build_id)
+INDEX: idx_deployments_status ON (status)
 ```
 
 **Retention / GC** (`DEPLOYMENT_RETENTION = 10`):
@@ -129,6 +147,29 @@ INDEX idx_blob_tree_entries_deployment ON (deployment_id)
 
 ---
 
+### `idempotency_keys`
+Ensures deployment/build requests are idempotent. Scoped by `(tenant_id, page_id, idempotency_key)`.
+
+```sql
+id              UUID    PRIMARY KEY
+tenant_id       TEXT    NOT NULL
+page_id         UUID    FK → pages(id) ON DELETE CASCADE
+idempotency_key TEXT    NOT NULL
+resource_type   TEXT    NOT NULL  -- 'deployment' | 'build'
+resource_id     UUID    NOT NULL  -- created deployment/build UUID
+request_hash    TEXT    -- SHA256 of request body (for additional safety)
+created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+expires_at      TIMESTAMPTZ NOT NULL
+
+UNIQUE (tenant_id, page_id, idempotency_key)
+CHECK: idempotency_keys_resource_type_check (resource_type IN ('deployment','build'))
+INDEX: idx_idempotency_keys_expires ON (expires_at)
+INDEX: idx_idempotency_keys_tenant_page ON (tenant_id, page_id)
+INDEX: idx_idempotency_keys_resource ON (resource_type, resource_id)
+```
+
+---
+
 ## Drizzle Migration Files
 
 | File | Contents |
@@ -136,7 +177,12 @@ INDEX idx_blob_tree_entries_deployment ON (deployment_id)
 | `drizzle/0000_*.sql` | Initial schema (sites, pages, site_daily_stats) |
 | `drizzle/0001_*.sql` | builds table |
 | `drizzle/0002_*.sql` | deployments table |
-| later | blobs / blob_tree_entries / column tweaks |
+| `drizzle/0003_*.sql` | blobs / blob_tree_entries |
+| `drizzle/0004_*.sql` | deployments: drop snapshot_prefix |
+| `drizzle/0005_*.sql` | deployments: manifest columns + site_daily_stats unique |
+| `drizzle/0006_*.sql` | DB invariants indexes (partial unique active per page) |
+| `drizzle/0007_curly_pride.sql` | Idempotency keys table, FK build_id SET NULL, CHECK constraints |
+| `drizzle/0008_nervous_shadowcat.sql` | deployments: status column + index |
 
 ```bash
 npm run gen       # drizzle-kit generate
@@ -158,14 +204,14 @@ npm run migrate   # drizzle-kit migrate (also on compose up)
 | `stats:*` | 3 | counters | — | blob-server analytics | blob-server flush → `site_daily_stats` |
 | `db_cache:{domain}` | 3 | JSON | 15 min | page.service | page.service |
 
-**BullMQ (DB2):** queue `cloudisy-cloud-builds`.
+**BullMQ (DB2):** queues `cloudisy-cloud-builds` (main), `cloudisy-cloud-builds-dlq` (dead letter).
 
 ---
 
 ## ORM Import Pattern
 
 ```typescript
-import { pages, sites, builds, deployments, blobs, blobTreeEntries } from '../infrastructure/db/schema.js'
+import { pages, sites, builds, deployments, blobs, blobTreeEntries, idempotencyKeys } from '../infrastructure/db/schema.js'
 import { db } from '../infrastructure/db/db.js'
 import { eq, and, desc, ne, inArray, notInArray } from 'drizzle-orm'
 

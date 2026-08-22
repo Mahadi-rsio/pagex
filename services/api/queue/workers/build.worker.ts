@@ -1,13 +1,13 @@
-import { Worker } from 'bullmq'
+import { Worker, Job } from 'bullmq'
 import { promises as fs } from 'fs'
 import { existsSync } from 'fs'
 import * as path from 'path'
 import { spawn } from 'child_process'
-import { eq } from 'drizzle-orm'
+import { eq, and, desc } from 'drizzle-orm'
 import { connection } from '../../infrastructure/cache/redis.js'
 import { db } from '../../infrastructure/db/db.js'
-import { builds, sites } from '../../infrastructure/db/schema.js'
-import { CLOUDISY_CLOUD_BUILDS_QUEUE, type CloudBuildJob } from '../jobs/build.queue.js'
+import { builds, deployments, sites } from '../../infrastructure/db/schema.js'
+import { CLOUDISY_CLOUD_BUILDS_QUEUE, type CloudBuildJob, buildDlqQueue, classifyBuildError, moveToDLQ } from '../jobs/build.queue.js'
 import { deployFromLocalDirectory } from '../../services/deploy.service.js'
 import { validateOutputDir } from '../../utils/deployment-validator.js'
 
@@ -48,9 +48,9 @@ async function resolveInstallCommand(cloneDir: string): Promise<string> {
 
 const worker = new Worker<CloudBuildJob>(
     CLOUDISY_CLOUD_BUILDS_QUEUE,
-    async (job) => {
+    async (job: Job<CloudBuildJob>) => {
         const { buildId, pageId, tenantId, siteId, repoUrl, gitProvider, gitToken, framework, buildCommand, outputDir: jobOutputDir, envVars } = job.data;
-        const jobId = job.id;
+        const jobId = job.id ?? 'unknown';
         const cloneDir = `/tmp/cloudisy-builds/${jobId}`;
 
         console.log(`Starting build job ${jobId} for buildId: ${buildId}...`);
@@ -181,10 +181,13 @@ const worker = new Worker<CloudBuildJob>(
                     .where(eq(builds.id, buildId))
                 await fs.rm(cloneDir, { recursive: true, force: true }).catch(() => {})
                 console.error(`Build job ${jobId} failed validation: ${validation.error}`)
-                return
+                // Validation failure is permanent - don't retry
+                const error = new Error(validation.error)
+                ;(error as any).permanent = true
+                throw error
             }
 
-            await job.log("Step 4: Deploying build outputs via blob store...");
+            await job.log("Step 4: Deploying build outputs via blob store...")
 
             const [site] = await db.select().from(sites).where(eq(sites.id, siteId)).limit(1)
             if (!site) {
@@ -223,7 +226,7 @@ const worker = new Worker<CloudBuildJob>(
 
             // Step 5 (100%) — Update DB + Cleanup
             await job.updateProgress(100);
-            await job.log("Step 5: Finalizing build...");
+            await job.log("Step 5: Finalizing build...")
 
             const durationSeconds = ((Date.now() - startTime) / 1000).toFixed(2);
             await job.log(`[Stats] Total Build Duration: ${durationSeconds}s`);
@@ -243,10 +246,49 @@ const worker = new Worker<CloudBuildJob>(
                 console.log(`Forced container cloudisy-build-${jobId} to stop.`);
             });
             await fs.rm(cloneDir, { recursive: true, force: true }).catch(() => {});
-            
+
+            const errorMessage = err?.message || 'Unknown error'
             await db.update(builds)
-                .set({ status: 'failed', error: err?.message || 'Unknown error' })
+                .set({ status: 'failed', error: errorMessage, completed_at: new Date() })
                 .where(eq(builds.id, buildId));
+
+            // Mark associated deployment as failed if it exists and is still pending
+            const [pendingDep] = await db
+                .select({ id: deployments.id })
+                .from(deployments)
+                .where(and(eq(deployments.build_id, buildId), eq(deployments.status, 'pending')))
+                .orderBy(desc(deployments.created_at))
+                .limit(1)
+
+            if (pendingDep) {
+                await db
+                    .update(deployments)
+                    .set({ status: 'failed' })
+                    .where(eq(deployments.id, pendingDep.id))
+            }
+
+            // Classify error and handle retry logic
+            const isPermanent = err?.permanent === true || classifyBuildError(err) === 'permanent'
+            
+            // If permanent error or max attempts reached, move to DLQ
+            const attemptsMade = job.attemptsMade ?? 1
+            const maxAttempts = job.opts?.attempts ?? 3
+            
+            if (isPermanent || attemptsMade >= maxAttempts) {
+                console.log(`Build job ${jobId} failed permanently or max attempts reached, moving to DLQ`)
+                await moveToDLQ({
+                    id: jobId,
+                    data: job.data,
+                    attemptsMade,
+                    failedReason: errorMessage,
+                }, err)
+                
+                // Don't throw for permanent errors - let the job be marked as failed without retry
+                if (isPermanent) {
+                    // Return instead of throwing to prevent retry
+                    return
+                }
+            }
 
             throw err;
         }
@@ -254,12 +296,16 @@ const worker = new Worker<CloudBuildJob>(
     { connection, concurrency: 2 }
 );
 
-worker.on('completed', () => {
-    console.log("Build job completed successfully.");
+worker.on('completed', (job) => {
+    console.log(`Build job ${job.id} completed successfully.`);
 });
 
 worker.on('failed', (job, err) => {
-    console.error(`Build job ${job?.id} failed:`, err);
+    console.error(`Build job ${job?.id} failed after all retries:`, err);
+});
+
+worker.on('error', (err) => {
+    console.error('Build worker error:', err);
 });
 
 console.log('Build worker running...');

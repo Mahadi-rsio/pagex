@@ -12,9 +12,12 @@ const deployFileSchema = z.object({
     magicBytes: z.string().min(1),
 })
 
+const idempotencyKeySchema = z.string().min(1).max(64).regex(/^[a-zA-Z0-9_-]+$/, 'idempotency key must be alphanumeric with hyphens/underscores')
+
 export const prepareDeploySchema = z.object({
     pageId: z.string().min(1),
     files: z.array(deployFileSchema).min(1).max(10_000),
+    idempotencyKey: idempotencyKeySchema.optional(),
 })
 
 export const presignDeploySchema = z.object({
@@ -24,6 +27,7 @@ export const presignDeploySchema = z.object({
 
 export const commitDeploySchema = z.object({
     deploymentToken: z.string().min(1),
+    idempotencyKey: idempotencyKeySchema.optional(),
 })
 
 export type PrepareDeployInput = z.infer<typeof prepareDeploySchema>

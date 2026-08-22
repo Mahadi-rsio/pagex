@@ -113,9 +113,10 @@ export const deployments = pgTable("deployments", {
     page_id: uuid("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
     site_id: uuid("site_id").notNull().references(() => sites.id),
     tenant_id: text("tenant_id").notNull(),
-    build_id: uuid("build_id").references(() => builds.id),
+    build_id: uuid("build_id").references(() => builds.id, { onDelete: "set null" }),
     version: integer("version").notNull(),
     is_active: boolean("is_active").default(false).notNull(),
+    status: text("status").notNull().default("pending"), // 'pending' | 'active' | 'failed' | 'superseded'
     source: text("source").notNull(), // "build" | "upload"
     file_count: integer("file_count").notNull(),
     filesDeployed: integer('files_deployed'),
@@ -134,6 +135,12 @@ export const deployments = pgTable("deployments", {
     pageTenantVersionIdx: index("idx_deployments_page_tenant_version").on(t.page_id, t.tenant_id, t.version),
     // Index for tenant-scoped deployment listing
     pageTenantIdx: index("idx_deployments_page_tenant").on(t.page_id, t.tenant_id),
+    // Index for deployments by build_id
+    buildIdIdx: index("idx_deployments_build_id").on(t.build_id),
+    // Index for deployments by status
+    statusIdx: index("idx_deployments_status").on(t.status),
+    // UNIQUE(page_id, version) - each page has unique version numbers
+    uniquePageVersion: unique("deployments_page_id_version_uid").on(t.page_id, t.version),
 }));
 
 /**
@@ -151,4 +158,25 @@ export const blobTreeEntries = pgTable('blob_tree_entries', {
 }, (t) => ({
     uniqueDeploymentPath: unique('blob_tree_entries_deployment_path_uid').on(t.deploymentId, t.path),
     deploymentIdx: index('idx_blob_tree_entries_deployment').on(t.deploymentId),
+}));
+
+/**
+ * `idempotency_keys` — ensures deployment/build requests are idempotent.
+ * Scoped by (tenant_id, page_id, idempotency_key) to allow same key across different pages/tenants.
+ */
+export const idempotencyKeys = pgTable('idempotency_keys', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenant_id: text('tenant_id').notNull(),
+    page_id: uuid('page_id').notNull().references(() => pages.id, { onDelete: 'cascade' }),
+    idempotency_key: text('idempotency_key').notNull(),
+    resource_type: text('resource_type').notNull(), // 'deployment' | 'build'
+    resource_id: uuid('resource_id').notNull(),
+    request_hash: text('request_hash'), // hash of request body for additional safety
+    created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expires_at: timestamp('expires_at', { withTimezone: true }).notNull(),
+}, (t) => ({
+    uniqueTenantPageKey: unique('idempotency_keys_tenant_page_key_uid').on(t.tenant_id, t.page_id, t.idempotency_key),
+    expiresIdx: index('idx_idempotency_keys_expires').on(t.expires_at),
+    tenantPageIdx: index('idx_idempotency_keys_tenant_page').on(t.tenant_id, t.page_id),
+    resourceIdx: index('idx_idempotency_keys_resource').on(t.resource_type, t.resource_id),
 }));
