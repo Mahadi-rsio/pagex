@@ -100,6 +100,15 @@ async function readLiveSiteStats(siteId: string) {
     let bots = 0
     let humans = 0
 
+    const statusCodes = {
+        '2xx': 0,
+        '3xx': 0,
+        '4xx': 0,
+        '5xx': 0,
+    }
+    let uniqueIps = 0
+    const hourCounts: Record<string, number> = {}
+
     for (const day of dates) {
         const key = `stats:${siteId}:${day}`
         const vals = await redis.hgetall(key)
@@ -108,9 +117,43 @@ async function readLiveSiteStats(siteId: string) {
         bandwidth += parseInt(vals.bandwidth || '0', 10) || 0
         bots += parseInt(vals.bots || '0', 10) || 0
         humans += parseInt(vals.humans || '0', 10) || 0
+        for (const code of Object.keys(statusCodes) as Array<keyof typeof statusCodes>) {
+            statusCodes[code] += parseInt(vals[`requests_${code}`] || '0', 10) || 0
+        }
     }
 
-    return { requests, bandwidth, bots, humans }
+    // Unique visitors: HyperLogLog at uniq:{site_id}:{date}
+    const uniqCounts = await redis.pfcount(...dates.map((day) => `uniq:${siteId}:${day}`))
+    uniqueIps = Number(uniqCounts) || 0
+
+    // Peak-hour slots: plain counters at peak:{site_id}:{date:HH}
+    const peakKeys: string[] = []
+    for (const day of dates) {
+        for (let h = 0; h < 24; h++) {
+            peakKeys.push(`peak:${siteId}:${day}:${String(h).padStart(2, '0')}`)
+        }
+    }
+    if (peakKeys.length > 0) {
+        const counts = await redis.mget(...peakKeys)
+        peakKeys.forEach((key, i) => {
+            const count = parseInt(counts[i] || '0', 10) || 0
+            if (count > 0) {
+                const hour = key.split(':').pop()!
+                hourCounts[hour] = (hourCounts[hour] || 0) + count
+            }
+        })
+    }
+
+    let peakHour: string | null = null
+    let peakHourRequests = 0
+    for (const [hour, count] of Object.entries(hourCounts)) {
+        if (count > peakHourRequests) {
+            peakHourRequests = count
+            peakHour = hour
+        }
+    }
+
+    return { requests, bandwidth, bots, humans, statusCodes, uniqueIps, peakHour, peakHourRequests }
 }
 
 async function getActiveDeploymentStorage(pageId: string) {
@@ -167,8 +210,13 @@ export async function getPageUsage(domain: string) {
         .select({
             requests: sql<number>`coalesce(sum(${siteDailyStats.requests}), 0)::bigint`.mapWith(Number),
             bandwidth: sql<number>`coalesce(sum(${siteDailyStats.bandwidth}), 0)::bigint`.mapWith(Number),
+            requests2xx: sql<number>`coalesce(sum(${siteDailyStats.requests2xx}), 0)::bigint`.mapWith(Number),
+            requests3xx: sql<number>`coalesce(sum(${siteDailyStats.requests3xx}), 0)::bigint`.mapWith(Number),
+            requests4xx: sql<number>`coalesce(sum(${siteDailyStats.requests4xx}), 0)::bigint`.mapWith(Number),
+            requests5xx: sql<number>`coalesce(sum(${siteDailyStats.requests5xx}), 0)::bigint`.mapWith(Number),
             bots: sql<number>`coalesce(sum(${siteDailyStats.bots}), 0)::bigint`.mapWith(Number),
             humans: sql<number>`coalesce(sum(${siteDailyStats.humans}), 0)::bigint`.mapWith(Number),
+            uniqueIps: sql<number>`coalesce(max(${siteDailyStats.uniqueIps}), 0)::bigint`.mapWith(Number),
         })
         .from(siteDailyStats)
         .where(eq(siteDailyStats.siteId, page.site_id))
@@ -180,6 +228,23 @@ export async function getPageUsage(domain: string) {
     const totalRequests = flushedRequests + live.requests
     const totalBandwidth = flushedBandwidth + live.bandwidth
     const storage = await getActiveDeploymentStorage(page.id)
+
+    const [peakRow] = await db
+        .select({
+            hour: siteDailyStats.peakHour,
+            requests: siteDailyStats.peakHourRequests,
+        })
+        .from(siteDailyStats)
+        .where(eq(siteDailyStats.siteId, page.site_id))
+        .orderBy(sql`${siteDailyStats.peakHourRequests} desc`)
+        .limit(1)
+
+    let peakHour = live.peakHour
+    let peakHourRequests = live.peakHourRequests
+    if ((peakRow?.requests ?? 0) > peakHourRequests) {
+        peakHourRequests = peakRow!.requests
+        peakHour = peakRow!.hour
+    }
 
     return {
         requests: {
@@ -208,6 +273,17 @@ export async function getPageUsage(domain: string) {
         traffic: {
             bots: (flushedRow?.bots ?? 0) + live.bots,
             humans: (flushedRow?.humans ?? 0) + live.humans,
+            unique_ips: Math.max(flushedRow?.uniqueIps ?? 0, live.uniqueIps),
+        },
+        status_codes: {
+            '2xx': (flushedRow?.requests2xx ?? 0) + live.statusCodes['2xx'],
+            '3xx': (flushedRow?.requests3xx ?? 0) + live.statusCodes['3xx'],
+            '4xx': (flushedRow?.requests4xx ?? 0) + live.statusCodes['4xx'],
+            '5xx': (flushedRow?.requests5xx ?? 0) + live.statusCodes['5xx'],
+        },
+        peak: {
+            hour: peakHour,
+            requests: peakHourRequests,
         },
     }
 }

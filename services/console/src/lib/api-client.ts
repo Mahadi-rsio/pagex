@@ -142,6 +142,17 @@ export interface ApiUsage {
     traffic?: {
         bots: number;
         humans: number;
+        unique_ips: number;
+    };
+    status_codes?: {
+        '2xx': number;
+        '3xx': number;
+        '4xx': number;
+        '5xx': number;
+    };
+    peak?: {
+        hour: string | null;
+        requests: number;
     };
 }
 

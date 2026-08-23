@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Project } from "@/store/useAppStore";
 import { formatRelativeTime } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
@@ -18,11 +18,36 @@ import {
 } from "@/lib/api-client";
 import {
     RefreshCw,
+    Users,
+    Bot,
+    Globe,
+    Clock3,
 } from "lucide-react";
+import {
+    ResponsiveContainer,
+    PieChart,
+    Pie,
+    Cell,
+    Tooltip,
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Legend,
+} from "recharts";
 
 import {
     formatBytes,
 } from "./utils";
+
+const TRAFFIC_COLORS = ["hsl(var(--primary))", "hsl(var(--muted-foreground))"];
+const STATUS_COLORS: Record<string, string> = {
+    "2xx": "#22c55e",
+    "3xx": "#3b82f6",
+    "4xx": "#f59e0b",
+    "5xx": "#ef4444",
+};
 
 export function AnalyticsTab({ project }: { project: Project }) {
     const [usage, setUsage] = useState<ApiUsage | null>(null);
@@ -63,6 +88,35 @@ export function AnalyticsTab({ project }: { project: Project }) {
         const id = window.setInterval(() => loadUsage(true), 15_000);
         return () => window.clearInterval(id);
     }, [loadUsage, project.domain]);
+
+    const trafficData = useMemo(() => {
+        if (!usage?.traffic) return [];
+        const humans = usage.traffic.humans ?? 0;
+        const bots = usage.traffic.bots ?? 0;
+        if (humans === 0 && bots === 0) return [];
+        return [
+            { name: "Humans", value: humans },
+            { name: "Bots", value: bots },
+        ];
+    }, [usage]);
+
+    const statusData = useMemo(() => {
+        const sc = usage?.status_codes;
+        if (!sc) return [];
+        const entries = [
+            { name: "2xx", value: sc["2xx"] ?? 0 },
+            { name: "3xx", value: sc["3xx"] ?? 0 },
+            { name: "4xx", value: sc["4xx"] ?? 0 },
+            { name: "5xx", value: sc["5xx"] ?? 0 },
+        ];
+        if (entries.every((e) => e.value === 0)) return [];
+        return entries;
+    }, [usage]);
+
+    const statusBarData = useMemo(() => {
+        if (statusData.length === 0) return [];
+        return statusData;
+    }, [statusData]);
 
     if (!project.domain) {
         return (
@@ -119,6 +173,9 @@ export function AnalyticsTab({ project }: { project: Project }) {
             ? Math.round(((usage.traffic?.humans ?? 0) / totalTraffic) * 100)
             : 0;
     const botPct = totalTraffic > 0 ? 100 - humanPct : 0;
+    const uniqueIps = usage.traffic?.unique_ips ?? 0;
+    const peakHour = usage.peak?.hour ?? null;
+    const peakReqs = usage.peak?.requests ?? 0;
 
     return (
         <div className="space-y-4">
@@ -149,12 +206,13 @@ export function AnalyticsTab({ project }: { project: Project }) {
                         </Button>
                     </div>
                 </CardHeader>
-                <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-0">
+                <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 pt-0">
                     <div className="rounded-none border border-border bg-muted/20 p-3">
                         <p className="text-xs text-muted-foreground">Requests</p>
                         <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
                             {usage.requests.used.toLocaleString()}
                         </p>
+                        <p className="text-[11px] text-muted-foreground">total</p>
                     </div>
                     <div className="rounded-none border border-border bg-muted/20 p-3">
                         <p className="text-xs text-muted-foreground">
@@ -163,60 +221,155 @@ export function AnalyticsTab({ project }: { project: Project }) {
                         <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
                             {formatBytes(usage.bandwidth.used_bytes)}
                         </p>
+                        <p className="text-[11px] text-muted-foreground">used</p>
                     </div>
                     <div className="rounded-none border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Humans</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><Users className="size-3" /> Humans</p>
                         <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
                             {(usage.traffic?.humans ?? 0).toLocaleString()}
                         </p>
+                        <p className="text-[11px] text-muted-foreground">{humanPct}% of traffic</p>
                     </div>
                     <div className="rounded-none border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Bots</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><Bot className="size-3" /> Bots</p>
                         <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
                             {(usage.traffic?.bots ?? 0).toLocaleString()}
                         </p>
+                        <p className="text-[11px] text-muted-foreground">{botPct}% of traffic</p>
+                    </div>
+                    <div className="rounded-none border border-border bg-muted/20 p-3">
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><Globe className="size-3" /> Unique IPs</p>
+                        <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
+                            {uniqueIps.toLocaleString()}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">visitors</p>
+                    </div>
+                    <div className="rounded-none border border-border bg-muted/20 p-3">
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><Clock3 className="size-3" /> Peak hour</p>
+                        <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
+                            {peakHour ?? "—"}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">{peakReqs > 0 ? `${peakReqs.toLocaleString()} reqs` : "no data"}</p>
                     </div>
                 </CardContent>
             </Card>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle className="text-sm">Traffic mix</CardTitle>
-                    <CardDescription className="text-xs">
-                        Human vs bot requests
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                    {totalTraffic === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                            No traffic recorded yet.
-                        </p>
-                    ) : (
-                        <>
-                            <div className="flex h-3 w-full overflow-hidden rounded-none border border-border/60">
-                                <div
-                                    className="h-full bg-primary transition-all"
-                                    style={{ width: `${humanPct}%` }}
-                                />
-                                <div
-                                    className="h-full bg-muted-foreground/40 transition-all"
-                                    style={{ width: `${botPct}%` }}
-                                />
-                            </div>
-                            <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-                                <span className="inline-flex items-center gap-1.5">
-                                    <span className="size-1.5 bg-primary" />
-                                    Humans {humanPct}%
-                                </span>
-                                <span className="inline-flex items-center gap-1.5">
-                                    <span className="size-1.5 bg-muted-foreground/40" />
-                                    Bots {botPct}%
-                                </span>
-                            </div>
-                        </>
-                    )}
-                </CardContent>
-            </Card>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-sm">Traffic mix</CardTitle>
+                        <CardDescription className="text-xs">
+                            Human vs bot requests — pie chart
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {trafficData.length === 0 ? (
+                            <p className="text-sm text-muted-foreground py-8 text-center">
+                                No traffic recorded yet.
+                            </p>
+                        ) : (
+                            <>
+                                <div className="h-[220px] w-full">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie
+                                                data={trafficData}
+                                                cx="50%"
+                                                cy="50%"
+                                                innerRadius={55}
+                                                outerRadius={85}
+                                                paddingAngle={2}
+                                                dataKey="value"
+                                            >
+                                                {trafficData.map((entry, idx) => (
+                                                    <Cell key={entry.name} fill={TRAFFIC_COLORS[idx % TRAFFIC_COLORS.length]} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip
+                                                contentStyle={{ fontSize: 12, borderRadius: 0 }}
+                                            />
+                                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                </div>
+                                <div className="flex h-3 w-full overflow-hidden rounded-none border border-border/60 mt-2">
+                                    <div
+                                        className="h-full bg-primary transition-all"
+                                        style={{ width: `${humanPct}%` }}
+                                    />
+                                    <div
+                                        className="h-full bg-muted-foreground/40 transition-all"
+                                        style={{ width: `${botPct}%` }}
+                                    />
+                                </div>
+                                <div className="flex flex-wrap gap-4 text-xs text-muted-foreground mt-2">
+                                    <span className="inline-flex items-center gap-1.5">
+                                        <span className="size-2 bg-primary" />
+                                        Humans {humanPct}% ({(usage.traffic?.humans ?? 0).toLocaleString()})
+                                    </span>
+                                    <span className="inline-flex items-center gap-1.5">
+                                        <span className="size-2 bg-muted-foreground/40" />
+                                        Bots {botPct}% ({(usage.traffic?.bots ?? 0).toLocaleString()})
+                                    </span>
+                                </div>
+                            </>
+                        )}
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-sm">Status codes</CardTitle>
+                        <CardDescription className="text-xs">
+                            HTTP response breakdown — pie + bar
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {statusData.length === 0 ? (
+                            <p className="text-sm text-muted-foreground py-8 text-center">
+                                No status data yet.
+                            </p>
+                        ) : (
+                            <>
+                                <div className="h-[220px] w-full">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie
+                                                data={statusData}
+                                                cx="50%"
+                                                cy="50%"
+                                                outerRadius={85}
+                                                dataKey="value"
+                                                label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                                            >
+                                                {statusData.map((entry) => (
+                                                    <Cell key={entry.name} fill={STATUS_COLORS[entry.name] ?? "#999"} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip contentStyle={{ fontSize: 12, borderRadius: 0 }} />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                </div>
+                                <div className="h-[120px] w-full mt-2">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={statusBarData}>
+                                            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                                            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                                            <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                                            <Tooltip contentStyle={{ fontSize: 12 }} />
+                                            <Bar dataKey="value" radius={[2, 2, 0, 0]}>
+                                                {statusBarData.map((e) => (
+                                                    <Cell key={e.name} fill={STATUS_COLORS[e.name] ?? "#999"} />
+                                                ))}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Card>
@@ -285,4 +438,3 @@ export function AnalyticsTab({ project }: { project: Project }) {
         </div>
     );
 }
-

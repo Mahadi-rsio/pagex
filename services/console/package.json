@@ -41,6 +41,7 @@
         "postgres": "^3.4.9",
         "react": "19.2.8",
         "react-dom": "19.2.8",
+        "recharts": "^3.10.1",
         "sonner": "^2.0.8",
         "tailwind-merge": "^3.6.0",
         "zod": "^4.4.3",
