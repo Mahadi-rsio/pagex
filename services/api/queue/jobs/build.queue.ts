@@ -97,7 +97,7 @@ export const buildQueue = new Queue<CloudBuildJob, unknown, 'build-job'>(CLOUDIS
     },
 })
 
-export const buildDlqQueue = new Queue<FailedBuildJob, unknown, 'failed-build'>('failed-build', {
+export const buildDlqQueue = new Queue<FailedBuildJob, unknown, 'failed-build'>(CLOUDISY_CLOUD_BUILDS_DLQ, {
     connection,
     defaultJobOptions: {
         attempts: 1,

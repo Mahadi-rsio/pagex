@@ -4,6 +4,7 @@ import path from 'node:path'
 import app from './app.js'
 import { ensureSharedBucket } from './infrastructure/storage/minio.js'
 import { db } from './infrastructure/db/db.js'
+import { bootstrapMigrations } from './infrastructure/db/bootstrap-migrations.js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -11,7 +12,10 @@ const MIGRATIONS_DIR = path.join(__dirname, '..', 'drizzle')
 
 async function runMigrations() {
     log('[migrate] Running database migrations...')
-    await migrate(db, { migrationsFolder: MIGRATIONS_DIR })
+    // Seed __drizzle_migrations for any migrations already applied via drizzle-kit push
+    // or a previous partial run, so that migrate() doesn't re-run them and fail.
+    await bootstrapMigrations()
+    await migrate(db, { migrationsFolder: MIGRATIONS_DIR, migrationsTable: '__drizzle_migrations', migrationsSchema: 'drizzle' })
     log('[migrate] Migrations complete.')
 }
 
