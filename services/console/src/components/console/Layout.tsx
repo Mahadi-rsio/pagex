@@ -18,7 +18,6 @@ import {
     FolderKanban,
     CreditCard,
     Settings,
-    HardDrive,
     LogOut,
     ChevronUp,
 } from "lucide-react";
@@ -31,7 +30,6 @@ const navItems = [
     { label: "Dashboard", href: "/", icon: LayoutDashboard },
     { label: "Projects", href: "/projects", icon: FolderKanban },
     { label: "Billing", href: "/billing", icon: CreditCard },
-    { label: "Storage", href: "/storage", icon: HardDrive },
     { label: "Settings", href: "/settings", icon: Settings },
 ];
 

@@ -20,7 +20,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
 import {
     Sheet,
     SheetContent,
@@ -41,14 +40,17 @@ import {
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
     apiClient,
     type ApiBuild,
     type ApiDeployment,
     type ApiUsage,
-    type BuildDoneEvent,
-    type CommitDeployResult,
 } from "@/lib/api-client";
-import { buildDeployFile, type SelectedDeployFile } from "@/lib/deploy-utils";
 import { Tree, type TreeViewElement } from "@/components/ui/file-tree";
 import { toast } from "sonner";
 import {
@@ -66,17 +68,16 @@ import {
     Copy,
     Eye,
     EyeOff,
-    Upload,
     Activity,
-    Rocket,
     RefreshCw,
     Play,
     X,
-    Terminal,
     RotateCcw,
     FileText,
-    ChevronDown,
-    ChevronUp,
+    MoreHorizontal,
+    GitCommitHorizontal,
+    Gauge,
+    Zap,
 } from "lucide-react";
 
 const CNAME_TARGET = "cname.console.app";
@@ -140,6 +141,59 @@ function formatBytes(bytes: number): string {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
     if (bytes < 1024 ** 3) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
     return `${(bytes / 1024 ** 3).toFixed(3)} GB`;
+}
+
+/** Single bar: flushed (DB) + live (Redis) as adjacent segments. */
+function CombinedUsageBar({
+    flushed,
+    live,
+    limit,
+    formatValue,
+    className,
+}: {
+    flushed: number;
+    live: number;
+    limit: number;
+    formatValue: (n: number) => string;
+    className?: string;
+}) {
+    const safeLimit = limit > 0 ? limit : 1;
+    const flushedPct = Math.min(100, Math.max(0, (flushed / safeLimit) * 100));
+    const livePct = Math.min(
+        100 - flushedPct,
+        Math.max(0, (live / safeLimit) * 100),
+    );
+
+    return (
+        <div className="space-y-1.5">
+            <div
+                className={`relative h-2 w-full overflow-hidden rounded-none border border-border/60 bg-muted/70 ${className ?? ""}`}
+            >
+                <div className="absolute inset-y-0 left-0 flex h-full w-full">
+                    <div
+                        className="h-full bg-primary transition-all"
+                        style={{ width: `${flushedPct}%` }}
+                        title={`Flushed: ${formatValue(flushed)}`}
+                    />
+                    <div
+                        className="h-full bg-emerald-500/80 transition-all"
+                        style={{ width: `${livePct}%` }}
+                        title={`Live: ${formatValue(live)}`}
+                    />
+                </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5">
+                    <span className="size-1.5 shrink-0 bg-primary" />
+                    Flushed {formatValue(flushed)}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                    <span className="size-1.5 shrink-0 bg-emerald-500/80" />
+                    Live {formatValue(live)}
+                </span>
+            </div>
+        </div>
+    );
 }
 
 const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -218,19 +272,6 @@ function LiveUsageSummary({ project }: { project: Project }) {
 
     if (!project.domain) return null;
 
-    const requestPct =
-        usage && usage.requests.limit > 0
-            ? Math.min(100, (usage.requests.used / usage.requests.limit) * 100)
-            : 0;
-    const bandwidthPct =
-        usage && usage.bandwidth.limit_bytes > 0
-            ? Math.min(
-                  100,
-                  (usage.bandwidth.used_bytes / usage.bandwidth.limit_bytes) *
-                      100,
-              )
-            : 0;
-
     return (
         <Card>
             <CardHeader className="pb-2">
@@ -292,25 +333,13 @@ function LiveUsageSummary({ project }: { project: Project }) {
                                     {usage.requests.limit.toLocaleString()}
                                 </span>
                             </div>
-                            <Progress value={requestPct} className="h-1.5" />
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="rounded-none border border-border bg-muted/30 px-2 py-1.5">
-                                    <p className="text-[10px] text-muted-foreground leading-none mb-0.5">
-                                        DB (flushed)
-                                    </p>
-                                    <p className="text-xs font-semibold text-foreground tabular-nums">
-                                        {usage.requests.flushed.toLocaleString()}
-                                    </p>
-                                </div>
-                                <div className="rounded-none border border-emerald-500/20 bg-emerald-500/5 px-2 py-1.5">
-                                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 leading-none mb-0.5">
-                                        Redis (live)
-                                    </p>
-                                    <p className="text-xs font-semibold text-foreground tabular-nums">
-                                        {usage.requests.live.toLocaleString()}
-                                    </p>
-                                </div>
-                            </div>
+                            <CombinedUsageBar
+                                flushed={usage.requests.flushed}
+                                live={usage.requests.live}
+                                limit={usage.requests.limit}
+                                formatValue={(n) => n.toLocaleString()}
+                                className="h-1.5"
+                            />
                         </div>
 
                         {/* Bandwidth */}
@@ -325,29 +354,13 @@ function LiveUsageSummary({ project }: { project: Project }) {
                                     {usage.bandwidth.limit}
                                 </span>
                             </div>
-                            <Progress value={bandwidthPct} className="h-1.5" />
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="rounded-none border border-border bg-muted/30 px-2 py-1.5">
-                                    <p className="text-[10px] text-muted-foreground leading-none mb-0.5">
-                                        DB (flushed)
-                                    </p>
-                                    <p className="text-xs font-semibold text-foreground tabular-nums">
-                                        {formatBytes(
-                                            usage.bandwidth.flushed_bytes,
-                                        )}
-                                    </p>
-                                </div>
-                                <div className="rounded-none border border-emerald-500/20 bg-emerald-500/5 px-2 py-1.5">
-                                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 leading-none mb-0.5">
-                                        Redis (live)
-                                    </p>
-                                    <p className="text-xs font-semibold text-foreground tabular-nums">
-                                        {formatBytes(
-                                            usage.bandwidth.live_bytes,
-                                        )}
-                                    </p>
-                                </div>
-                            </div>
+                            <CombinedUsageBar
+                                flushed={usage.bandwidth.flushed_bytes}
+                                live={usage.bandwidth.live_bytes}
+                                limit={usage.bandwidth.limit_bytes}
+                                formatValue={formatBytes}
+                                className="h-1.5"
+                            />
                         </div>
                     </div>
                 )}
@@ -387,6 +400,12 @@ function OverviewTab({ project }: { project: Project }) {
     const StatusIcon = status.icon;
     const [deployments, setDeployments] = useState<ApiDeployment[]>([]);
     const [deploymentsLoading, setDeploymentsLoading] = useState(true);
+    const [latestBuild, setLatestBuild] = useState<ApiBuild | null>(null);
+    const [latestCommit, setLatestCommit] = useState<LatestCommitInfo | null>(
+        null,
+    );
+    const [commitLoading, setCommitLoading] = useState(false);
+    const [isRedeploying, setIsRedeploying] = useState(false);
 
     const loadDeployments = useCallback(async () => {
         try {
@@ -402,6 +421,63 @@ function OverviewTab({ project }: { project: Project }) {
     useEffect(() => {
         loadDeployments();
     }, [loadDeployments]);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const list = await apiClient.getBuilds(project.id);
+                if (cancelled) return;
+                const build = list[0] ?? null;
+                setLatestBuild(build);
+                const repo = build?.repo_url || project.repo || null;
+                if (!repo) {
+                    setLatestCommit(null);
+                    return;
+                }
+                setCommitLoading(true);
+                const commit = await fetchLatestGithubCommit(repo);
+                if (!cancelled) setLatestCommit(commit);
+            } catch {
+                if (!cancelled) setLatestBuild(null);
+            } finally {
+                if (!cancelled) setCommitLoading(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [project.id, project.repo]);
+
+    const handleRedeploy = async () => {
+        if (!latestBuild || isRedeploying) return;
+        setIsRedeploying(true);
+        try {
+            await apiClient.triggerBuild({
+                pageId: project.id,
+                repoUrl: latestBuild.repo_url,
+                gitProvider: latestBuild.git_provider,
+                framework: latestBuild.framework,
+                ...(latestBuild.build_command
+                    ? { buildCommand: latestBuild.build_command }
+                    : {}),
+                ...(latestBuild.output_dir
+                    ? { outputDir: latestBuild.output_dir }
+                    : {}),
+            });
+            toast.success(
+                latestCommit
+                    ? `Redeploy queued from ${latestCommit.shortSha}`
+                    : "Redeploy queued from latest commit",
+            );
+        } catch (err) {
+            toast.error(
+                err instanceof Error ? err.message : "Failed to redeploy",
+            );
+        } finally {
+            setIsRedeploying(false);
+        }
+    };
 
     return (
         <div className="space-y-4">
@@ -433,6 +509,67 @@ function OverviewTab({ project }: { project: Project }) {
                                 {project.domain}
                             </a>
                         )}
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* Latest commit + redeploy */}
+            <Card>
+                <CardContent className="p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0 space-y-1">
+                            <div className="flex items-center gap-2">
+                                <GitCommitHorizontal className="size-4 text-muted-foreground" />
+                                <p className="text-sm font-medium text-foreground">
+                                    Latest commit
+                                </p>
+                            </div>
+                            {commitLoading ? (
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <Spinner size="inline" />
+                                    Loading…
+                                </div>
+                            ) : latestCommit ? (
+                                <>
+                                    <p className="text-sm text-foreground truncate">
+                                        <a
+                                            href={latestCommit.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="font-mono text-xs text-primary hover:underline mr-2"
+                                        >
+                                            {latestCommit.shortSha}
+                                        </a>
+                                        {latestCommit.message}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                        {latestCommit.author}
+                                        {latestCommit.date
+                                            ? ` · ${formatRelativeTime(latestCommit.date)}`
+                                            : ""}
+                                    </p>
+                                </>
+                            ) : (
+                                <p className="text-xs text-muted-foreground">
+                                    {latestBuild
+                                        ? "Could not load the latest commit for this repository."
+                                        : "Trigger a cloud build to enable redeploy from git."}
+                                </p>
+                            )}
+                        </div>
+                        <Button
+                            size="sm"
+                            className="gap-2 shrink-0"
+                            onClick={handleRedeploy}
+                            disabled={!latestBuild || isRedeploying}
+                        >
+                            {isRedeploying ? (
+                                <Spinner size="inline" />
+                            ) : (
+                                <Zap className="size-3.5" />
+                            )}
+                            Redeploy
+                        </Button>
                     </div>
                 </CardContent>
             </Card>
@@ -504,8 +641,8 @@ function OverviewTab({ project }: { project: Project }) {
                         </div>
                     ) : deployments.length === 0 ? (
                         <p className="py-8 text-center text-sm text-muted-foreground">
-                            No deployments yet. Upload files or trigger a cloud
-                            build to get started.
+                            No deployments yet. Trigger a cloud build to get
+                            started.
                         </p>
                     ) : (
                         <div className="space-y-2">
@@ -1293,17 +1430,9 @@ function FilesTab({ project }: { project: Project }) {
 }
 
 function DeployTab({ project }: { project: Project }) {
-    const [files, setFiles] = useState<SelectedDeployFile[]>([]);
-    const [isDeploying, setIsDeploying] = useState(false);
-    const [deployStep, setDeployStep] = useState("");
-    const [deployResult, setDeployResult] = useState<CommitDeployResult | null>(
-        null,
-    );
-    const [deployError, setDeployError] = useState("");
     const [deployments, setDeployments] = useState<ApiDeployment[]>([]);
     const [deploymentsLoading, setDeploymentsLoading] = useState(true);
     const [rollingBack, setRollingBack] = useState<string | null>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const loadDeployments = useCallback(async () => {
         try {
@@ -1324,98 +1453,8 @@ function DeployTab({ project }: { project: Project }) {
         loadDeployments();
     }, [loadDeployments]);
 
-    const handleSelectFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const selected = Array.from(e.target.files ?? []);
-        const entries: SelectedDeployFile[] = selected.map((file) => ({
-            path: file.name,
-            file,
-        }));
-        setFiles(entries);
-        setDeployResult(null);
-        setDeployError("");
-        e.target.value = "";
-    };
-
-    const removeFile = (path: string) => {
-        setFiles((prev) => prev.filter((f) => f.path !== path));
-        setDeployResult(null);
-        setDeployError("");
-    };
-
-    const handleDeploy = async () => {
-        if (files.length === 0 || isDeploying) return;
-        setIsDeploying(true);
-        setDeployError("");
-        setDeployResult(null);
-        try {
-            // 1. Build the file manifest (hash + magic bytes)
-            setDeployStep("Hashing files…");
-            const manifest = await Promise.all(
-                files.map((f) => buildDeployFile(f.file)),
-            );
-
-            // 2. Prepare: validate manifest, get token + missing blobs
-            setDeployStep("Preparing deployment…");
-            const prepared = await apiClient.prepareDeploy({
-                pageId: project.id,
-                files: manifest,
-            });
-
-            // 3. Upload any missing blobs to presigned URLs
-            if (prepared.uploadRequired.length > 0) {
-                setDeployStep(
-                    `Uploading ${prepared.uploadRequired.length} blob(s)…`,
-                );
-                const hashes = [
-                    ...new Set(prepared.uploadRequired.map((u) => u.hash)),
-                ];
-                const presigned = await apiClient.presignDeploy({
-                    deploymentToken: prepared.deploymentToken,
-                    hashes,
-                });
-                const urlMap = new Map(
-                    presigned.urls.map((u) => [u.hash, u.url]),
-                );
-                const fileByHash = new Map(manifest.map((m) => [m.hash, m]));
-                for (const hash of hashes) {
-                    const url = urlMap.get(hash);
-                    const entry = fileByHash.get(hash);
-                    if (url && entry) {
-                        const source = files.find((f) => f.path === entry.path);
-                        if (source) {
-                            await apiClient.uploadBlob(
-                                url,
-                                await source.file.arrayBuffer(),
-                            );
-                        }
-                    }
-                }
-            }
-
-            // 4. Commit: activate the deployment
-            setDeployStep("Finalizing deployment…");
-            const committed = await apiClient.commitDeploy({
-                deploymentToken: prepared.deploymentToken,
-            });
-            setDeployResult(committed);
-            toast.success(
-                `Deployed ${committed.summary.deployedFiles} file${committed.summary.deployedFiles === 1 ? "" : "s"} (v${committed.deployment.version})`,
-            );
-            setFiles([]);
-            loadDeployments();
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : "Deployment failed";
-            setDeployError(message);
-            toast.error(message);
-        } finally {
-            setIsDeploying(false);
-            setDeployStep("");
-        }
-    };
-
     const handleRollback = async (deployment: ApiDeployment) => {
-        if (rollingBack) return;
+        if (rollingBack || deployment.is_active) return;
         if (
             !window.confirm(
                 `Roll back to deployment v${deployment.version}? This will make it the live version.`,
@@ -1439,157 +1478,6 @@ function DeployTab({ project }: { project: Project }) {
 
     return (
         <div className="space-y-4">
-            {/* Upload & deploy */}
-            <Card>
-                <CardHeader>
-                    <div className="flex items-center justify-between gap-3">
-                        <div>
-                            <CardTitle className="text-sm">
-                                Upload &amp; Deploy
-                            </CardTitle>
-                            <CardDescription className="text-xs">
-                                Deploy static files directly from your browser.
-                                Files are content-addressed, compressed, and
-                                image-optimized automatically.
-                            </CardDescription>
-                        </div>
-                        {!isDeploying && (
-                            <Button
-                                size="sm"
-                                className="gap-2 shrink-0"
-                                onClick={() => fileInputRef.current?.click()}
-                            >
-                                <Upload className="size-3.5" />
-                                Select Files
-                            </Button>
-                        )}
-                    </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        multiple
-                        className="hidden"
-                        onChange={handleSelectFiles}
-                    />
-
-                    {files.length === 0 && !deployResult && (
-                        <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="w-full rounded-none border border-dashed border-border p-8 text-center hover:border-primary/40 hover:bg-accent/40 transition-colors"
-                        >
-                            <Upload className="mx-auto mb-2 size-5 text-muted-foreground" />
-                            <p className="text-sm font-medium text-foreground">
-                                Choose files to deploy
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                                HTML, JS, CSS, images… up to 50 MB per file
-                            </p>
-                        </button>
-                    )}
-
-                    {files.length > 0 && (
-                        <div className="space-y-2">
-                            <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                                {files.map((f) => (
-                                    <div
-                                        key={f.path}
-                                        className="flex items-center gap-3 rounded-none border border-border px-3 py-2"
-                                    >
-                                        <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                                        <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                                            {f.path}
-                                        </span>
-                                        <span className="shrink-0 text-xs text-muted-foreground">
-                                            {(f.file.size / 1024).toFixed(1)} KB
-                                        </span>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="size-6 shrink-0"
-                                            onClick={() => removeFile(f.path)}
-                                            disabled={isDeploying}
-                                        >
-                                            <X className="size-3.5 text-muted-foreground" />
-                                        </Button>
-                                    </div>
-                                ))}
-                            </div>
-                            <Button
-                                onClick={handleDeploy}
-                                disabled={isDeploying}
-                                className="w-full gap-2"
-                            >
-                                {isDeploying ? (
-                                    <>
-                                        <Spinner size="inline" />
-                                        {deployStep || "Deploying…"}
-                                    </>
-                                ) : (
-                                    <>
-                                        <Rocket className="size-4" />
-                                        Deploy {files.length} file
-                                        {files.length === 1 ? "" : "s"}
-                                    </>
-                                )}
-                            </Button>
-                        </div>
-                    )}
-
-                    {deployError && (
-                        <p className="text-xs text-destructive">
-                            {deployError}
-                        </p>
-                    )}
-
-                    {deployResult && (
-                        <div className="rounded-none border border-border bg-muted/30 p-4">
-                            <div className="flex items-center gap-2 mb-2">
-                                <CheckCircle2 className="size-4 text-emerald-500" />
-                                <p className="text-sm font-medium text-foreground">
-                                    Deployed v{deployResult.deployment.version}
-                                </p>
-                                <Badge
-                                    variant="secondary"
-                                    className="ml-auto text-xs"
-                                >
-                                    {deployResult.deployment.source}
-                                </Badge>
-                            </div>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                                <p>
-                                    Files deployed:{" "}
-                                    {deployResult.summary.deployedFiles}
-                                </p>
-                                <p>
-                                    Total size:{" "}
-                                    {deployResult.summary.totalSizeHuman}
-                                </p>
-                                <p>
-                                    Compressed:{" "}
-                                    {deployResult.summary.filesCompressed}
-                                </p>
-                                <p>
-                                    Size reduced:{" "}
-                                    {deployResult.summary.sizeReducedPercent}%
-                                </p>
-                                <p>
-                                    Images optimized:{" "}
-                                    {deployResult.summary.imagesOptimized}
-                                </p>
-                                <p>
-                                    WebP variants:{" "}
-                                    {deployResult.summary.webpVariants}
-                                </p>
-                            </div>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
-
-            {/* Deployment history */}
             <Card>
                 <CardHeader>
                     <div className="flex items-center justify-between gap-3">
@@ -1660,26 +1548,45 @@ function DeployTab({ project }: { project: Project }) {
                                             )}
                                         </p>
                                     </div>
-                                    {!deployment.is_active && (
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="shrink-0 gap-1.5"
-                                            onClick={() =>
-                                                handleRollback(deployment)
-                                            }
-                                            disabled={
-                                                rollingBack === deployment.id
-                                            }
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="size-8 shrink-0"
+                                                disabled={
+                                                    rollingBack ===
+                                                    deployment.id
+                                                }
+                                                aria-label={`Actions for deployment v${deployment.version}`}
+                                            >
+                                                {rollingBack ===
+                                                deployment.id ? (
+                                                    <Spinner size="inline" />
+                                                ) : (
+                                                    <MoreHorizontal className="size-4" />
+                                                )}
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent
+                                            align="end"
+                                            className="w-40"
                                         >
-                                            {rollingBack === deployment.id ? (
-                                                <Spinner size="inline" />
-                                            ) : (
+                                            <DropdownMenuItem
+                                                disabled={
+                                                    deployment.is_active ||
+                                                    rollingBack !== null
+                                                }
+                                                className="cursor-pointer gap-2"
+                                                onSelect={() =>
+                                                    handleRollback(deployment)
+                                                }
+                                            >
                                                 <RotateCcw className="size-3.5" />
-                                            )}
-                                            Rollback
-                                        </Button>
-                                    )}
+                                                Rollback
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
                                 </div>
                             ))}
                         </div>
@@ -1717,47 +1624,124 @@ function parseEnvVars(text: string): Record<string, string> {
     return result;
 }
 
-function BuildStatusLine({ line }: { line: string }) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith("$")) {
-        return (
-            <p className="whitespace-pre-wrap break-all rounded bg-slate-800/70 px-2 py-1 text-slate-100">
-                {line}
-            </p>
+function parseGithubRepo(repoUrl: string): { owner: string; repo: string } | null {
+    const match = repoUrl
+        .trim()
+        .match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i);
+    if (!match) return null;
+    return { owner: match[1]!, repo: match[2]! };
+}
+
+type LatestCommitInfo = {
+    sha: string;
+    shortSha: string;
+    message: string;
+    author: string;
+    date: string;
+    url: string;
+};
+
+async function fetchLatestGithubCommit(
+    repoUrl: string,
+): Promise<LatestCommitInfo | null> {
+    const parsed = parseGithubRepo(repoUrl);
+    if (!parsed) return null;
+    try {
+        const res = await fetch(
+            `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/commits?per_page=1`,
+            { headers: { Accept: "application/vnd.github+json" } },
         );
+        if (!res.ok) return null;
+        const data = (await res.json()) as Array<{
+            sha: string;
+            html_url: string;
+            commit: {
+                message: string;
+                author?: { name?: string; date?: string };
+            };
+            author?: { login?: string };
+        }>;
+        const commit = data[0];
+        if (!commit) return null;
+        return {
+            sha: commit.sha,
+            shortSha: commit.sha.slice(0, 7),
+            message: commit.commit.message.split("\n")[0] || "No message",
+            author:
+                commit.commit.author?.name ||
+                commit.author?.login ||
+                "unknown",
+            date: commit.commit.author?.date || "",
+            url: commit.html_url,
+        };
+    } catch {
+        return null;
     }
-    if (
-        /\[error\]|^error\b|error:|failed|failure|npm error|fatal/gi.test(
-            trimmed,
-        )
-    ) {
-        return (
-            <p className="whitespace-pre-wrap break-all text-red-400">{line}</p>
-        );
-    }
-    if (/warning|warn\b/gi.test(trimmed)) {
-        return (
-            <p className="whitespace-pre-wrap break-all text-amber-300">
-                {line}
-            </p>
-        );
-    }
-    if (/^step \d/gi.test(trimmed)) {
-        return (
-            <p className="whitespace-pre-wrap break-all text-cyan-400">
-                {line}
-            </p>
-        );
-    }
-    if (/^\[stats\]|^\[summary\]/i.test(trimmed)) {
-        return (
-            <p className="whitespace-pre-wrap break-all text-slate-500">
-                {line}
-            </p>
-        );
-    }
+}
+
+function LatestCommitCard({
+    commit,
+    repoUrl,
+    loading,
+}: {
+    commit: LatestCommitInfo | null;
+    repoUrl: string | null;
+    loading: boolean;
+}) {
     return (
-        <p className="whitespace-pre-wrap break-all text-slate-400">{line}</p>
+        <Card>
+            <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                    <GitCommitHorizontal className="size-4 text-muted-foreground" />
+                    <CardTitle className="text-sm">Latest commit</CardTitle>
+                </div>
+                <CardDescription className="text-xs">
+                    {repoUrl
+                        ? `From ${repoUrl.replace(/^https?:\/\//, "")}`
+                        : "Connect a GitHub repository to show the latest commit"}
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                {loading ? (
+                    <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+                        <Spinner size="inline" />
+                        Loading commit…
+                    </div>
+                ) : !repoUrl ? (
+                    <p className="text-sm text-muted-foreground">
+                        No repository linked yet. Trigger a build to associate a
+                        repo.
+                    </p>
+                ) : !commit ? (
+                    <p className="text-sm text-muted-foreground">
+                        Could not load the latest commit. The repo may be
+                        private or unavailable.
+                    </p>
+                ) : (
+                    <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <a
+                                href={commit.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-mono text-xs text-primary hover:underline"
+                            >
+                                {commit.shortSha}
+                            </a>
+                            <span className="text-sm font-medium text-foreground">
+                                {commit.message}
+                            </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                            {commit.author}
+                            {commit.date
+                                ? ` · ${formatRelativeTime(commit.date)}`
+                                : ""}
+                        </p>
+                    </div>
+                )}
+            </CardContent>
+        </Card>
     );
 }
 
@@ -1775,13 +1759,10 @@ function BuildsTab({ project }: { project: Project }) {
     const [outputDir, setOutputDir] = useState("dist");
     const [envVarsText, setEnvVarsText] = useState("");
 
-    const [activeBuildId, setActiveBuildId] = useState<string | null>(null);
-    const [logs, setLogs] = useState<string[]>([]);
-    const [progress, setProgress] = useState(0);
-    const [logDone, setLogDone] = useState(false);
-    const [logCollapsed, setLogCollapsed] = useState(false);
-    const logBoxRef = useRef<HTMLDivElement>(null);
-    const abortRef = useRef<AbortController | null>(null);
+    const [latestCommit, setLatestCommit] = useState<LatestCommitInfo | null>(
+        null,
+    );
+    const [commitLoading, setCommitLoading] = useState(false);
 
     const loadBuilds = useCallback(async () => {
         try {
@@ -1802,79 +1783,27 @@ function BuildsTab({ project }: { project: Project }) {
         loadBuilds();
     }, [loadBuilds]);
 
-    useEffect(() => {
-        return () => abortRef.current?.abort();
-    }, []);
+    const commitRepoUrl =
+        builds[0]?.repo_url || project.repo || repoUrl.trim() || null;
 
     useEffect(() => {
-        logBoxRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [logs]);
-
-    const startLogs = useCallback(
-        async (buildId: string) => {
-            abortRef.current?.abort();
-            const controller = new AbortController();
-            abortRef.current = controller;
-            setActiveBuildId(buildId);
-            setLogs([]);
-            setProgress(0);
-            setLogDone(false);
-            setLogCollapsed(false);
-
-            try {
-                const done = await apiClient.streamBuildLogs(
-                    buildId,
-                    {
-                        onLog: (message) =>
-                            setLogs((prev) => [...prev, message]),
-                        onProgress: (value) => setProgress(value),
-                        onStatus: () => {
-                            /* status is implied by build rows */
-                        },
-                        onDone: (event: BuildDoneEvent) => {
-                            setLogDone(true);
-                            if (event.error) {
-                                setLogs((prev) => [
-                                    ...prev,
-                                    `[error] ${event.error}`,
-                                ]);
-                            }
-                            loadBuilds();
-                        },
-                        onError: (event) => {
-                            setLogDone(true);
-                            setLogs((prev) => [
-                                ...prev,
-                                `[error] ${event.message}`,
-                            ]);
-                        },
-                    },
-                    controller.signal,
-                );
-
-                if (done) {
-                    setLogDone(true);
-                }
-            } catch {
-                setLogDone(true);
-                setLogs((prev) => [
-                    ...prev,
-                    "[error] Failed to connect to build log stream",
-                ]);
-            }
-        },
-        [loadBuilds],
-    );
-
-    const handleCopyLogs = async () => {
-        if (logs.length === 0) return;
-        try {
-            await navigator.clipboard.writeText(logs.join("\n"));
-            toast.success("Build logs copied to clipboard");
-        } catch {
-            toast.error("Failed to copy build logs");
+        if (!commitRepoUrl) {
+            setLatestCommit(null);
+            setCommitLoading(false);
+            return;
         }
-    };
+        let cancelled = false;
+        setCommitLoading(true);
+        fetchLatestGithubCommit(commitRepoUrl).then((commit) => {
+            if (!cancelled) {
+                setLatestCommit(commit);
+                setCommitLoading(false);
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [commitRepoUrl]);
 
     const resetForm = () => {
         setRepoUrl("");
@@ -1900,7 +1829,7 @@ function BuildsTab({ project }: { project: Project }) {
         setError("");
         try {
             const envVars = parseEnvVars(envVarsText);
-            const build = await apiClient.triggerBuild({
+            await apiClient.triggerBuild({
                 pageId: project.id,
                 repoUrl: url,
                 gitProvider: "github",
@@ -1916,7 +1845,6 @@ function BuildsTab({ project }: { project: Project }) {
             setShowTrigger(false);
             resetForm();
             loadBuilds();
-            startLogs(build.id);
         } catch (triggerError) {
             const message =
                 triggerError instanceof Error
@@ -1931,6 +1859,12 @@ function BuildsTab({ project }: { project: Project }) {
 
     return (
         <div className="space-y-4">
+            <LatestCommitCard
+                commit={latestCommit}
+                repoUrl={commitRepoUrl}
+                loading={commitLoading}
+            />
+
             <Card>
                 <CardHeader>
                     <div className="flex items-center justify-between gap-3">
@@ -2127,7 +2061,6 @@ function BuildsTab({ project }: { project: Project }) {
                                 const config =
                                     buildStatusConfig[build.status] ??
                                     buildStatusConfig.queued;
-                                const isActive = activeBuildId === build.id;
                                 return (
                                     <div
                                         key={build.id}
@@ -2164,164 +2097,26 @@ function BuildsTab({ project }: { project: Project }) {
                                                     {build.build_command ??
                                                         "pnpm build"}
                                                 </p>
+                                                {latestCommit &&
+                                                    build.repo_url ===
+                                                        commitRepoUrl && (
+                                                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                                            <span className="font-mono">
+                                                                {
+                                                                    latestCommit.shortSha
+                                                                }
+                                                            </span>
+                                                            {" · "}
+                                                            {latestCommit.message}
+                                                        </p>
+                                                    )}
                                             </div>
                                             <span className="shrink-0 text-xs text-muted-foreground">
                                                 {formatRelativeTime(
                                                     build.created_at,
                                                 )}
                                             </span>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="shrink-0 gap-1.5"
-                                                onClick={() =>
-                                                    isActive
-                                                        ? abortRef.current?.abort()
-                                                        : startLogs(build.id)
-                                                }
-                                            >
-                                                <Terminal className="size-3.5" />
-                                                {isActive ? "Stop" : "Logs"}
-                                            </Button>
                                         </div>
-
-                                        {isActive && (
-                                            <div className="mt-3 overflow-hidden rounded-none border border-border/80 bg-[#0b0f14] shadow-lg">
-                                                <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] bg-[#14181f] px-3 py-2">
-                                                    <div className="flex min-w-0 items-center gap-2">
-                                                        <span className="flex shrink-0 gap-1.5">
-                                                            <span className="size-2.5 rounded-full bg-[#ff5f57]" />
-                                                            <span className="size-2.5 rounded-full bg-[#febc2e]" />
-                                                            <span className="size-2.5 rounded-full bg-[#28c840]" />
-                                                        </span>
-                                                        <span className="truncate font-mono text-xs text-slate-400">
-                                                            {build.framework}
-                                                            {build.build_command
-                                                                ? ` · ${build.build_command}`
-                                                                : ""}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex shrink-0 items-center gap-1">
-                                                        {progress > 0 && (
-                                                            <span className="font-mono text-[11px] tabular-nums text-slate-500">
-                                                                {Math.round(
-                                                                    progress,
-                                                                )}
-                                                                %
-                                                            </span>
-                                                        )}
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="size-6 text-muted-foreground hover:text-foreground"
-                                                            onClick={
-                                                                handleCopyLogs
-                                                            }
-                                                            disabled={
-                                                                logs.length ===
-                                                                0
-                                                            }
-                                                            aria-label="Copy logs"
-                                                        >
-                                                            <Copy className="size-3" />
-                                                        </Button>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="size-6 text-muted-foreground hover:text-foreground"
-                                                            onClick={() =>
-                                                                setLogCollapsed(
-                                                                    (v) => !v,
-                                                                )
-                                                            }
-                                                            aria-label={
-                                                                logCollapsed
-                                                                    ? "Expand logs"
-                                                                    : "Collapse logs"
-                                                            }
-                                                        >
-                                                            {logCollapsed ? (
-                                                                <ChevronUp className="size-3" />
-                                                            ) : (
-                                                                <ChevronDown className="size-3" />
-                                                            )}
-                                                        </Button>
-                                                    </div>
-                                                </div>
-
-                                                {!logCollapsed && (
-                                                    <>
-                                                        <div className="h-full max-h-72 overflow-y-auto p-3 font-mono text-xs leading-5">
-                                                            {logs.length ===
-                                                            0 ? (
-                                                                <p className="text-slate-500">
-                                                                    Waiting for
-                                                                    log output…
-                                                                </p>
-                                                            ) : (
-                                                                logs.map(
-                                                                    (
-                                                                        line,
-                                                                        i,
-                                                                    ) => (
-                                                                        <BuildStatusLine
-                                                                            key={`${i}-${line}`}
-                                                                            line={
-                                                                                line
-                                                                            }
-                                                                        />
-                                                                    ),
-                                                                )
-                                                            )}
-                                                            {!logDone && (
-                                                                <span className="mt-1 inline-block h-4 w-1.5 animate-pulse bg-slate-400" />
-                                                            )}
-                                                            <div
-                                                                ref={logBoxRef}
-                                                            />
-                                                        </div>
-                                                        <div className="flex items-center justify-between border-t border-white/[0.06] bg-[#0b0f14] px-3 py-1.5">
-                                                            <span className="flex items-center gap-1.5 font-mono text-[11px]">
-                                                                {logDone ? (
-                                                                    build.status ===
-                                                                    "failed" ? (
-                                                                        <>
-                                                                            <AlertCircle className="size-3 text-red-400" />
-                                                                            <span className="text-red-400">
-                                                                                Build
-                                                                                failed
-                                                                            </span>
-                                                                        </>
-                                                                    ) : (
-                                                                        <>
-                                                                            <CheckCircle2 className="size-3 text-emerald-400" />
-                                                                            <span className="text-emerald-400">
-                                                                                Build
-                                                                                completed
-                                                                            </span>
-                                                                        </>
-                                                                    )
-                                                                ) : (
-                                                                    <>
-                                                                        <Spinner size="inline" />
-                                                                        <span className="text-slate-500">
-                                                                            Building…
-                                                                        </span>
-                                                                    </>
-                                                                )}
-                                                            </span>
-                                                            {build.repo_url && (
-                                                                <span className="truncate font-mono text-[11px] text-slate-600">
-                                                                    {
-                                                                        build.repo_url
-                                                                    }
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </>
-                                                )}
-                                            </div>
-                                        )}
                                     </div>
                                 );
                             })}
@@ -2333,14 +2128,361 @@ function BuildsTab({ project }: { project: Project }) {
     );
 }
 
-function AnalyticsTab() {
-    return (
-        <div className="space-y-4">
+function AnalyticsTab({ project }: { project: Project }) {
+    const [usage, setUsage] = useState<ApiUsage | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState("");
+    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+    const loadUsage = useCallback(
+        async (quiet = false) => {
+            if (!project.domain) return;
+            if (quiet) setRefreshing(true);
+            else setLoading(true);
+            setError("");
+            try {
+                const data = await apiClient.getPageUsage(project.domain);
+                setUsage(data);
+                setLastUpdated(new Date());
+            } catch (err) {
+                if (!quiet) {
+                    setError(
+                        err instanceof Error
+                            ? err.message
+                            : "Failed to load analytics",
+                    );
+                }
+            } finally {
+                setLoading(false);
+                setRefreshing(false);
+            }
+        },
+        [project.domain],
+    );
+
+    useEffect(() => {
+        loadUsage();
+        if (!project.domain) return;
+        const id = window.setInterval(() => loadUsage(true), 15_000);
+        return () => window.clearInterval(id);
+    }, [loadUsage, project.domain]);
+
+    if (!project.domain) {
+        return (
             <Card>
                 <CardContent className="py-12">
                     <p className="text-sm text-muted-foreground text-center">
-                        Analytics will appear once your project receives
-                        traffic.
+                        Assign a domain to view analytics for this project.
+                    </p>
+                </CardContent>
+            </Card>
+        );
+    }
+
+    if (loading && !usage) {
+        return (
+            <Card>
+                <CardContent className="py-12">
+                    <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                        <Spinner size="inline" />
+                        Loading analytics…
+                    </div>
+                </CardContent>
+            </Card>
+        );
+    }
+
+    if ((error || !usage) && !loading) {
+        return (
+            <Card>
+                <CardContent className="py-12 space-y-3">
+                    <p className="text-sm text-muted-foreground text-center">
+                        {error || "No analytics data available."}
+                    </p>
+                    <div className="flex justify-center">
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => loadUsage()}
+                        >
+                            Retry
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
+        );
+    }
+
+    if (!usage) return null;
+
+    const totalTraffic =
+        (usage.traffic?.humans ?? 0) + (usage.traffic?.bots ?? 0);
+    const humanPct =
+        totalTraffic > 0
+            ? Math.round(((usage.traffic?.humans ?? 0) / totalTraffic) * 100)
+            : 0;
+    const botPct = totalTraffic > 0 ? 100 - humanPct : 0;
+
+    return (
+        <div className="space-y-4">
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <CardTitle className="text-sm">Analytics</CardTitle>
+                            <CardDescription className="text-xs">
+                                Traffic and request breakdown for{" "}
+                                {project.domain}
+                                {lastUpdated
+                                    ? ` · updated ${formatRelativeTime(lastUpdated.toISOString())}`
+                                    : ""}
+                            </CardDescription>
+                        </div>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-2 shrink-0"
+                            onClick={() => loadUsage(true)}
+                            disabled={refreshing}
+                        >
+                            <RefreshCw
+                                className={`size-3.5 ${refreshing ? "animate-spin" : ""}`}
+                            />
+                            Refresh
+                        </Button>
+                    </div>
+                </CardHeader>
+                <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-0">
+                    <div className="rounded-none border border-border bg-muted/20 p-3">
+                        <p className="text-xs text-muted-foreground">Requests</p>
+                        <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
+                            {usage.requests.used.toLocaleString()}
+                        </p>
+                    </div>
+                    <div className="rounded-none border border-border bg-muted/20 p-3">
+                        <p className="text-xs text-muted-foreground">
+                            Bandwidth
+                        </p>
+                        <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
+                            {formatBytes(usage.bandwidth.used_bytes)}
+                        </p>
+                    </div>
+                    <div className="rounded-none border border-border bg-muted/20 p-3">
+                        <p className="text-xs text-muted-foreground">Humans</p>
+                        <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
+                            {(usage.traffic?.humans ?? 0).toLocaleString()}
+                        </p>
+                    </div>
+                    <div className="rounded-none border border-border bg-muted/20 p-3">
+                        <p className="text-xs text-muted-foreground">Bots</p>
+                        <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
+                            {(usage.traffic?.bots ?? 0).toLocaleString()}
+                        </p>
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-sm">Traffic mix</CardTitle>
+                    <CardDescription className="text-xs">
+                        Human vs bot requests
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    {totalTraffic === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                            No traffic recorded yet.
+                        </p>
+                    ) : (
+                        <>
+                            <div className="flex h-3 w-full overflow-hidden rounded-none border border-border/60">
+                                <div
+                                    className="h-full bg-primary transition-all"
+                                    style={{ width: `${humanPct}%` }}
+                                />
+                                <div
+                                    className="h-full bg-muted-foreground/40 transition-all"
+                                    style={{ width: `${botPct}%` }}
+                                />
+                            </div>
+                            <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                                <span className="inline-flex items-center gap-1.5">
+                                    <span className="size-1.5 bg-primary" />
+                                    Humans {humanPct}%
+                                </span>
+                                <span className="inline-flex items-center gap-1.5">
+                                    <span className="size-1.5 bg-muted-foreground/40" />
+                                    Bots {botPct}%
+                                </span>
+                            </div>
+                        </>
+                    )}
+                </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-sm">
+                            Request breakdown
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                                Flushed (DB)
+                            </span>
+                            <span className="tabular-nums font-medium">
+                                {usage.requests.flushed.toLocaleString()}
+                            </span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                                Live (Redis)
+                            </span>
+                            <span className="tabular-nums font-medium">
+                                {usage.requests.live.toLocaleString()}
+                            </span>
+                        </div>
+                        <div className="flex justify-between border-t border-border pt-2">
+                            <span className="text-muted-foreground">Limit</span>
+                            <span className="tabular-nums font-medium">
+                                {usage.requests.limit.toLocaleString()}
+                            </span>
+                        </div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-sm">
+                            Bandwidth breakdown
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                                Flushed (DB)
+                            </span>
+                            <span className="tabular-nums font-medium">
+                                {formatBytes(usage.bandwidth.flushed_bytes)}
+                            </span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                                Live (Redis)
+                            </span>
+                            <span className="tabular-nums font-medium">
+                                {formatBytes(usage.bandwidth.live_bytes)}
+                            </span>
+                        </div>
+                        <div className="flex justify-between border-t border-border pt-2">
+                            <span className="text-muted-foreground">Limit</span>
+                            <span className="tabular-nums font-medium">
+                                {usage.bandwidth.limit}
+                            </span>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+        </div>
+    );
+}
+
+function PerformanceTab() {
+    const metrics = [
+        {
+            label: "Time to First Byte",
+            value: "—",
+            hint: "Edge latency to first byte",
+        },
+        {
+            label: "Largest Contentful Paint",
+            value: "—",
+            hint: "Core Web Vital · LCP",
+        },
+        {
+            label: "Cumulative Layout Shift",
+            value: "—",
+            hint: "Core Web Vital · CLS",
+        },
+        {
+            label: "Interaction to Next Paint",
+            value: "—",
+            hint: "Core Web Vital · INP",
+        },
+        {
+            label: "Cache hit ratio",
+            value: "—",
+            hint: "Blob / edge cache hits",
+        },
+        {
+            label: "Error rate (5xx)",
+            value: "—",
+            hint: "Server errors over traffic",
+        },
+    ];
+
+    return (
+        <div className="space-y-4">
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center gap-2">
+                        <Gauge className="size-4 text-muted-foreground" />
+                        <div>
+                            <CardTitle className="text-sm">Performance</CardTitle>
+                            <CardDescription className="text-xs">
+                                Real-user and edge performance metrics — coming
+                                soon
+                            </CardDescription>
+                        </div>
+                    </div>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {metrics.map((m) => (
+                        <div
+                            key={m.label}
+                            className="rounded-none border border-border bg-muted/20 p-3"
+                        >
+                            <p className="text-xs text-muted-foreground">
+                                {m.label}
+                            </p>
+                            <p className="text-2xl font-semibold text-foreground mt-1 tabular-nums">
+                                {m.value}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground mt-1">
+                                {m.hint}
+                            </p>
+                        </div>
+                    ))}
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-sm">
+                        Performance timeline
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                        Historical charts will appear here once RUM collection
+                        is enabled
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex h-40 items-end gap-1.5 border border-dashed border-border bg-muted/10 px-3 py-4">
+                        {Array.from({ length: 24 }).map((_, i) => (
+                            <div
+                                key={i}
+                                className="flex-1 rounded-none bg-muted-foreground/15"
+                                style={{
+                                    height: `${20 + ((i * 17) % 60)}%`,
+                                }}
+                            />
+                        ))}
+                    </div>
+                    <p className="mt-3 text-center text-xs text-muted-foreground">
+                        No performance samples yet
                     </p>
                 </CardContent>
             </Card>
@@ -2529,33 +2671,12 @@ function UsageTab({ project }: { project: Project }) {
                             {usage.requests.limit.toLocaleString()}
                         </span>
                     </div>
-                    <Progress
-                        value={
-                            usage.requests.limit > 0
-                                ? (usage.requests.used / usage.requests.limit) *
-                                  100
-                                : 0
-                        }
-                        className="h-2"
+                    <CombinedUsageBar
+                        flushed={usage.requests.flushed}
+                        live={usage.requests.live}
+                        limit={usage.requests.limit}
+                        formatValue={(n) => n.toLocaleString()}
                     />
-                    <div className="mt-3 grid grid-cols-2 gap-3">
-                        <div className="rounded-none border border-border bg-muted/20 p-2.5">
-                            <p className="text-xs text-muted-foreground">
-                                Flushed (DB)
-                            </p>
-                            <p className="text-sm font-medium text-foreground mt-0.5">
-                                {usage.requests.flushed.toLocaleString()}
-                            </p>
-                        </div>
-                        <div className="rounded-none border border-border bg-muted/20 p-2.5">
-                            <p className="text-xs text-muted-foreground">
-                                Live (Redis)
-                            </p>
-                            <p className="text-sm font-medium text-foreground mt-0.5">
-                                {usage.requests.live.toLocaleString()}
-                            </p>
-                        </div>
-                    </div>
                 </CardContent>
             </Card>
 
@@ -2573,32 +2694,12 @@ function UsageTab({ project }: { project: Project }) {
                             {usage.bandwidth.limit}
                         </span>
                     </div>
-                    <Progress
-                        value={
-                            bandwidthLimit > 0
-                                ? (bandwidthUsed / bandwidthLimit) * 100
-                                : 0
-                        }
-                        className="h-2"
+                    <CombinedUsageBar
+                        flushed={usage.bandwidth.flushed_bytes}
+                        live={usage.bandwidth.live_bytes}
+                        limit={bandwidthLimit}
+                        formatValue={formatBytes}
                     />
-                    <div className="mt-3 grid grid-cols-2 gap-3">
-                        <div className="rounded-none border border-border bg-muted/20 p-2.5">
-                            <p className="text-xs text-muted-foreground">
-                                Flushed (DB)
-                            </p>
-                            <p className="text-sm font-medium text-foreground mt-0.5">
-                                {formatBytes(usage.bandwidth.flushed_bytes)}
-                            </p>
-                        </div>
-                        <div className="rounded-none border border-border bg-muted/20 p-2.5">
-                            <p className="text-xs text-muted-foreground">
-                                Live (Redis)
-                            </p>
-                            <p className="text-sm font-medium text-foreground mt-0.5">
-                                {formatBytes(usage.bandwidth.live_bytes)}
-                            </p>
-                        </div>
-                    </div>
                 </CardContent>
             </Card>
 
@@ -2839,6 +2940,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                             { value: "files", label: "Files" },
                             { value: "environment", label: "Environment" },
                             { value: "analytics", label: "Analytics" },
+                            { value: "performance", label: "Performance" },
                             { value: "usage", label: "Usage" },
                             { value: "settings", label: "Settings" },
                         ].map(({ value, label }) => (
@@ -2872,7 +2974,10 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                     <EnvTab />
                 </TabsContent>
                 <TabsContent value="analytics">
-                    <AnalyticsTab />
+                    <AnalyticsTab project={project} />
+                </TabsContent>
+                <TabsContent value="performance">
+                    <PerformanceTab />
                 </TabsContent>
                 <TabsContent value="usage">
                     <UsageTab project={project} />
