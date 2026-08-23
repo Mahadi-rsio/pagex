@@ -84,7 +84,7 @@ export function classifyBuildError(error: Error): 'retryable' | 'permanent' {
     return 'retryable'
 }
 
-export const buildQueue = new Queue<CloudBuildJob, unknown, 'build-job'>('build-job', {
+export const buildQueue = new Queue<CloudBuildJob, unknown, 'build-job'>(CLOUDISY_CLOUD_BUILDS_QUEUE, {
     connection,
     defaultJobOptions: {
         attempts: 3,
