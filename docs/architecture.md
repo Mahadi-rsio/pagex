@@ -67,10 +67,10 @@ This document provides a comprehensive overview of the PageX platform architectu
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                      Background Processing                              │   │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐    │   │
-│  │  │  Build Worker    │  │  GC Worker       │    │   │
-│  │  │  (Cloud Builds)   │  │  (Garbage Collect)│    │   │
-│  │  └─────────────────┘  └─────────────────┘    │   │
+│  │  ┌─────────────────┐                                                 │   │
+│  │  │  Build Worker    │  GC runs fire-and-forget after deploy/rollback  │   │
+│  │  │  (Cloud Builds)   │  (not a BullMQ worker)                          │   │
+│  │  └─────────────────┘                                                 │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -528,6 +528,8 @@ Client Request
 │                                                                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+> **Known limitation:** Page deletion cascades DB rows (deployments, builds, blob_tree_entries) via `ON DELETE CASCADE`, but does **not** delete the corresponding MinIO blob objects or the `blobs` table rows. Orphaned MinIO objects accumulate until a separate cleanup process is implemented.
 
 ## 🎯 Design Decisions
 
