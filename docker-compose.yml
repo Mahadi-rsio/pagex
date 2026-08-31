@@ -141,6 +141,7 @@ services:
     env_file: .env
     environment:
       - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       # Point the build worker at the ISOLATED dind daemon over TCP, never the
       # host socket. This is the key hardening step: a compromised tenant build
       # can only ever reach the sandbox daemon, not control the host Docker daemon.
@@ -150,13 +151,7 @@ services:
       - BUILD_MAX_CONCURRENT_PER_TENANT=${BUILD_MAX_CONCURRENT_PER_TENANT:-2}
     command: ["node","dist/queue/workers/build.worker.js"]
     volumes:
-      # Shared host mount-point so the worker's bind of the cloned repo into a build
-      # container resolves identically on the dind daemon host and worker.
-      - type: bind
-        source: /tmp/cloudisy-builds
-        target: /tmp/cloudisy-builds
-        bind:
-          propagation: rshared
+      - build-shared:/tmp/cloudisy-builds
       - ./services/api/seccomp.build.json:/etc/seccomp/build.json:ro
     depends_on:
       redis:
@@ -191,11 +186,7 @@ services:
       - DOCKER_DRIVER=overlay2
     volumes:
       - docker-data:/var/lib/docker
-      - type: bind
-        source: /tmp/cloudisy-builds
-        target: /tmp/cloudisy-builds
-        bind:
-          propagation: rshared
+      - build-shared:/tmp/cloudisy-builds
       - ./services/api/seccomp.build.json:/etc/seccomp/build.json:ro
     security_opt:
       - seccomp=unconfined
@@ -254,6 +245,7 @@ volumes:
   pgdata:
   # Isolated dind data so the host daemon is never exposed.
   docker-data:
+  build-shared:
 
 networks:
   pagex:
