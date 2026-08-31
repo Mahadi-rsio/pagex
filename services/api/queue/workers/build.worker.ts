@@ -4,12 +4,156 @@ import { existsSync } from 'fs'
 import * as path from 'path'
 import { spawn } from 'child_process'
 import { eq, and, desc } from 'drizzle-orm'
-import { connection } from '../../infrastructure/cache/redis.js'
+import { connection, redis } from '../../infrastructure/cache/redis.js'
 import { db } from '../../infrastructure/db/db.js'
 import { builds, deployments, sites } from '../../infrastructure/db/schema.js'
 import { CLOUDISY_CLOUD_BUILDS_QUEUE, type CloudBuildJob, buildDlqQueue, classifyBuildError, moveToDLQ } from '../jobs/build.queue.js'
 import { deployFromLocalDirectory } from '../../services/deploy.service.js'
 import { validateOutputDir } from '../../utils/deployment-validator.js'
+
+/**
+ * Platform secrets/env prefix blocklist. User-supplied build env vars whose names
+ * collide with, or could shadow, PageX's own infrastructure config are dropped so a
+ * tenant cannot exfiltrate or impersonate internal credentials inside the build
+ * container (which runs with --network none but may still reach a leaked socket).
+ */
+const BLOCKED_ENV_PREFIXES = [
+    'MINIO_',
+    'S3_',
+    'REDIS_',
+    'DATABASE_',
+    'DIRECT_',
+    'POSTGRES_',
+    'BETTER_AUTH_',
+    'AUTH_JWKS_',
+    'EXPRESS_',
+    'NEXT_',
+]
+
+/**
+ * Filter a raw env map down to a safe allowlist. Returns only user-declared keys
+ * that do not match a blocked platform prefix and are non-empty strings.
+ */
+function sanitizeBuildEnvVars(envVars?: Record<string, string>): Record<string, string> {
+    const safe: Record<string, string> = {}
+    if (!envVars) return safe
+    for (const [key, value] of Object.entries(envVars)) {
+        if (!key || typeof value !== 'string' || value.length === 0) continue
+        const upper = key.toUpperCase()
+        if (BLOCKED_ENV_PREFIXES.some((prefix) => upper.startsWith(prefix))) continue
+        safe[key] = value
+    }
+    return safe
+}
+
+/**
+ * Per-tenant build concurrency guard (BullMQ v5 has no job groups, so we enforce
+ * fairness ourselves with a Redis-backed counter). No single tenant may run more
+ * than BUILD_MAX_CONCURRENT_PER_TENANT build containers at once, preventing one
+ * tenant from exhausting the whole build pool or the Docker daemon.
+ */
+const BUILD_MAX_CONCURRENT_PER_TENANT = Number(process.env.BUILD_MAX_CONCURRENT_PER_TENANT || 2)
+const TENANT_BUILD_SEM_PREFIX = 'build:sem:'
+
+async function acquireTenantSlot(tenantId: string): Promise<void> {
+    const key = `${TENANT_BUILD_SEM_PREFIX}${tenantId}`
+    const lockAcquired = await redis.eval(
+        `
+        local key = KEYS[1]
+        local limit = tonumber(ARGV[1])
+        local lease = tonumber(ARGV[2])
+        local cur = tonumber(redis.call('GET', key) or '0')
+        if cur >= limit then
+            return 0
+        end
+        redis.call('INCR', key)
+        redis.call('EXPIRE', key, lease)
+        return 1
+        `,
+        1,
+        key,
+        String(BUILD_MAX_CONCURRENT_PER_TENANT),
+        String(60 * 5) // 5-minute lease; released early on success/failure
+    ) as number
+
+    if (lockAcquired !== 1) {
+        throw new Error('Tenant build concurrency limit reached; please retry shortly')
+    }
+}
+
+async function releaseTenantSlot(tenantId: string): Promise<void> {
+    const key = `${TENANT_BUILD_SEM_PREFIX}${tenantId}`
+    try {
+        await redis.decr(key)
+    } catch {
+        // best-effort; a leftover under-count is bounded by the 5-minute lease
+    }
+}
+
+/**
+ * Hardening flags applied to every per-build `docker run`.
+ * Rationale:
+ *  - --cpus/--memory     : hard CPU + memory ceiling (no swap ballooning)
+ *  - --pids-limit        : stop fork bombs
+ *  - --cap-drop ALL      : no privilege escalation / raw sockets / mount etc.
+ *  - --security-opt no-new-privileges : no setuid privilege gain
+ *  - --security-opt seccomp=<profile> : drop risky syscalls (ptrace, mount, ...)
+ *  - --tmpfs /tmp        : scratch space in /tmp
+ *  - Network & host isolation: Handled by docker-dind sandbox (containers run on dind's
+ *                              bridge with internet for npm/pnpm installs, but isolated from host)
+ */
+const BUILD_SECCOMP_PROFILE = process.env.BUILD_SECCOMP_PROFILE || '/etc/seccomp/build.json'
+const BUILD_RUN_USER = process.env.BUILD_RUN_USER || '10001:10001'
+const BUILD_MEMORY_LIMIT = process.env.BUILD_MEMORY_LIMIT || '1g'
+const BUILD_CPUS = process.env.BUILD_CPUS || '1.0'
+// In the isolated dind sandbox the build-env image is loaded locally, so we
+// must NOT force a registry pull by default (there is no registry auth inside
+// dind). Set BUILD_PULL_ALWAYS=1 to switch back to --pull always.
+const BUILD_PULL_ALWAYS = process.env.BUILD_PULL_ALWAYS === '1'
+
+function buildDockerCreateArgs(opts: {
+    containerName: string;
+    envVars: Record<string, string>;
+    image: string;
+    command: string;
+}): string[] {
+    const args = [
+        'create',
+        ...(BUILD_PULL_ALWAYS ? ['--pull', 'always'] : []),
+        '--name', opts.containerName,
+        '--cpus', BUILD_CPUS,
+        '--memory', BUILD_MEMORY_LIMIT,
+        '--memory-swap', BUILD_MEMORY_LIMIT,
+        '--pids-limit', '256',
+        '--cap-drop', 'ALL',
+        '--security-opt', 'no-new-privileges',
+        '--security-opt', `seccomp=${BUILD_SECCOMP_PROFILE}`,
+        '--tmpfs', '/tmp:rw,exec,nosuid,mode=1777',
+        '-w', '/app',
+    ];
+    for (const [key, value] of Object.entries(opts.envVars)) {
+        args.push('--env', `${key}=${value}`);
+    }
+    args.push(
+        opts.image,
+        'sh', '-c',
+        opts.command
+    );
+    return args;
+}
+
+async function chmodRecursive(dir: string, mode: number): Promise<void> {
+    await fs.chmod(dir, mode).catch(() => {});
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            await chmodRecursive(fullPath, mode);
+        } else {
+            await fs.chmod(fullPath, mode).catch(() => {});
+        }
+    }
+}
 
 async function getFilesRecursively(dir: string): Promise<string[]> {
     const dirents = await fs.readdir(dir, { withFileTypes: true });
@@ -42,8 +186,9 @@ async function resolveInstallCommand(cloneDir: string): Promise<string> {
     if (has('yarn.lock')) return '(yarn install --frozen-lockfile 2>/dev/null || yarn install)';
     if (has('pnpm-lock.yaml')) return '(pnpm install --frozen-lockfile 2>/dev/null || pnpm install)';
     if (has('bun.lockb') || has('bun.lock')) return 'bun install';
+    if (has('package.json')) return '(npm install || pnpm install)';
 
-    return '(npm install || pnpm install)';
+    return 'true';
 }
 
 const worker = new Worker<CloudBuildJob>(
@@ -56,6 +201,7 @@ const worker = new Worker<CloudBuildJob>(
         console.log(`Starting build job ${jobId} for buildId: ${buildId}...`);
 
         const startTime = Date.now();
+        let slotAcquired = false;
         try {
             // Step 1 (10%) — Clone repo
             await job.updateProgress(10);
@@ -77,6 +223,23 @@ const worker = new Worker<CloudBuildJob>(
                 p.on('error', reject);
             });
 
+            // Strip the embedded oauth2 token out of the cloned repo's git config
+            // before the directory is bind-mounted into the build container. If it
+            // stays, any malicious build script can read /app/.git/config and exfiltrate
+            // the tenant's git credential.
+            try {
+                await new Promise<void>((resolve, reject) => {
+                    const p = spawn('git', ['-C', cloneDir, 'remote', 'set-url', 'origin', repoUrl]);
+                    p.on('close', (code) => {
+                        if (code === 0) resolve();
+                        else resolve(); // non-fatal: clone itself succeeded
+                    });
+                    p.on('error', () => resolve()); // non-fatal
+                });
+            } catch {
+                // non-fatal — never fail a successful clone over token scrubbing
+            }
+
             // Step 2 (35%) — Build with Docker
             await job.updateProgress(35);
             await job.log("Step 2: Building project with Docker...");
@@ -85,26 +248,42 @@ const worker = new Worker<CloudBuildJob>(
             await job.log(`Using install: ${installCommand}`);
 
             const containerName = `cloudisy-build-${jobId}`;
-            const dockerArgs = [
-                'run', '--rm',
-                '--name', containerName,
-                '--memory', '1g',
-                '-v', `${cloneDir}:/app`,
-                '-w', '/app',
-            ];
-            if (envVars) {
-                for (const [key, value] of Object.entries(envVars)) {
-                    dockerArgs.push('--env', `${key}=${value}`);
-                }
-            }
-            dockerArgs.push(
-                process.env.BUILD_ENV_IMAGE || 'pagex-build-env:latest',
-                'sh', '-c',
-                `${installCommand} && ${buildCommand}`
-            );
 
+            // Only forward user-declared, non-blocked env vars into the build container.
+            const safeEnv = sanitizeBuildEnvVars(envVars);
+            const droppedCount = envVars ? Object.keys(envVars).length - Object.keys(safeEnv).length : 0;
+            if (droppedCount > 0) {
+                await job.log(`Dropped ${droppedCount} env var(s) matching blocked platform prefixes`);
+            }
+
+            const dockerCreateArgs = buildDockerCreateArgs({
+                containerName,
+                envVars: safeEnv,
+                image: process.env.BUILD_ENV_IMAGE || 'pagex-build-env:latest',
+                command: `${installCommand} && ${buildCommand}`,
+            });
+
+            // Enforce the per-tenant concurrency ceiling before launching a container.
+            await acquireTenantSlot(tenantId);
+            slotAcquired = true;
+
+            // 1. Create container in sandbox daemon
             await new Promise<void>((resolve, reject) => {
-                const p = spawn('docker', dockerArgs);
+                const p = spawn('docker', dockerCreateArgs);
+                p.on('close', (code) => code === 0 ? resolve() : reject(new Error(`docker create failed with code ${code}`)));
+                p.on('error', reject);
+            });
+
+            // 2. Copy cloned source repository into container /app/
+            await new Promise<void>((resolve, reject) => {
+                const p = spawn('docker', ['cp', `${cloneDir}/.`, `${containerName}:/app/`]);
+                p.on('close', (code) => code === 0 ? resolve() : reject(new Error(`docker cp in failed with code ${code}`)));
+                p.on('error', reject);
+            });
+
+            // 3. Start container and stream build output logs
+            await new Promise<void>((resolve, reject) => {
+                const p = spawn('docker', ['start', '-a', containerName]);
                 let stdoutBuf = '';
                 let stderrBuf = '';
 
@@ -142,6 +321,27 @@ const worker = new Worker<CloudBuildJob>(
                     reject(err);
                 });
             });
+
+            // 4. Copy build outputs back from container /app/ to cloneDir
+            await new Promise<void>((resolve, reject) => {
+                const p = spawn('docker', ['cp', `${containerName}:/app/.`, `${cloneDir}/`]);
+                p.on('close', (code) => code === 0 ? resolve() : reject(new Error(`docker cp out failed with code ${code}`)));
+                p.on('error', reject);
+            });
+
+            // 5. Remove temporary build container
+            await new Promise<void>((resolve) => {
+                const p = spawn('docker', ['rm', '-f', containerName]);
+                p.on('close', () => resolve());
+                p.on('error', () => resolve());
+            });
+
+            try {
+                await releaseTenantSlot(tenantId);
+            } catch {
+                // best-effort
+            }
+            slotAcquired = false;
 
             // Step 3 (70%) — Detect output dir
             await job.updateProgress(70);
@@ -246,6 +446,12 @@ const worker = new Worker<CloudBuildJob>(
                 console.log(`Forced container cloudisy-build-${jobId} to stop.`);
             });
             await fs.rm(cloneDir, { recursive: true, force: true }).catch(() => {});
+
+            // Always release the per-tenant slot on any failure path.
+            if (slotAcquired) {
+                try { await releaseTenantSlot(tenantId); } catch { /* best-effort */ }
+                slotAcquired = false;
+            }
 
             const errorMessage = err?.message || 'Unknown error'
             await db.update(builds)

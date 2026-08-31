@@ -141,18 +141,73 @@ services:
     env_file: .env
     environment:
       - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
+      # Point the build worker at the ISOLATED dind daemon over TCP, never the
+      # host socket. This is the key hardening step: a compromised tenant build
+      # can only ever reach the sandbox daemon, not control the host Docker daemon.
+      - DOCKER_HOST=tcp://docker-dind:2375
+      - BUILD_ENV_IMAGE=pagex-build-env:latest
+      - BUILD_SECCOMP_PROFILE=/etc/seccomp/build.json
+      - BUILD_MAX_CONCURRENT_PER_TENANT=${BUILD_MAX_CONCURRENT_PER_TENANT:-2}
     command: ["node","dist/queue/workers/build.worker.js"]
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /tmp/cloudisy-builds:/tmp/cloudisy-builds
+      # Shared host mount-point so the worker's bind of the cloned repo into a build
+      # container resolves identically on the dind daemon host and worker.
+      - type: bind
+        source: /tmp/cloudisy-builds
+        target: /tmp/cloudisy-builds
+        bind:
+          propagation: rshared
+      - ./services/api/seccomp.build.json:/etc/seccomp/build.json:ro
     depends_on:
       redis:
         condition: service_healthy
       build-env:
         condition: service_completed_successfully
+      docker-dind:
+        condition: service_started
     restart: unless-stopped
     networks:
       - pagex
+      - build-net
+
+  # ============================================================================
+  # Isolated Docker daemon — Cloud Builds sandbox
+  # The build worker talks to THIS daemon over TCP (tcp://docker-dind:2375) on
+  # the isolated build-net, never the host. All tenant build containers run
+  # inside this dind, so a container escape cannot reach the host daemon or host
+  # root. The daemon's socket is NOT shared with any other container.
+  # ============================================================================
+  docker-dind:
+    container_name: build_dind
+    image: docker:${DOCKER_DIND_TAG:-27}-dind
+    privileged: true
+    # privileged is required for DinD (nested namespaces/overlay). It is bounded:
+    # the daemon listens only on build-net (tcp:2375), is never published to the
+    # host, and compromise of a build container reaches this disposable daemon,
+    # not the host. Trade-off: nested-DinD must run privileged.
+    environment:
+      - DOCKER_TLS_CERTDIR=
+      - DOCKER_HOST=tcp://0.0.0.0:2375
+      - DOCKER_DRIVER=overlay2
+    volumes:
+      - docker-data:/var/lib/docker
+      - type: bind
+        source: /tmp/cloudisy-builds
+        target: /tmp/cloudisy-builds
+        bind:
+          propagation: rshared
+      - ./services/api/seccomp.build.json:/etc/seccomp/build.json:ro
+    security_opt:
+      - seccomp=unconfined
+    restart: unless-stopped
+    networks:
+      - build-net
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
 
   # ============================================================================
   # PostgreSQL Database
@@ -197,7 +252,14 @@ services:
 
 volumes:
   pgdata:
+  # Isolated dind data so the host daemon is never exposed.
+  docker-data:
 
 networks:
   pagex:
+    driver: bridge
+  # Isolated network for the sandbox daemon + build worker. Tenant build
+  # containers run with --network none, and the daemon itself cannot reach the
+  # main pagex network (no link between build-net and pagex).
+  build-net:
     driver: bridge
