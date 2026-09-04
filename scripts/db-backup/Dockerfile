@@ -15,7 +15,7 @@ RUN apk add --no-cache curl ca-certificates \
   && chmod +x /usr/local/bin/mc \
   && apk del curl
 
-COPY entrypoint.sh backup.sh /scripts/
-RUN chmod +x /scripts/entrypoint.sh /scripts/backup.sh
+COPY entrypoint.sh backup.sh restore.sh /scripts/
+RUN chmod +x /scripts/entrypoint.sh /scripts/backup.sh /scripts/restore.sh
 
 ENTRYPOINT ["/scripts/entrypoint.sh"]

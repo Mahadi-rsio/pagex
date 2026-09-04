@@ -236,7 +236,7 @@ services:
       - pagex
 
   # ============================================================================
-  # DB Backup — hourly pg_dump → MinIO (same bucket, backup/ prefix)
+  # DB Backup — every 25m pg_dump → MinIO (same bucket, backup/ prefix)
   # ============================================================================
   db-backup:
     container_name: db_backup
@@ -254,7 +254,9 @@ services:
       - MINIO_BUCKET=${MINIO_BUCKET:-sites}
       - BACKUP_PREFIX=${BACKUP_PREFIX:-backup}
       - BACKUP_RETENTION_HOURS=${BACKUP_RETENTION_HOURS:-24}
-      - BACKUP_INTERVAL_SECONDS=${BACKUP_INTERVAL_SECONDS:-3600}
+      - BACKUP_INTERVAL_SECONDS=${BACKUP_INTERVAL_SECONDS:-1500}
+      - BACKUP_MIN_BYTES=${BACKUP_MIN_BYTES:-2048}
+      - BACKUP_STARTUP_GRACE_SECONDS=${BACKUP_STARTUP_GRACE_SECONDS:-90}
     depends_on:
       db:
         condition: service_healthy
