@@ -38,8 +38,8 @@ Commands:
   ps                     List containers
   logs [services...]     Follow logs (default: all)
   exec <service> [cmd]   Exec into a service (default cmd: sh)
-  migrate                Run API + console migrators
-  console                Start console stack (db/redis/migrators/console/blob-server)
+  migrate                No-op (API + console migrate on startup)
+  console                Start console stack (db/redis/console/blob-server)
   api                    Start API stack deps + api
   pull [services...]     Pull images
   config                 Validate and print compose config
@@ -54,7 +54,7 @@ Examples:
   scripts/docker.sh up --with-workers
   scripts/docker.sh up api console db redis
   scripts/docker.sh logs console
-  scripts/docker.sh rebuild console console-migrator
+  scripts/docker.sh rebuild console
   scripts/docker.sh migrate
 EOF
 }
@@ -119,15 +119,15 @@ case "$cmd" in
     fi
     ;;
   migrate)
+    # Migrations run automatically on API/console startup (drizzle-orm migrate()).
+    echo "No separate migrator services — start api/console against a healthy db."
     compose up -d db
-    compose run --rm migrator
-    compose run --rm console-migrator
     ;;
   console)
-    compose up -d db redis migrator console-migrator console blob-server
+    compose up -d db redis console blob-server
     ;;
   api)
-    compose up -d db redis pgbouncer migrator api
+    compose up -d db redis api
     ;;
   pull)
     compose pull "$@"

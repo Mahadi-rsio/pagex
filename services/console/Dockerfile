@@ -9,18 +9,6 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM node:24-alpine AS migrator
-WORKDIR /app
-RUN npm init -y && \
-    npm install drizzle-kit@^0.31.10 drizzle-orm@^0.45.2 dotenv postgres --omit=optional && \
-    find /app/node_modules -type f \( -name "*.ts" -not -name "*.d.ts" -o -name "*.js.map" -o -name "CHANGELOG*" -o -name "README*" -o -name "SECURITY*" \) -delete 2>/dev/null; \
-    npm cache clean --force && \
-    rm -f package.json package-lock.json
-COPY drizzle.config.ts ./
-COPY drizzle ./drizzle
-ENV CI=true
-CMD ["npx", "drizzle-kit", "migrate"]
-
 FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
@@ -34,6 +22,8 @@ RUN apk add --no-cache su-exec && \
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+# Migrations run at startup via drizzle-orm migrate() (see src/instrumentation.ts)
+COPY --from=builder /app/drizzle ./drizzle
 COPY --chmod=755 docker-entrypoint.sh /app/
 
 EXPOSE 3001

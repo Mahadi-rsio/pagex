@@ -270,7 +270,13 @@ const worker = new Worker<CloudBuildJob>(
             // 1. Create container in sandbox daemon
             await new Promise<void>((resolve, reject) => {
                 const p = spawn('docker', dockerCreateArgs);
-                p.on('close', (code) => code === 0 ? resolve() : reject(new Error(`docker create failed with code ${code}`)));
+                let stderr = '';
+                p.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+                p.on('close', (code) => {
+                    if (code === 0) return resolve();
+                    const detail = stderr.trim().split('\n').pop() || `exit ${code}`;
+                    reject(new Error(`docker create failed with code ${code}: ${detail}`));
+                });
                 p.on('error', reject);
             });
 

@@ -42,7 +42,7 @@ Set `BUILD_MODE=export` (static SSG → `out/`) or `BUILD_MODE=standalone` (Node
 
 ## Production serving model
 
-Caddy (`:3000`) serves static UI + reverse-proxies `/api/*` → Node app (`:3000`). The Docker Compose stack has 5 services: `caddy`, `app`, `migrator`, `postgres`, `redis`. The `migrator` runs `drizzle-kit migrate` once before `app` starts. CI builds + pushes to GHCR on version tags (`v*`) and manual dispatch.
+Caddy (`:3000`) serves static UI + reverse-proxies `/api/*` → Node app (`:3000`). Console applies Drizzle migrations on startup via `src/instrumentation.ts` (same pattern as the API) — no separate migrator container. CI builds + pushes to GHCR on version tags (`v*`) and manual dispatch.
 
 ## Drizzle schema workflow
 
