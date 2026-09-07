@@ -59,7 +59,7 @@ export function CloudDeployPanel({
                 </CardHeader>
                 <CardContent className="space-y-4 px-6 pb-6">
                     {buildError && !activeBuildId ? (
-                        <div className="rounded-none border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+                        <div className="rounded-none border border-destructive p-4 text-sm text-destructive">
                             {buildError}
                         </div>
                     ) : activeBuildId ? (

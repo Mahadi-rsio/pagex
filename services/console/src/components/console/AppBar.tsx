@@ -41,17 +41,7 @@ export function AppBar() {
     if (!user) return null;
 
     return (
-        <header className="chrome-sheen sticky top-0 z-50 w-full border-b border-border/60 bg-background/75 backdrop-blur-xl">
-            {/* Abstract top hairline + grid wash */}
-            <div
-                aria-hidden
-                className="pointer-events-none absolute inset-0 bg-grid bg-grid-fade opacity-40"
-            />
-            <div
-                aria-hidden
-                className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-foreground/25 to-transparent"
-            />
-
+        <header className="sticky top-0 z-50 w-full border-b border-border bg-background">
             <div className="relative flex h-14 items-center gap-3 px-4">
                 {/* Left: mobile menu + desktop logo */}
                 <div className="flex shrink-0 items-center gap-2.5">
@@ -78,7 +68,7 @@ export function AppBar() {
                         href="/"
                         className="group hidden items-center gap-2.5 font-semibold text-foreground transition-opacity hover:opacity-90 md:flex"
                     >
-                        <div className="edge-frame edge-frame-sm relative flex size-8 items-center justify-center border border-border bg-foreground text-background transition-colors group-hover:bg-foreground/90">
+                        <div className="relative flex size-8 items-center justify-center rounded-none border border-border bg-foreground text-background transition-colors group-hover:bg-foreground/90">
                             <Zap className="size-3.5" strokeWidth={2.25} />
                         </div>
                         <div className="flex flex-col leading-none">
@@ -94,14 +84,14 @@ export function AppBar() {
 
                 {/* Center: search */}
                 <div className="hidden min-w-0 flex-1 md:flex md:justify-center">
-                    <div className="edge-frame edge-frame-sm relative w-full max-w-md">
+                    <div className="relative w-full max-w-md">
                         <Search className="pointer-events-none absolute left-2.5 top-1/2 z-[1] size-3.5 -translate-y-1/2 text-muted-foreground" />
                         <Input
                             type="search"
                             placeholder="Search projects, domains..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="h-8 border-border/80 bg-muted/30 pl-8 focus-visible:border-foreground/35 focus-visible:ring-0"
+                            className="h-8 border-border bg-muted/30 pl-8 focus-visible:border-foreground/35 focus-visible:ring-0"
                         />
                     </div>
                 </div>

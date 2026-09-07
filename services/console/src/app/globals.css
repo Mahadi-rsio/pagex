@@ -59,7 +59,7 @@
 
 /*
   Monochrome Noir — premium, abstract, futuristic.
-  Pure grayscale ramp, hairline borders, sharp square edges.
+  Pure grayscale ramp, simple borders, sharp square edges.
 */
 :root {
     --radius: 0;
@@ -221,125 +221,6 @@
     border: 1px solid var(--border);
 }
 
-/* Hairline top highlight */
-.edge-top {
-    position: relative;
-}
-.edge-top::before {
-    content: "";
-    position: absolute;
-    inset: 0 1px auto;
-    height: 1px;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        color-mix(in oklab, var(--foreground) 14%, transparent),
-        transparent
-    );
-    pointer-events: none;
-}
-
-/*
-  Edge frame — L-shaped corner brackets.
-  Monochrome HUD / premium futuristic surface language.
-*/
-.edge-frame {
-    position: relative;
-    isolation: isolate;
-}
-.edge-frame::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 20;
-    pointer-events: none;
-    /* top-left */
-    background:
-        linear-gradient(var(--foreground), var(--foreground)) 0 0 / 14px 1px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 0 0 / 1px 14px
-        no-repeat,
-        /* top-right */
-        linear-gradient(var(--foreground), var(--foreground)) 100% 0 / 14px 1px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 100% 0 / 1px 14px
-        no-repeat,
-        /* bottom-left */
-        linear-gradient(var(--foreground), var(--foreground)) 0 100% / 14px 1px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 0 100% / 1px 14px
-        no-repeat,
-        /* bottom-right */
-        linear-gradient(var(--foreground), var(--foreground)) 100% 100% / 14px
-        1px no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 100% 100% / 1px
-        14px no-repeat;
-    opacity: 0.55;
-    transition: opacity 180ms ease;
-}
-.edge-frame:hover::before,
-.edge-frame[data-state="open"]::before {
-    opacity: 0.85;
-}
-
-/* Compact brackets for dense UI (toasts, menus) */
-.edge-frame-sm::before {
-    background:
-        linear-gradient(var(--foreground), var(--foreground)) 0 0 / 9px 1px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 0 0 / 1px 9px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 100% 0 / 9px 1px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 100% 0 / 1px 9px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 0 100% / 9px 1px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 0 100% / 1px 9px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 100% 100% / 9px
-        1px no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 100% 100% / 1px
-        9px no-repeat;
-}
-
-/* Premium HUD surface — glass + hairline + edge brackets */
-.surface-hud {
-    position: relative;
-    isolation: isolate;
-    border-radius: 0;
-    border: 1px solid var(--border);
-    background: color-mix(in oklab, var(--popover) 88%, var(--background));
-    -webkit-backdrop-filter: blur(22px) saturate(140%);
-    backdrop-filter: blur(22px) saturate(140%);
-    box-shadow:
-        0 28px 72px -28px oklch(0 0 0 / 0.5),
-        0 8px 20px -12px oklch(0 0 0 / 0.22),
-        inset 0 1px 0 0 color-mix(in oklab, var(--foreground) 9%, transparent);
-}
-.surface-hud::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background-image:
-        linear-gradient(to right, var(--hairline) 1px, transparent 1px),
-        linear-gradient(to bottom, var(--hairline) 1px, transparent 1px);
-    background-size: 28px 28px;
-    opacity: 0.35;
-    -webkit-mask-image: radial-gradient(
-        ellipse 80% 70% at 50% 0%,
-        black 20%,
-        transparent 75%
-    );
-    mask-image: radial-gradient(
-        ellipse 80% 70% at 50% 0%,
-        black 20%,
-        transparent 75%
-    );
-}
-
 /* Soft vertical scan sheen for app chrome */
 .chrome-sheen {
     position: relative;
@@ -485,91 +366,23 @@
 }
 
 /* ------------------------------------------------------------------ */
-/* Sonner toasts — premium monochrome                                  */
+/* Sonner toasts                                                       */
 /* ------------------------------------------------------------------ */
 
 [data-sonner-toaster] {
-    --normal-bg: color-mix(in oklab, var(--popover) 88%, var(--background));
+    --normal-bg: var(--popover);
     --normal-border: var(--border);
     --normal-text: var(--popover-foreground);
-    --normal-message: var(--muted-foreground);
-    --normal-icon: var(--foreground);
-    --success-bg: color-mix(in oklab, var(--popover) 88%, var(--background));
-    --success-border: var(--border);
-    --success-text: var(--popover-foreground);
-    --success-message: var(--muted-foreground);
-    --success-icon: oklch(0.62 0.14 160);
-    --error-bg: color-mix(in oklab, var(--popover) 88%, var(--background));
-    --error-border: var(--border);
-    --error-text: var(--popover-foreground);
-    --error-message: var(--muted-foreground);
-    --error-icon: var(--destructive);
-    --warning-bg: color-mix(in oklab, var(--popover) 88%, var(--background));
-    --warning-border: var(--border);
-    --warning-text: var(--popover-foreground);
-    --warning-message: var(--muted-foreground);
-    --warning-icon: oklch(0.75 0.11 75);
-    --info-bg: color-mix(in oklab, var(--popover) 88%, var(--background));
-    --info-border: var(--border);
-    --info-text: var(--popover-foreground);
-    --info-message: var(--muted-foreground);
-    --info-icon: var(--foreground);
     --toast-width: 352px;
     font-family: var(--font-sans);
 }
 
 [data-sonner-toast] {
-    position: relative !important;
-    isolation: isolate;
-    overflow: visible !important;
     border: 1px solid var(--border) !important;
     border-radius: 0 !important;
-    background: color-mix(
-        in oklab,
-        var(--popover) 88%,
-        var(--background)
-    ) !important;
+    background: var(--popover) !important;
     color: var(--popover-foreground) !important;
-    box-shadow:
-        0 24px 64px -24px oklch(0 0 0 / 0.45),
-        0 4px 12px -6px oklch(0 0 0 / 0.18),
-        inset 0 1px 0 0 color-mix(in oklab, var(--foreground) 10%, transparent) !important;
-    -webkit-backdrop-filter: blur(22px) saturate(140%);
-    backdrop-filter: blur(22px) saturate(140%);
-}
-
-/* Edge brackets + top sheen */
-[data-sonner-toast]::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 5;
-    pointer-events: none;
-    background:
-        linear-gradient(var(--foreground), var(--foreground)) 0 0 / 10px 1px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 0 0 / 1px 10px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 100% 0 / 10px 1px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 100% 0 / 1px 10px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 0 100% / 10px 1px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 0 100% / 1px 10px
-        no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 100% 100% / 10px
-        1px no-repeat,
-        linear-gradient(var(--foreground), var(--foreground)) 100% 100% / 1px
-        10px no-repeat,
-        linear-gradient(
-            90deg,
-            transparent,
-            color-mix(in oklab, var(--foreground) 28%, transparent),
-            transparent
-        )
-        50% 0 / calc(100% - 28px) 1px no-repeat;
-    opacity: 0.7;
+    box-shadow: none !important;
 }
 
 [data-sonner-toast] [data-description] {
@@ -577,12 +390,10 @@
 }
 
 [data-sonner-toast] [data-close-button] {
-    background: color-mix(in oklab, var(--muted) 60%, transparent);
+    background: var(--muted);
     border: 1px solid var(--border);
     color: var(--muted-foreground);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    transition: all 150ms ease;
+    border-radius: 0;
 }
 [data-sonner-toast] [data-close-button]:hover {
     background: var(--muted);

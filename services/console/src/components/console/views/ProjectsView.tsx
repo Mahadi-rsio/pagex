@@ -220,7 +220,7 @@ export function ProjectsView() {
                                 )}
 
                                 {project.domain && (
-                                    <div className="flex items-center gap-1.5 mb-4 py-2 px-3 rounded-none bg-muted/50 border border-border/50">
+                                    <div className="flex items-center gap-1.5 mb-4 py-2 px-3 rounded-none bg-muted/50 border border-border">
                                         <ExternalLink className="size-3.5 text-muted-foreground shrink-0" />
                                         <span className="text-xs text-foreground font-medium truncate">
                                             {project.domain}

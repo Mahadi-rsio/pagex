@@ -54,7 +54,7 @@ export function Layout({ children }: LayoutProps) {
             <AppBar />
             <div className="flex min-h-0 flex-1">
                 {/* Desktop Sidebar — stays fixed while main content scrolls */}
-                <aside className="hidden w-56 shrink-0 flex-col overflow-y-auto border-r border-border/50 bg-background/50 md:flex">
+                <aside className="hidden w-56 shrink-0 flex-col overflow-y-auto border-r border-border bg-background/50 md:flex">
                     <nav className="flex-1 px-3 py-4">
                         <ul className="space-y-0.5">
                             {navItems.map(({ label, href, icon: Icon }) => {
@@ -81,7 +81,7 @@ export function Layout({ children }: LayoutProps) {
                     </nav>
 
                     {/* Account section */}
-                    <div className="border-t border-border/50 p-3">
+                    <div className="border-t border-border p-3">
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <button

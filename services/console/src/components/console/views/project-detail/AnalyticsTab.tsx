@@ -292,7 +292,7 @@ export function AnalyticsTab({ project }: { project: Project }) {
                                         </PieChart>
                                     </ResponsiveContainer>
                                 </div>
-                                <div className="flex h-3 w-full overflow-hidden rounded-none border border-border/60 mt-2">
+                                <div className="flex h-3 w-full overflow-hidden rounded-none border border-border mt-2">
                                     <div
                                         className="h-full bg-primary transition-all"
                                         style={{ width: `${humanPct}%` }}

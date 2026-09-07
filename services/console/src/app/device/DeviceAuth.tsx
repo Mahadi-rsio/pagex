@@ -77,12 +77,8 @@ function DeviceAuthContent() {
                 aria-hidden
                 className="pointer-events-none absolute inset-0 bg-grid opacity-40"
             />
-            <div
-                aria-hidden
-                className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-foreground/20 to-transparent"
-            />
 
-            <div className="surface-hud edge-frame relative z-10 w-full max-w-md p-6 sm:p-8">
+            <div className="relative z-10 w-full max-w-md rounded-none border border-border bg-background p-6 sm:p-8">
                 <div className="relative z-[1] space-y-6">
                     <div className="flex items-center justify-between">
                         <Link

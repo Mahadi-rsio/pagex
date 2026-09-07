@@ -23,7 +23,7 @@ export function CombinedUsageBar({
     return (
         <div className="space-y-1.5">
             <div
-                className={`relative h-2 w-full overflow-hidden rounded-none border border-border/60 bg-muted/70 ${className ?? ""}`}
+                className={`relative h-2 w-full overflow-hidden rounded-none border border-border bg-muted/70 ${className ?? ""}`}
             >
                 <div className="absolute inset-y-0 left-0 flex h-full w-full">
                     <div

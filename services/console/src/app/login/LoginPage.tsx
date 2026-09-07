@@ -144,15 +144,11 @@ export function LoginPage() {
                 aria-hidden
                 className="pointer-events-none absolute inset-0 bg-grid opacity-40"
             />
-            <div
-                aria-hidden
-                className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-foreground/20 to-transparent"
-            />
 
             <LoginHeader />
 
             <main className="relative z-10 flex flex-1 items-center justify-center px-4 py-12">
-                <div className="surface-hud edge-frame w-full max-w-[400px] space-y-6 p-6 sm:p-8">
+                <div className="w-full max-w-[400px] space-y-6 rounded-none border border-border bg-background p-6 sm:p-8">
                     <LoginHeroCard />
 
                     <div className="relative z-[1] space-y-4">

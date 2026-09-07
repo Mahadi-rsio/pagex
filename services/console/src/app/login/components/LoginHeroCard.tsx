@@ -3,7 +3,7 @@ import { Zap } from "lucide-react";
 export function LoginHeroCard() {
     return (
         <div className="relative z-[1] flex flex-col items-center space-y-3 text-center">
-            <div className="edge-frame edge-frame-sm flex size-12 items-center justify-center border border-border bg-foreground text-background">
+            <div className="flex size-12 items-center justify-center rounded-none border border-border bg-foreground text-background">
                 <Zap className="size-5" strokeWidth={2.25} />
             </div>
             <div className="space-y-1">

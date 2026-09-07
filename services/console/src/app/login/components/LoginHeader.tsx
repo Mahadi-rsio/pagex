@@ -3,12 +3,12 @@ import Link from "next/link";
 
 export function LoginHeader() {
     return (
-        <header className="relative z-10 flex items-center justify-between border-b border-border/50 bg-background/60 px-6 py-4 backdrop-blur-md md:px-12">
+        <header className="relative z-10 flex items-center justify-between border-b border-border bg-background/60 px-6 py-4 backdrop-blur-md md:px-12">
             <Link
                 href="/"
                 className="flex items-center gap-2.5 transition-opacity hover:opacity-80"
             >
-                <div className="edge-frame edge-frame-sm flex size-8 items-center justify-center border border-border bg-foreground text-background">
+                <div className="flex size-8 items-center justify-center rounded-none border border-border bg-foreground text-background">
                     <Zap className="size-3.5" strokeWidth={2.25} />
                 </div>
                 <div className="flex flex-col leading-none">

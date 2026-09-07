@@ -29,7 +29,7 @@ export function ProjectsSkeleton() {
                         </div>
                         <Skeleton className="h-3 w-full" />
                         <Skeleton className="h-3 w-4/5" />
-                        <div className="pt-2 flex justify-between items-center border-t border-border/50">
+                        <div className="pt-2 flex justify-between items-center border-t border-border">
                             <Skeleton className="h-3 w-24" />
                             <Skeleton className="h-3 w-16" />
                         </div>

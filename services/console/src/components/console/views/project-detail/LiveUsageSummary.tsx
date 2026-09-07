@@ -141,7 +141,7 @@ export function LiveUsageSummary({ project }: { project: Project }) {
 
                 {/* Sync status footer */}
                 {usage && (
-                    <div className="flex items-center gap-2 pt-1 border-t border-border/50">
+                    <div className="flex items-center gap-2 pt-1 border-t border-border">
                         <span
                             className={`inline-flex size-1.5 rounded-full ${
                                 usage.sync.pending_flush

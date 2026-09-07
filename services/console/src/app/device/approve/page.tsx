@@ -96,12 +96,8 @@ function DeviceApprovalContent() {
                 aria-hidden
                 className="pointer-events-none absolute inset-0 bg-grid opacity-40"
             />
-            <div
-                aria-hidden
-                className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-foreground/20 to-transparent"
-            />
 
-            <div className="surface-hud edge-frame relative z-10 w-full max-w-md p-6 sm:p-8">
+            <div className="relative z-10 w-full max-w-md rounded-none border border-border bg-background p-6 sm:p-8">
                 <div className="relative z-[1] space-y-6">
                     <div className="flex items-center justify-between">
                         <Link
@@ -155,8 +151,8 @@ function DeviceApprovalContent() {
                             disabled={isProcessing || !rawCode}
                             className={cn(
                                 "h-11 rounded-none text-sm font-medium",
-                                "border-destructive/30 text-destructive",
-                                "hover:border-destructive/50 hover:bg-destructive/10",
+                                "border-destructive text-destructive",
+                                "hover:bg-destructive/10",
                                 "disabled:opacity-40",
                             )}
                         >
@@ -211,7 +207,7 @@ function ResultScreen({
                 aria-hidden
                 className="pointer-events-none absolute inset-0 bg-grid opacity-40"
             />
-            <div className="surface-hud edge-frame relative z-10 w-full max-w-sm p-8 text-center">
+            <div className="relative z-10 w-full max-w-sm rounded-none border border-border bg-background p-8 text-center">
                 <div className="relative z-[1] space-y-3">
                     <div className="mb-2 flex justify-center">{icon}</div>
                     <h2 className="text-xl font-semibold tracking-tight">
