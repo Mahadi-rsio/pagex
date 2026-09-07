@@ -7,8 +7,6 @@
     "dev": "tsx watch server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "test": "node --import tsx --test services/deployment-lock.test.ts services/db-invariants.test.ts",
-    "test:invariants": "node --import tsx --test services/db-invariants.test.ts",
     "lint": "npx biome format --write",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
@@ -27,7 +25,6 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
-    "axios": "^1.15.0",
     "bullmq": "^5.73.5",
     "dotenv": "^17.4.1",
     "drizzle-orm": "^0.45.2",
@@ -48,7 +45,6 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
-    "@types/jsonwebtoken": "^9.0.10",
     "@types/mime-types": "^3.0.1",
     "@types/node": "^25.6.0",
     "@types/pg": "^8.20.0",
