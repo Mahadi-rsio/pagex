@@ -58,6 +58,51 @@ INDEX: idx_site_daily_stats_site_date ON (site_id, date)
 
 ---
 
+### `bandwidth_usage_hourly`
+Billing **usage** aggregate (bandwidth only), written by the Caddy plugin flush every ~5 min.
+Hourly buckets are additive (`ON CONFLICT ... DO UPDATE SET bytes = bytes + EXCLUDED.bytes`).
+
+```sql
+tenant_id   TEXT      NOT NULL
+site_id     UUID      FK → sites(id) ON DELETE CASCADE
+bucket      TIMESTAMPTZ NOT NULL   -- truncated to the hour (UTC)
+bytes       BIGINT    NOT NULL DEFAULT 0
+updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+
+PRIMARY KEY: bandwidth_usage_hourly_pk (tenant_id, site_id, bucket)
+INDEX: idx_bandwidth_usage_tenant_bucket ON (tenant_id, bucket)
+INDEX: idx_bandwidth_usage_site_bucket   ON (site_id, bucket)
+```
+
+Tenant id is resolved at flush time via `INSERT ... SELECT p.tenant_id FROM pages p WHERE p.site_id = $1`
+(no per-request DB lookup). **Requests are not metered here** — bandwidth only.
+
+---
+
+### `service_metrics_hourly`
+Operational **metrics** (separate from billing usage), written by the same Caddy flush.
+
+```sql
+site_id         UUID      FK → sites(id) ON DELETE CASCADE
+bucket          TIMESTAMPTZ NOT NULL   -- truncated to the hour (UTC)
+requests        BIGINT    NOT NULL DEFAULT 0
+status_2xx / status_3xx / status_4xx / status_5xx   BIGINT NOT NULL DEFAULT 0
+bytes           BIGINT    NOT NULL DEFAULT 0
+cache_hits / cache_misses                            BIGINT NOT NULL DEFAULT 0
+latency_sum_ms  BIGINT    NOT NULL DEFAULT 0
+latency_le_50 / _100 / _250 / _500 / _1000 / _2500   BIGINT NOT NULL DEFAULT 0  -- cumulative
+updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+
+PRIMARY KEY: service_metrics_hourly_pk (site_id, bucket)
+INDEX: idx_service_metrics_site_bucket ON (site_id, bucket)
+INDEX: idx_service_metrics_bucket      ON (bucket)
+```
+
+`latency_le_*` are cumulative counts (a request increments every bound ≥ its duration);
+percentiles are estimated from these buckets, not stored raw.
+
+---
+
 ### `builds` (legacy, unused)
 Cloud-build job records from the removed BullMQ/cloud-build stack. Retained so no migration is needed; no writer remains.
 
@@ -183,6 +228,9 @@ INDEX: idx_idempotency_keys_resource ON (resource_type, resource_id)
 | `drizzle/0006_*.sql` | DB invariants indexes (partial unique active per page) |
 | `drizzle/0007_curly_pride.sql` | Idempotency keys table, FK build_id SET NULL, CHECK constraints |
 | `drizzle/0008_nervous_shadowcat.sql` | deployments: status column + index |
+| `drizzle/0009_db_invariants.sql` | DB invariants indexes (hand-written) |
+| `drizzle/0010_idempotency_status.sql` | idempotency_keys: status column + index (hand-written, no snapshot) |
+| `drizzle/0011_red_true_believers.sql` | `bandwidth_usage_hourly` + `service_metrics_hourly` tables |
 
 ```bash
 npm run gen       # drizzle-kit generate
@@ -203,6 +251,13 @@ npm run migrate   # drizzle-kit migrate (also on compose up)
 | `deploy:lock:{pageId}` | 3 | String (holder id) | 10 min prepare / ~6 min commit | prepare / commit / rollback | prepare / commit / rollback |
 | `stats:*` | 3 | counters | — | blob-server analytics | blob-server flush → `site_daily_stats` |
 | `db_cache:{domain}` | 3 | JSON | 15 min | page.service | page.service |
+| `metrics:{siteId}:{YYYYMMDDHHmm}` | 0 | Hash | 3 h | blob-server (`request/status/bytes/cache/latency`) | blob-server flush → `service_metrics_hourly` |
+| `usage:bw:{siteId}:{YYYYMMDDHH}` | 0 | String (INCRBY bytes) | 48 h | blob-server (bandwidth only) | blob-server flush → `bandwidth_usage_hourly`; API live reads |
+
+**Billing unit is decimal GB (1 GB = 1,000,000,000 bytes).** Only bandwidth is metered;
+request counts are unlimited and never quota-checked. The API reads live usage from the
+DB0 `usage:bw:*` counters plus flushed rows; flushed counters are deleted (GetDel) so
+nothing is double-counted.
 
 **BullMQ was removed** — there are no queue keys. `deploy:lock:{pageId}` (DB3) is the only lock mechanism.
 

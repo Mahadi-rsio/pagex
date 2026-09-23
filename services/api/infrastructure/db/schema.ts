@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { bigint, boolean, date, index, integer, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, date, index, integer, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 
 /**
@@ -95,6 +95,64 @@ export const builds = pgTable("builds", {
     completed_at: timestamp("completed_at", { withTimezone: true }),
 }, (t) => ({
     buildsPageTenantStatusIdx: index("idx_builds_page_tenant_status").on(t.page_id, t.tenant_id, t.status),
+}));
+
+/**
+ * `bandwidth_usage_hourly` — the customer-billable/quota resource, in BYTES.
+ *
+ * This is USAGE, not metrics: requests are unlimited on every plan, so the only
+ * billable resource is bandwidth. Written by the Caddy blob-server flusher from
+ * Redis `usage:bw:{site_id}:{YYYYMMDDHH}` counters. The unit is decimal bytes
+ * (1 GB = 1_000_000_000 bytes) at the quota layer.
+ *
+ * - `tenant_id` is resolved from `pages` at flush time (never on the hot path).
+ * - PK (tenant_id, site_id, bucket) makes the flusher's additive UPSERT idempotent.
+ */
+export const bandwidthUsageHourly = pgTable("bandwidth_usage_hourly", {
+    tenantId: text("tenant_id").notNull(),
+    siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    bucket: timestamp("bucket", { withTimezone: true }).notNull(),
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+    pk: primaryKey({ name: "bandwidth_usage_hourly_pk", columns: [t.tenantId, t.siteId, t.bucket] }),
+    tenantBucketIdx: index("idx_bandwidth_usage_tenant_bucket").on(t.tenantId, t.bucket),
+    siteBucketIdx: index("idx_bandwidth_usage_site_bucket").on(t.siteId, t.bucket),
+}));
+
+/**
+ * `service_metrics_hourly` — OPERATIONAL/observability metrics, never billing.
+ *
+ * Written by the Caddy blob-server flusher from Redis `metrics:{site_id}:{YYYYMMDDHHmm}`
+ * minute buckets, aggregated to the hour. Latency columns are a cumulative
+ * histogram (a request increments every bound >= its duration) so percentiles can
+ * be estimated without storing raw timings.
+ *
+ * PK (site_id, bucket) makes the flusher's additive UPSERT idempotent.
+ */
+export const serviceMetricsHourly = pgTable("service_metrics_hourly", {
+    siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    bucket: timestamp("bucket", { withTimezone: true }).notNull(),
+    requests: bigint("requests", { mode: "number" }).notNull().default(0),
+    status2xx: bigint("status_2xx", { mode: "number" }).notNull().default(0),
+    status3xx: bigint("status_3xx", { mode: "number" }).notNull().default(0),
+    status4xx: bigint("status_4xx", { mode: "number" }).notNull().default(0),
+    status5xx: bigint("status_5xx", { mode: "number" }).notNull().default(0),
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
+    cacheHits: bigint("cache_hits", { mode: "number" }).notNull().default(0),
+    cacheMisses: bigint("cache_misses", { mode: "number" }).notNull().default(0),
+    latencySumMs: bigint("latency_sum_ms", { mode: "number" }).notNull().default(0),
+    latencyLe50: bigint("latency_le_50", { mode: "number" }).notNull().default(0),
+    latencyLe100: bigint("latency_le_100", { mode: "number" }).notNull().default(0),
+    latencyLe250: bigint("latency_le_250", { mode: "number" }).notNull().default(0),
+    latencyLe500: bigint("latency_le_500", { mode: "number" }).notNull().default(0),
+    latencyLe1000: bigint("latency_le_1000", { mode: "number" }).notNull().default(0),
+    latencyLe2500: bigint("latency_le_2500", { mode: "number" }).notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+    pk: primaryKey({ name: "service_metrics_hourly_pk", columns: [t.siteId, t.bucket] }),
+    siteBucketIdx: index("idx_service_metrics_site_bucket").on(t.siteId, t.bucket),
+    bucketIdx: index("idx_service_metrics_bucket").on(t.bucket),
 }));
 
 /**

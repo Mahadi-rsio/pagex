@@ -14,21 +14,34 @@ import (
 
 // analyticsEvent carries the per-request data sent over the buffered channel.
 type analyticsEvent struct {
-	siteID     string
-	statusCode int
-	bytesSent  int64
-	userAgent  string
-	ip         string
-	timestamp  time.Time
+	siteID       string
+	tenantID     string
+	deploymentID string
+	statusCode   int
+	bytesSent    int64
+	durationMs   int64
+	cacheHit     bool
+	userAgent    string
+	ip           string
+	timestamp    time.Time
 }
 
 // AnalyticsMiddleware collects per-site request statistics and flushes them to
 // PostgreSQL every 5 minutes via a background goroutine.  Redis is used as a
 // fast counter buffer.  HTTP responses are NEVER blocked — all recording is
 // fully asynchronous via a buffered channel.
+//
+// Two independent pipelines are driven from the same event stream:
+//
+//   - Legacy daily stats (stats:{site_id}:{date} → site_daily_stats) are kept
+//     unchanged for backward compatibility with the console usage endpoint.
+//   - Operational metrics (1-minute buckets → service_metrics_hourly) and
+//     billable bandwidth usage (1-hour buckets → bandwidth_usage_hourly) are
+//     recorded by the MetricsAggregator.
 type AnalyticsMiddleware struct {
 	redis      *redis.Client
 	db         *sql.DB
+	aggregator *MetricsAggregator
 	eventCh    chan analyticsEvent // buffered channel, capacity 100000 for high burst absorption
 	flushEvery time.Duration       // default: 5 minutes
 	done       chan struct{}        // graceful-shutdown signal
@@ -40,6 +53,7 @@ func NewAnalyticsMiddleware(redisClient *redis.Client, db *sql.DB) *AnalyticsMid
 	a := &AnalyticsMiddleware{
 		redis:      redisClient,
 		db:         db,
+		aggregator: NewMetricsAggregator(NewRedisMetricsSink(redisClient)),
 		eventCh:    make(chan analyticsEvent, 100000), // scaled to 100,000 slots
 		flushEvery: 5 * time.Minute,
 		done:       make(chan struct{}),
@@ -98,17 +112,26 @@ func (a *AnalyticsMiddleware) start() {
 	}()
 }
 
-// Record enqueues an analytics event for asynchronous processing.
-// This method is intentionally non-blocking: if the channel is full the event
-// is silently dropped so that HTTP responses are never delayed.
-func (a *AnalyticsMiddleware) Record(siteID string, statusCode int, bytesSent int64, userAgent, ip string) {
+// Record enqueues a request metric for asynchronous processing. This method is
+// intentionally non-blocking: if the channel is full the event is silently
+// dropped so that HTTP responses are never delayed. The metric carries the
+// authoritative values measured at the blob-serving layer — nothing is taken
+// from the client.
+func (a *AnalyticsMiddleware) Record(m RequestMetric) {
 	event := analyticsEvent{
-		siteID:     siteID,
-		statusCode: statusCode,
-		bytesSent:  bytesSent,
-		userAgent:  userAgent,
-		ip:         ip,
-		timestamp:  time.Now().UTC(),
+		siteID:       m.SiteID,
+		tenantID:     m.TenantID,
+		deploymentID: m.DeploymentID,
+		statusCode:   m.StatusCode,
+		bytesSent:    m.BytesSent,
+		durationMs:   m.DurationMs,
+		cacheHit:     m.CacheHit,
+		userAgent:    m.UserAgent,
+		ip:           m.IP,
+		timestamp:    m.Timestamp,
+	}
+	if event.timestamp.IsZero() {
+		event.timestamp = time.Now().UTC()
 	}
 
 	select {
@@ -119,9 +142,39 @@ func (a *AnalyticsMiddleware) Record(siteID string, statusCode int, bytesSent in
 	}
 }
 
-// processEvent is called only from the single event-worker goroutine, so there
-// are no concurrent Redis writes from this path.
+// processEvent is called only from the event-worker goroutines. It writes the
+// legacy daily counters and forwards the event to the metrics/usage
+// aggregator. All Redis errors are non-fatal.
 func (a *AnalyticsMiddleware) processEvent(event analyticsEvent) {
+	// ── Operational metrics + bandwidth usage (separate concepts) ─────────
+	if a.aggregator != nil {
+		metric := RequestMetric{
+			TenantID:     event.tenantID,
+			SiteID:       event.siteID,
+			DeploymentID: event.deploymentID,
+			StatusCode:   event.statusCode,
+			BytesSent:    event.bytesSent,
+			DurationMs:   event.durationMs,
+			CacheHit:     event.cacheHit,
+			UserAgent:    event.userAgent,
+			IP:           event.ip,
+			Timestamp:    event.timestamp,
+		}
+		a.aggregator.RecordMetric(metric)
+		// Usage is bandwidth only. Requests are never billed, so no request
+		// count is recorded here.
+		a.aggregator.RecordBandwidth(event.siteID, event.bytesSent, event.timestamp)
+	}
+
+	a.recordLegacyDailyStats(event)
+}
+
+// recordLegacyDailyStats preserves the original stats:{site_id}:{date} pipeline
+// read by GET /api/pages/usage/:domain.
+func (a *AnalyticsMiddleware) recordLegacyDailyStats(event analyticsEvent) {
+	if a.redis == nil {
+		return
+	}
 	ctx := context.Background()
 
 	day  := event.timestamp.Format("2006-01-02")
@@ -192,11 +245,19 @@ func isBot(ua string) bool {
 
 // ─── Flush: Redis → PostgreSQL ────────────────────────────────────────────────
 
-// flushToPostgres scans today's and yesterday's stats keys in Redis and upserts
-// them to PostgreSQL.  It is called only from the single flusher goroutine so
-// there are no concurrent DB writes from this path.
+// flushToPostgres drains the Redis buffers into PostgreSQL:
+//   - legacy daily site stats → site_daily_stats
+//   - operational 1-minute metric buckets → service_metrics_hourly
+//   - billable 1-hour bandwidth buckets → bandwidth_usage_hourly
+//
+// It is called only from the single flusher goroutine so there are no
+// concurrent DB writes from this path. A failure in any one stage never stops
+// the others and never propagates to the serving path.
 func (a *AnalyticsMiddleware) flushToPostgres() {
 	ctx := context.Background()
+
+	a.flushMetricsBuckets(ctx)
+	a.flushUsageBuckets(ctx)
 
 	today     := time.Now().UTC().Format("2006-01-02")
 	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
@@ -345,4 +406,172 @@ func (a *AnalyticsMiddleware) getPeakHour(ctx context.Context, siteID, date stri
 	}
 
 	return peakHour, peakCount
+}
+
+// ─── Operational metrics flush (→ service_metrics_hourly) ─────────────────────
+
+// parseHashField reads an integer hash field, defaulting to 0 when absent or
+// unparseable.
+func parseHashField(vals map[string]string, field string) int64 {
+	raw, ok := vals[field]
+	if !ok {
+		return 0
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// flushMetricsBuckets drains metrics:{site_id}:{minute} hashes into the hourly
+// service_metrics_hourly table. Each key is claimed (read + delete) before the
+// write so a slow flusher cannot double-count. Losing a bucket on a DB failure
+// is acceptable for operational metrics.
+func (a *AnalyticsMiddleware) flushMetricsBuckets(ctx context.Context) {
+	if a.redis == nil || a.db == nil {
+		return
+	}
+	var cursor uint64
+	for {
+		keys, next, err := a.redis.Scan(ctx, cursor, MetricsKeyPrefix+":*", 200).Result()
+		if err != nil {
+			return
+		}
+		for _, key := range keys {
+			a.flushMetricsKey(ctx, key)
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+}
+
+func (a *AnalyticsMiddleware) flushMetricsKey(ctx context.Context, key string) {
+	siteID, bucket, ok := parseMetricsBucketKey(key)
+	if !ok {
+		return
+	}
+	vals, err := a.redis.HGetAll(ctx, key).Result()
+	if err != nil || len(vals) == 0 {
+		return
+	}
+	// Claim the bucket. In-flight increments for the current minute land in
+	// the next bucket.
+	_ = a.redis.Del(ctx, key).Err()
+
+	hourBucket := bucket.Truncate(time.Hour)
+	_, _ = a.db.ExecContext(ctx, `
+		INSERT INTO service_metrics_hourly (
+			site_id, bucket,
+			requests, status_2xx, status_3xx, status_4xx, status_5xx,
+			bytes, cache_hits, cache_misses,
+			latency_sum_ms,
+			latency_le_50, latency_le_100, latency_le_250,
+			latency_le_500, latency_le_1000, latency_le_2500,
+			updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+			$12, $13, $14, $15, $16, $17, NOW()
+		)
+		ON CONFLICT (site_id, bucket) DO UPDATE SET
+			requests         = service_metrics_hourly.requests         + EXCLUDED.requests,
+			status_2xx       = service_metrics_hourly.status_2xx       + EXCLUDED.status_2xx,
+			status_3xx       = service_metrics_hourly.status_3xx       + EXCLUDED.status_3xx,
+			status_4xx       = service_metrics_hourly.status_4xx       + EXCLUDED.status_4xx,
+			status_5xx       = service_metrics_hourly.status_5xx       + EXCLUDED.status_5xx,
+			bytes            = service_metrics_hourly.bytes            + EXCLUDED.bytes,
+			cache_hits       = service_metrics_hourly.cache_hits       + EXCLUDED.cache_hits,
+			cache_misses     = service_metrics_hourly.cache_misses     + EXCLUDED.cache_misses,
+			latency_sum_ms   = service_metrics_hourly.latency_sum_ms   + EXCLUDED.latency_sum_ms,
+			latency_le_50    = service_metrics_hourly.latency_le_50    + EXCLUDED.latency_le_50,
+			latency_le_100   = service_metrics_hourly.latency_le_100   + EXCLUDED.latency_le_100,
+			latency_le_250   = service_metrics_hourly.latency_le_250   + EXCLUDED.latency_le_250,
+			latency_le_500   = service_metrics_hourly.latency_le_500   + EXCLUDED.latency_le_500,
+			latency_le_1000  = service_metrics_hourly.latency_le_1000  + EXCLUDED.latency_le_1000,
+			latency_le_2500  = service_metrics_hourly.latency_le_2500  + EXCLUDED.latency_le_2500,
+			updated_at       = NOW()
+	`,
+		siteID, hourBucket,
+		parseHashField(vals, "requests"),
+		parseHashField(vals, "status_2xx"),
+		parseHashField(vals, "status_3xx"),
+		parseHashField(vals, "status_4xx"),
+		parseHashField(vals, "status_5xx"),
+		parseHashField(vals, "bytes"),
+		parseHashField(vals, "cache_hits"),
+		parseHashField(vals, "cache_misses"),
+		parseHashField(vals, "latency_sum_ms"),
+		parseHashField(vals, "latency_le_50"),
+		parseHashField(vals, "latency_le_100"),
+		parseHashField(vals, "latency_le_250"),
+		parseHashField(vals, "latency_le_500"),
+		parseHashField(vals, "latency_le_1000"),
+		parseHashField(vals, "latency_le_2500"),
+	)
+}
+
+// ─── Bandwidth usage flush (→ bandwidth_usage_hourly) ─────────────────────────
+
+// flushUsageBuckets drains usage:bw:{site_id}:{hour} counters into the
+// bandwidth_usage_hourly table. tenant_id is resolved from the pages row at
+// flush time so the hot serving path never touches PostgreSQL.
+func (a *AnalyticsMiddleware) flushUsageBuckets(ctx context.Context) {
+	if a.redis == nil || a.db == nil {
+		return
+	}
+	var cursor uint64
+	for {
+		keys, next, err := a.redis.Scan(ctx, cursor, UsageKeyPrefix+":*", 200).Result()
+		if err != nil {
+			return
+		}
+		for _, key := range keys {
+			a.flushUsageKey(ctx, key)
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+}
+
+func (a *AnalyticsMiddleware) flushUsageKey(ctx context.Context, key string) {
+	siteID, bucket, ok := parseUsageBucketKey(key)
+	if !ok {
+		return
+	}
+	// Atomically claim and reset the counter so a concurrent request cannot be
+	// lost in the read/write gap.
+	val, err := a.redis.GetDel(ctx, key).Int64()
+	if err != nil || val <= 0 {
+		return
+	}
+
+	res, err := a.db.ExecContext(ctx, `
+		INSERT INTO bandwidth_usage_hourly (tenant_id, site_id, bucket, bytes)
+		SELECT p.tenant_id, $1::uuid, $2::timestamptz, $3
+		FROM pages p
+		WHERE p.site_id = $1::uuid
+		ON CONFLICT (tenant_id, site_id, bucket) DO UPDATE
+		SET bytes = bandwidth_usage_hourly.bytes + EXCLUDED.bytes
+	`, siteID, bucket, val)
+	if err != nil {
+		a.restoreUsage(ctx, key, val)
+		return
+	}
+	if rows, rerr := res.RowsAffected(); rerr == nil && rows == 0 {
+		// No page row for this site — restore rather than silently drop
+		// billable bytes.
+		a.restoreUsage(ctx, key, val)
+	}
+}
+
+// restoreUsage puts claimed bandwidth back into Redis when persistence fails,
+// so transient outages do not lose billable usage. Safe because the DB write
+// did not commit.
+func (a *AnalyticsMiddleware) restoreUsage(ctx context.Context, key string, val int64) {
+	_ = a.redis.IncrBy(ctx, key, val).Err()
+	_ = a.redis.Expire(ctx, key, usageBucketTTL).Err()
 }

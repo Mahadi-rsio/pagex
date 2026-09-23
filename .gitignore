@@ -70,6 +70,7 @@ infrastructure/certs/
 # Test files
 *.test.ts
 *.spec.ts
+!services/api/tests/*.test.ts
 
 # Go build artifacts
 *.exe

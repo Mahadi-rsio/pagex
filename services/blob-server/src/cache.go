@@ -15,6 +15,7 @@ type CacheItem struct {
 	ContentEncoding string // "br", "gzip", or empty
 	FilePath        string // original site path (for mime / Cache-Control)
 	BlobHash        string // content-addressed blob SHA256
+	DeploymentID    string // active deployment the blob belongs to (for metrics)
 	Content         []byte // Nil if only metadata is cached
 	ExpiredAt       time.Time
 	Exists          bool // Negative caching support

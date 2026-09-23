@@ -105,6 +105,21 @@ PageX combines a Next.js control panel, an Express management API, a custom Cadd
 
 ---
 
+### Metrics & usage pipeline
+
+Operational metrics and billing usage are **separate systems**:
+
+- **Metrics** (`service_metrics_hourly`, Redis `metrics:{siteId}:{YYYYMMDDHHmm}`) — requests, status classes, cache hit/miss, cumulative latency histogram. Never billed.
+- **Usage** (`bandwidth_usage_hourly`, Redis `usage:bw:{siteId}:{YYYYMMDDHH}`) — bandwidth only, metered in **decimal GB (1 GB = 1,000,000,000 bytes)**. Free = 100 GB/mo, Paid = 500 GB/mo. **Requests are unlimited and never quota-checked.**
+
+The Caddy blob-server is authoritative: it aggregates in Redis and flushes additive
+hour-bucket upserts to PostgreSQL every ~5 min (no per-request DB writes). New read
+endpoints live under `/api/v1/...` (`/sites/:id/usage`, `/sites/:id/metrics`,
+`/projects/:id/usage`, `/account/usage`, `/account/quota`). See `docs/SCHEMA.md` for
+table/key detail.
+
+---
+
 ## 🚀 Getting Started & Prerequisites
 
 ### Prerequisites

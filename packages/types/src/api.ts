@@ -94,3 +94,68 @@ export interface SiteStats {
   bandwidth: number;
   date: string;
 }
+
+// Usage & quota types — bandwidth-only billing. Requests are UNLIMITED on every
+// plan and deliberately have no limit/quota field here.
+export type PlanId = 'free' | 'paid';
+
+export interface PlanQuota {
+  id: PlanId;
+  name: string;
+  /** Monthly bandwidth allowance in bytes; `null` means unlimited. */
+  bandwidthLimitBytes: number | null;
+}
+
+export interface BandwidthUsage {
+  usedBytes: number;
+  limitBytes: number | null;
+  remainingBytes: number | null;
+  percentage: number | null;
+  unlimited: boolean;
+  overQuota: boolean;
+}
+
+export interface UsagePeriod {
+  start: string;
+  end: string;
+  key: string;
+}
+
+export interface UsageResponse {
+  period: UsagePeriod;
+  plan: PlanId;
+  planName: string;
+  bandwidth: BandwidthUsage;
+}
+
+export interface AccountQuota {
+  plan: PlanId;
+  planName: string;
+  period: UsagePeriod;
+  siteCount: number;
+  bandwidth: BandwidthUsage;
+}
+
+// Operational metrics types (separate from billing usage)
+export interface LatencySummary {
+  averageMs: number | null;
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
+  samples: number;
+}
+
+export interface MetricsWindow {
+  start: string;
+  end: string;
+}
+
+export interface MetricsResponse {
+  requests: number;
+  bandwidthBytes: number;
+  status: { '2xx': number; '3xx': number; '4xx': number; '5xx': number };
+  cache: { hits: number; misses: number; hitRate: number | null };
+  latency: LatencySummary;
+  window: MetricsWindow;
+}
+

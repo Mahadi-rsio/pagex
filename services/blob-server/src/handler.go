@@ -26,6 +26,7 @@ type blobResolution struct {
 	ContentEncoding string // "br", "gzip", or ""
 	FilePath        string // site path used for Content-Type / Cache-Control (no .br/.gz)
 	EncodingKey     string // cache key encoding: br, gz, webp, raw
+	DeploymentID    string // active deployment the blob belongs to (for metrics)
 }
 
 // ServeHTTP implements caddyhttp.MiddlewareHandler.
@@ -61,6 +62,9 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 		// 2b. Deploy version for instant LRU invalidation (never blocks on failure)
 		version := p.resolveSiteVersion(r.Context(), subdomain, siteID)
 
+		// Latency clock for operational metrics starts once we know the site.
+		start := time.Now()
+
 		encKey := requestEncodingKey(r, urlPath)
 		cacheKey := subdomain + ":" + version + ":" + urlPath + ":" + encKey
 		negKey := subdomain + ":" + version + ":" + urlPath + ":404"
@@ -71,20 +75,22 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 		// Path / encoding LRU cache (version-scoped)
 		if p.cacheTTL > 0 && p.cache != nil {
 			if item, ok := p.cache.Get(negKey); ok && !item.Exists {
+				p.recordAnalytics(siteID, "", r, http.StatusNotFound, 0, start, true)
 				return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("cached 404 for path: %s", urlPath))
 			}
 			if item, ok := p.cache.Get(cacheKey); ok {
 				if !item.Exists {
+					p.recordAnalytics(siteID, "", r, http.StatusNotFound, 0, start, true)
 					return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("cached 404 for path: %s", urlPath))
 				}
 				// Path-resolution hit → skip Redis, go to MinIO (or memory)
 				if item.BlobHash != "" {
-					err = p.serveBlob(rec, r, item.BlobHash, item.FilePath, item.ContentEncoding, bodyKey, item)
+					cacheHit, err := p.serveBlob(rec, r, item.BlobHash, item.FilePath, item.ContentEncoding, bodyKey, item)
 					if err != nil {
 						return caddyhttp.Error(http.StatusNotFound, err)
 					}
 					rec.WriteResponse()
-					p.recordAnalytics(siteID, r, rec)
+					p.recordAnalytics(siteID, item.DeploymentID, r, rec.Status(), int64(rec.Size()), start, cacheHit)
 					return nil
 				}
 			}
@@ -99,6 +105,7 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 			if p.cacheTTL > 0 && p.cache != nil {
 				p.cache.Set(negKey, &CacheItem{Key: negKey, Exists: false}, 1*time.Minute)
 			}
+			p.recordAnalytics(siteID, "", r, http.StatusNotFound, 0, start, false)
 			return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("file not found for path: %s", urlPath))
 		}
 
@@ -110,17 +117,18 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 				ContentEncoding: resolved.ContentEncoding,
 				FilePath:        resolved.FilePath,
 				ContentType:     contentTypeForPath(resolved.FilePath),
+				DeploymentID:    resolved.DeploymentID,
 				Exists:          true,
 			}, p.cacheTTL)
 		}
 
-		err = p.serveBlob(rec, r, resolved.BlobHash, resolved.FilePath, resolved.ContentEncoding, bodyKey, nil)
+		cacheHit, err := p.serveBlob(rec, r, resolved.BlobHash, resolved.FilePath, resolved.ContentEncoding, bodyKey, nil)
 		if err != nil {
 			return caddyhttp.Error(http.StatusNotFound, err)
 		}
 
 		rec.WriteResponse()
-		p.recordAnalytics(siteID, r, rec)
+		p.recordAnalytics(siteID, resolved.DeploymentID, r, rec.Status(), int64(rec.Size()), start, cacheHit)
 		return nil
 	}
 
@@ -151,7 +159,10 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 	return nil
 }
 
-func (p *StaticPlugin) recordAnalytics(siteID string, r *http.Request, rec caddyhttp.ResponseRecorder) {
+// recordAnalytics enqueues one request's operational metric + bandwidth usage.
+// It is best-effort and fully asynchronous: the values are measured here at the
+// blob-serving layer and never taken from the client.
+func (p *StaticPlugin) recordAnalytics(siteID, deploymentID string, r *http.Request, status int, bytes int64, start time.Time, cacheHit bool) {
 	if p.analytics == nil {
 		return
 	}
@@ -159,13 +170,17 @@ func (p *StaticPlugin) recordAnalytics(siteID string, r *http.Request, rec caddy
 	if idx := strings.LastIndex(ip, ":"); idx != -1 {
 		ip = ip[:idx]
 	}
-	p.analytics.Record(
-		siteID,
-		rec.Status(),
-		int64(rec.Size()),
-		r.Header.Get("User-Agent"),
-		ip,
-	)
+	p.analytics.Record(RequestMetric{
+		SiteID:       siteID,
+		DeploymentID: deploymentID,
+		StatusCode:   status,
+		BytesSent:    bytes,
+		DurationMs:   time.Since(start).Milliseconds(),
+		CacheHit:     cacheHit,
+		UserAgent:    r.Header.Get("User-Agent"),
+		IP:           ip,
+		Timestamp:    time.Now().UTC(),
+	})
 }
 
 // resolveSiteID looks up the site UUID for a given subdomain, using a
@@ -310,6 +325,7 @@ func (p *StaticPlugin) resolveBlob(ctx context.Context, siteID, version, urlPath
 	for _, candidate := range candidates {
 		if res := pickVariantMap(manifest.Files, candidate, ae, accept); res != nil {
 			res.EncodingKey = encKey
+			res.DeploymentID = deploymentID
 			return res, nil
 		}
 	}
@@ -317,6 +333,7 @@ func (p *StaticPlugin) resolveBlob(ctx context.Context, siteID, version, urlPath
 	if p.Fallback != "" && !p.isExcludedFromFallback(urlPath) {
 		if res := pickVariantMap(manifest.Files, "index.html", ae, accept); res != nil {
 			res.EncodingKey = encKey
+			res.DeploymentID = deploymentID
 			return res, nil
 		}
 	}
@@ -361,7 +378,9 @@ func pickVariantMap(entries map[string]string, candidate, acceptEncoding, accept
 // serveBlob streams blobs/{hash} from MinIO with correct Content-Type / encoding headers.
 // bodyKey is the version-scoped LRU key for file content/metadata ("…:body").
 // cachedItem, when non-nil, is a warm path-resolution entry (blob hash / encoding / path).
-func (p *StaticPlugin) serveBlob(w http.ResponseWriter, r *http.Request, blobHash, filePath, contentEncoding, bodyKey string, cachedItem *CacheItem) error {
+// It returns whether the response was served from the in-memory cache (for hit/miss
+// metrics) along with any error.
+func (p *StaticPlugin) serveBlob(w http.ResponseWriter, r *http.Request, blobHash, filePath, contentEncoding, bodyKey string, cachedItem *CacheItem) (bool, error) {
 	s3Key := blobObjectKey(blobHash)
 	contentType := contentTypeForPath(filePath)
 	cacheControl := cacheControlForPath(filePath)
@@ -386,10 +405,10 @@ func (p *StaticPlugin) serveBlob(w http.ResponseWriter, r *http.Request, blobHas
 				p.metrics.BlobCacheHit++
 			}
 			if !item.Exists {
-				return fmt.Errorf("cached 404 for blob: %s", blobHash)
+				return false, fmt.Errorf("cached 404 for blob: %s", blobHash)
 			}
 			if p.RedirectToS3 {
-				return p.redirectToS3(w, r, s3Key)
+				return false, p.redirectToS3(w, r, s3Key)
 			}
 			if item.ContentType == "" {
 				item.ContentType = contentType
@@ -401,11 +420,11 @@ func (p *StaticPlugin) serveBlob(w http.ResponseWriter, r *http.Request, blobHas
 				item.FilePath = filePath
 			}
 			if p.checkConditionalHeaders(w, r, item) {
-				return nil
+				return true, nil
 			}
 			if item.Content != nil {
 				applyBlobHeaders(w.Header())
-				return p.serveCachedContent(w, r, item)
+				return true, p.serveCachedContent(w, r, item)
 			}
 		}
 	}
@@ -422,14 +441,14 @@ func (p *StaticPlugin) serveBlob(w http.ResponseWriter, r *http.Request, blobHas
 			cachedItem.FilePath = filePath
 		}
 		if p.RedirectToS3 {
-			return p.redirectToS3(w, r, s3Key)
+			return false, p.redirectToS3(w, r, s3Key)
 		}
 		if cachedItem.Content != nil {
 			if p.metrics != nil {
 				p.metrics.BlobCacheHit++
 			}
 			applyBlobHeaders(w.Header())
-			return p.serveCachedContent(w, r, cachedItem)
+			return true, p.serveCachedContent(w, r, cachedItem)
 		}
 	}
 
@@ -446,7 +465,7 @@ func (p *StaticPlugin) serveBlob(w http.ResponseWriter, r *http.Request, blobHas
 			if p.isNotFoundError(err) && p.cacheTTL > 0 && p.cache != nil {
 				p.cache.Set(bodyKey, &CacheItem{Key: bodyKey, Exists: false}, 1*time.Minute)
 			}
-			return err
+			return false, err
 		}
 		if p.cacheTTL > 0 && p.cache != nil {
 			etag := ""
@@ -469,7 +488,7 @@ func (p *StaticPlugin) serveBlob(w http.ResponseWriter, r *http.Request, blobHas
 				Exists:          true,
 			}, p.cacheTTL)
 		}
-		return p.redirectToS3(w, r, s3Key)
+		return false, p.redirectToS3(w, r, s3Key)
 	}
 
 	input := &s3.GetObjectInput{
@@ -497,12 +516,12 @@ func (p *StaticPlugin) serveBlob(w http.ResponseWriter, r *http.Request, blobHas
 				}
 			}
 			w.WriteHeader(http.StatusNotModified)
-			return nil
+			return false, nil
 		}
 		if p.isNotFoundError(err) && p.cacheTTL > 0 && p.cache != nil {
 			p.cache.Set(bodyKey, &CacheItem{Key: bodyKey, Exists: false}, 1*time.Minute)
 		}
-		return err
+		return false, err
 	}
 	defer result.Body.Close()
 
@@ -538,7 +557,7 @@ func (p *StaticPlugin) serveBlob(w http.ResponseWriter, r *http.Request, blobHas
 	if canCacheContent {
 		data, readErr := io.ReadAll(result.Body)
 		if readErr != nil {
-			return readErr
+			return false, readErr
 		}
 		p.cache.Set(bodyKey, &CacheItem{
 			Key:             bodyKey,
@@ -553,7 +572,7 @@ func (p *StaticPlugin) serveBlob(w http.ResponseWriter, r *http.Request, blobHas
 			Exists:          true,
 		}, p.cacheTTL)
 		_, writeErr := w.Write(data)
-		return writeErr
+		return false, writeErr
 	}
 	if p.cacheTTL > 0 && !isRangeResponse {
 		p.cache.Set(bodyKey, &CacheItem{
@@ -569,7 +588,7 @@ func (p *StaticPlugin) serveBlob(w http.ResponseWriter, r *http.Request, blobHas
 		}, p.cacheTTL)
 	}
 	_, writeErr := io.Copy(w, result.Body)
-	return writeErr
+	return false, writeErr
 }
 
 // splitHostPort splits host and port, tolerating missing port.
