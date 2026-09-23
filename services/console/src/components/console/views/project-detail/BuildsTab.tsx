@@ -13,10 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-    apiClient,
-    type ApiBuild,
-} from "@/lib/api-client";
+import { apiClient, type ApiBuild } from "@/lib/api-client";
 import { toast } from "sonner";
 import {
     CheckCircle2,
@@ -36,7 +33,13 @@ import {
 
 // ─── Build Log Panel ─────────────────────────────────────────────────────────
 
-function BuildLogPanel({ build, onClose }: { build: ApiBuild; onClose: () => void }) {
+function BuildLogPanel({
+    build,
+    onClose,
+}: {
+    build: ApiBuild;
+    onClose: () => void;
+}) {
     const [lines, setLines] = useState<string[]>([]);
     const [progress, setProgress] = useState(0);
     const [done, setDone] = useState(false);
@@ -66,7 +69,10 @@ function BuildLogPanel({ build, onClose }: { build: ApiBuild; onClose: () => voi
                     onError: (event) => {
                         setDone(true);
                         setError(event.message);
-                        setLines((prev) => [...prev, `[error] ${event.message}`]);
+                        setLines((prev) => [
+                            ...prev,
+                            `[error] ${event.message}`,
+                        ]);
                     },
                 },
                 controller.signal,
@@ -146,7 +152,8 @@ function BuildLogPanel({ build, onClose }: { build: ApiBuild; onClose: () => voi
                                       ? "text-zinc-300"
                                       : line.startsWith("[error]")
                                         ? "text-red-400"
-                                        : line.startsWith("[Summary]") || line.startsWith("[Stats]")
+                                        : line.startsWith("[Summary]") ||
+                                            line.startsWith("[Stats]")
                                           ? "text-emerald-400"
                                           : "text-zinc-500"
                             }
@@ -171,7 +178,9 @@ export function BuildsTab({ project }: { project: Project }) {
     const [loading, setLoading] = useState(true);
     const [selectedBuildId, setSelectedBuildId] = useState<string | null>(null);
 
-    const [latestCommit, setLatestCommit] = useState<LatestCommitInfo | null>(null);
+    const [latestCommit, setLatestCommit] = useState<LatestCommitInfo | null>(
+        null,
+    );
     const [commitLoading, setCommitLoading] = useState(false);
 
     const loadBuilds = useCallback(async () => {
@@ -193,8 +202,7 @@ export function BuildsTab({ project }: { project: Project }) {
         loadBuilds();
     }, [loadBuilds]);
 
-    const commitRepoUrl =
-        builds[0]?.repo_url || project.repo || null;
+    const commitRepoUrl = builds[0]?.repo_url || project.repo || null;
 
     useEffect(() => {
         if (!commitRepoUrl) {
@@ -234,7 +242,8 @@ export function BuildsTab({ project }: { project: Project }) {
                     <div>
                         <CardTitle className="text-sm">Cloud Builds</CardTitle>
                         <CardDescription className="text-xs">
-                            Build history for your git repository. Click a build to view logs.
+                            Build history for your git repository. Click a build
+                            to view logs.
                         </CardDescription>
                     </div>
                 </CardHeader>
@@ -245,7 +254,8 @@ export function BuildsTab({ project }: { project: Project }) {
                         </div>
                     ) : builds.length === 0 ? (
                         <p className="py-8 text-center text-sm text-muted-foreground">
-                            No builds yet. Trigger a cloud build from the Overview tab.
+                            No builds yet. Trigger a cloud build from the
+                            Overview tab.
                         </p>
                     ) : (
                         <div className="space-y-2">
@@ -264,11 +274,14 @@ export function BuildsTab({ project }: { project: Project }) {
                                         >
                                             <div className="flex items-center gap-3">
                                                 <div className="flex size-8 shrink-0 items-center justify-center rounded-none bg-muted">
-                                                    {build.status === "active" ? (
+                                                    {build.status ===
+                                                    "active" ? (
                                                         <Spinner size="inline" />
-                                                    ) : build.status === "completed" ? (
+                                                    ) : build.status ===
+                                                      "completed" ? (
                                                         <CheckCircle2 className="size-4 text-emerald-500" />
-                                                    ) : build.status === "failed" ? (
+                                                    ) : build.status ===
+                                                      "failed" ? (
                                                         <AlertCircle className="size-4 text-destructive" />
                                                     ) : (
                                                         <Clock className="size-4 text-muted-foreground" />
@@ -280,7 +293,9 @@ export function BuildsTab({ project }: { project: Project }) {
                                                             {build.framework}
                                                         </span>
                                                         <Badge
-                                                            variant={config.variant}
+                                                            variant={
+                                                                config.variant
+                                                            }
                                                             className="text-xs"
                                                         >
                                                             {config.label}
@@ -288,22 +303,30 @@ export function BuildsTab({ project }: { project: Project }) {
                                                     </div>
                                                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
                                                         {build.repo_url} ·{" "}
-                                                        {build.build_command ?? "pnpm build"}
+                                                        {build.build_command ??
+                                                            "pnpm build"}
                                                     </p>
                                                     {latestCommit &&
-                                                        build.repo_url === commitRepoUrl && (
+                                                        build.repo_url ===
+                                                            commitRepoUrl && (
                                                             <p className="mt-0.5 truncate text-xs text-muted-foreground">
                                                                 <span className="font-mono">
-                                                                    {latestCommit.shortSha}
+                                                                    {
+                                                                        latestCommit.shortSha
+                                                                    }
                                                                 </span>
                                                                 {" · "}
-                                                                {latestCommit.message}
+                                                                {
+                                                                    latestCommit.message
+                                                                }
                                                             </p>
                                                         )}
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     <span className="text-xs text-muted-foreground">
-                                                        {formatRelativeTime(build.created_at)}
+                                                        {formatRelativeTime(
+                                                            build.created_at,
+                                                        )}
                                                     </span>
                                                     {isSelected ? (
                                                         <ChevronUp className="size-3.5 text-muted-foreground" />
@@ -316,7 +339,9 @@ export function BuildsTab({ project }: { project: Project }) {
                                         {isSelected && selectedBuild && (
                                             <BuildLogPanel
                                                 build={selectedBuild}
-                                                onClose={() => setSelectedBuildId(null)}
+                                                onClose={() =>
+                                                    setSelectedBuildId(null)
+                                                }
                                             />
                                         )}
                                     </div>

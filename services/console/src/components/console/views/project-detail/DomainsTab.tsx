@@ -22,9 +22,7 @@ import {
     SheetHeader,
     SheetTitle,
 } from "@/components/ui/sheet";
-import {
-    apiClient,
-} from "@/lib/api-client";
+import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 import {
     ExternalLink,
@@ -35,9 +33,7 @@ import {
     RefreshCw,
 } from "lucide-react";
 
-import {
-    CNAME_TARGET,
-} from "./utils";
+import { CNAME_TARGET } from "./utils";
 
 export function DomainsTab({ project }: { project: Project }) {
     type DomainEntry = {
@@ -437,4 +433,3 @@ export function DomainsTab({ project }: { project: Project }) {
         </div>
     );
 }
-

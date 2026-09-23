@@ -12,17 +12,8 @@ import {
     CardDescription,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-    apiClient,
-    type ApiUsage,
-} from "@/lib/api-client";
-import {
-    RefreshCw,
-    Users,
-    Bot,
-    Globe,
-    Clock3,
-} from "lucide-react";
+import { apiClient, type ApiUsage } from "@/lib/api-client";
+import { RefreshCw, Users, Bot, Globe, Clock3 } from "lucide-react";
 import {
     ResponsiveContainer,
     PieChart,
@@ -37,9 +28,7 @@ import {
     Legend,
 } from "recharts";
 
-import {
-    formatBytes,
-} from "./utils";
+import { formatBytes } from "./utils";
 
 const TRAFFIC_COLORS = ["hsl(var(--primary))", "hsl(var(--muted-foreground))"];
 const STATUS_COLORS: Record<string, string> = {
@@ -208,11 +197,15 @@ export function AnalyticsTab({ project }: { project: Project }) {
                 </CardHeader>
                 <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 pt-0">
                     <div className="rounded-none border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Requests</p>
+                        <p className="text-xs text-muted-foreground">
+                            Requests
+                        </p>
                         <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
                             {usage.requests.used.toLocaleString()}
                         </p>
-                        <p className="text-[11px] text-muted-foreground">total</p>
+                        <p className="text-[11px] text-muted-foreground">
+                            total
+                        </p>
                     </div>
                     <div className="rounded-none border border-border bg-muted/20 p-3">
                         <p className="text-xs text-muted-foreground">
@@ -221,35 +214,55 @@ export function AnalyticsTab({ project }: { project: Project }) {
                         <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
                             {formatBytes(usage.bandwidth.used_bytes)}
                         </p>
-                        <p className="text-[11px] text-muted-foreground">used</p>
+                        <p className="text-[11px] text-muted-foreground">
+                            used
+                        </p>
                     </div>
                     <div className="rounded-none border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><Users className="size-3" /> Humans</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Users className="size-3" /> Humans
+                        </p>
                         <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
                             {(usage.traffic?.humans ?? 0).toLocaleString()}
                         </p>
-                        <p className="text-[11px] text-muted-foreground">{humanPct}% of traffic</p>
+                        <p className="text-[11px] text-muted-foreground">
+                            {humanPct}% of traffic
+                        </p>
                     </div>
                     <div className="rounded-none border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><Bot className="size-3" /> Bots</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Bot className="size-3" /> Bots
+                        </p>
                         <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
                             {(usage.traffic?.bots ?? 0).toLocaleString()}
                         </p>
-                        <p className="text-[11px] text-muted-foreground">{botPct}% of traffic</p>
+                        <p className="text-[11px] text-muted-foreground">
+                            {botPct}% of traffic
+                        </p>
                     </div>
                     <div className="rounded-none border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><Globe className="size-3" /> Unique IPs</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Globe className="size-3" /> Unique IPs
+                        </p>
                         <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
                             {uniqueIps.toLocaleString()}
                         </p>
-                        <p className="text-[11px] text-muted-foreground">visitors</p>
+                        <p className="text-[11px] text-muted-foreground">
+                            visitors
+                        </p>
                     </div>
                     <div className="rounded-none border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><Clock3 className="size-3" /> Peak hour</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Clock3 className="size-3" /> Peak hour
+                        </p>
                         <p className="text-lg font-semibold text-foreground mt-0.5 tabular-nums">
                             {peakHour ?? "—"}
                         </p>
-                        <p className="text-[11px] text-muted-foreground">{peakReqs > 0 ? `${peakReqs.toLocaleString()} reqs` : "no data"}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                            {peakReqs > 0
+                                ? `${peakReqs.toLocaleString()} reqs`
+                                : "no data"}
+                        </p>
                     </div>
                 </CardContent>
             </Card>
@@ -270,7 +283,10 @@ export function AnalyticsTab({ project }: { project: Project }) {
                         ) : (
                             <>
                                 <div className="h-[220px] w-full">
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer
+                                        width="100%"
+                                        height="100%"
+                                    >
                                         <PieChart>
                                             <Pie
                                                 data={trafficData}
@@ -281,14 +297,29 @@ export function AnalyticsTab({ project }: { project: Project }) {
                                                 paddingAngle={2}
                                                 dataKey="value"
                                             >
-                                                {trafficData.map((entry, idx) => (
-                                                    <Cell key={entry.name} fill={TRAFFIC_COLORS[idx % TRAFFIC_COLORS.length]} />
-                                                ))}
+                                                {trafficData.map(
+                                                    (entry, idx) => (
+                                                        <Cell
+                                                            key={entry.name}
+                                                            fill={
+                                                                TRAFFIC_COLORS[
+                                                                    idx %
+                                                                        TRAFFIC_COLORS.length
+                                                                ]
+                                                            }
+                                                        />
+                                                    ),
+                                                )}
                                             </Pie>
                                             <Tooltip
-                                                contentStyle={{ fontSize: 12, borderRadius: 0 }}
+                                                contentStyle={{
+                                                    fontSize: 12,
+                                                    borderRadius: 0,
+                                                }}
                                             />
-                                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                                            <Legend
+                                                wrapperStyle={{ fontSize: 12 }}
+                                            />
                                         </PieChart>
                                     </ResponsiveContainer>
                                 </div>
@@ -305,11 +336,19 @@ export function AnalyticsTab({ project }: { project: Project }) {
                                 <div className="flex flex-wrap gap-4 text-xs text-muted-foreground mt-2">
                                     <span className="inline-flex items-center gap-1.5">
                                         <span className="size-2 bg-primary" />
-                                        Humans {humanPct}% ({(usage.traffic?.humans ?? 0).toLocaleString()})
+                                        Humans {humanPct}% (
+                                        {(
+                                            usage.traffic?.humans ?? 0
+                                        ).toLocaleString()}
+                                        )
                                     </span>
                                     <span className="inline-flex items-center gap-1.5">
                                         <span className="size-2 bg-muted-foreground/40" />
-                                        Bots {botPct}% ({(usage.traffic?.bots ?? 0).toLocaleString()})
+                                        Bots {botPct}% (
+                                        {(
+                                            usage.traffic?.bots ?? 0
+                                        ).toLocaleString()}
+                                        )
                                     </span>
                                 </div>
                             </>
@@ -332,7 +371,10 @@ export function AnalyticsTab({ project }: { project: Project }) {
                         ) : (
                             <>
                                 <div className="h-[220px] w-full">
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer
+                                        width="100%"
+                                        height="100%"
+                                    >
                                         <PieChart>
                                             <Pie
                                                 data={statusData}
@@ -340,26 +382,64 @@ export function AnalyticsTab({ project }: { project: Project }) {
                                                 cy="50%"
                                                 outerRadius={85}
                                                 dataKey="value"
-                                                label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                                                label={({ name, percent }) =>
+                                                    `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
+                                                }
                                             >
                                                 {statusData.map((entry) => (
-                                                    <Cell key={entry.name} fill={STATUS_COLORS[entry.name] ?? "#999"} />
+                                                    <Cell
+                                                        key={entry.name}
+                                                        fill={
+                                                            STATUS_COLORS[
+                                                                entry.name
+                                                            ] ?? "#999"
+                                                        }
+                                                    />
                                                 ))}
                                             </Pie>
-                                            <Tooltip contentStyle={{ fontSize: 12, borderRadius: 0 }} />
+                                            <Tooltip
+                                                contentStyle={{
+                                                    fontSize: 12,
+                                                    borderRadius: 0,
+                                                }}
+                                            />
                                         </PieChart>
                                     </ResponsiveContainer>
                                 </div>
                                 <div className="h-[120px] w-full mt-2">
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer
+                                        width="100%"
+                                        height="100%"
+                                    >
                                         <BarChart data={statusBarData}>
-                                            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                                            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                                            <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                                            <Tooltip contentStyle={{ fontSize: 12 }} />
-                                            <Bar dataKey="value" radius={[2, 2, 0, 0]}>
+                                            <CartesianGrid
+                                                strokeDasharray="3 3"
+                                                opacity={0.3}
+                                            />
+                                            <XAxis
+                                                dataKey="name"
+                                                tick={{ fontSize: 11 }}
+                                            />
+                                            <YAxis
+                                                tick={{ fontSize: 11 }}
+                                                allowDecimals={false}
+                                            />
+                                            <Tooltip
+                                                contentStyle={{ fontSize: 12 }}
+                                            />
+                                            <Bar
+                                                dataKey="value"
+                                                radius={[2, 2, 0, 0]}
+                                            >
                                                 {statusBarData.map((e) => (
-                                                    <Cell key={e.name} fill={STATUS_COLORS[e.name] ?? "#999"} />
+                                                    <Cell
+                                                        key={e.name}
+                                                        fill={
+                                                            STATUS_COLORS[
+                                                                e.name
+                                                            ] ?? "#999"
+                                                        }
+                                                    />
                                                 ))}
                                             </Bar>
                                         </BarChart>

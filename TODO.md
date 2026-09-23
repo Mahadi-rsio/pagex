@@ -18,7 +18,7 @@ PageX currently focuses on:
 - Redis + L1 caching
 - MinIO/S3-compatible blob storage
 - Caddy/Go blob serving
-- CLI-based deployment
+- CLI-based deployment (`/api/deploy/prepare|presign|commit`)
 - Deployment rollback
 - Deployment garbage collection
 
@@ -190,14 +190,12 @@ Review:
 
 - [x] pages
 - [x] sites
-- [x] builds
 - [x] deployments
 - [x] blob tree entries
 - [x] domains
 - [x] deployment tokens
 - [x] rollback
 - [x] deployment status
-- [x] build status
 - [x] analytics
 
 Never trust only a resource ID.
@@ -280,45 +278,11 @@ Never delete a blob unless it is proven unreferenced.
 
 ---
 
-# 4. 🧪 Cloud Build — EXPERIMENTAL
+# 4. 🛑 Cloud Build / BullMQ Workers — REMOVED
 
-> Cloud Build is currently **EXPERIMENTAL**.
+> **Cloud Build workers and BullMQ dependencies have been completely removed.**
 >
-> It is **not part of the core production-readiness milestone**.
-> Do not block the core project on Cloud Build.
-
-Current direction:
-
-```text
-Git repository
-    ↓
-BullMQ
-    ↓
-Experimental Build Worker
-    ↓
-Docker build environment
-    ↓
-Static output
-    ↓
-Existing blob deployment pipeline
-```
-
-Future Cloud Build work:
-
-- [ ] Improve build isolation
-- [ ] Improve timeout handling
-- [ ] Improve build cancellation
-- [ ] Improve build logs
-- [ ] Improve resource limits
-- [ ] Improve framework detection
-- [ ] Improve output directory detection
-- [ ] Add build cache
-- [ ] Add build concurrency limits
-- [ ] Add build quotas
-
-Cloud Build should consume the existing deployment pipeline.
-
-Do NOT redesign the core blob/manifest architecture specifically for Cloud Build.
+> All deploys go through CLI deploy endpoints exclusively (`/api/deploy/prepare|presign|commit`).
 
 ---
 
@@ -372,7 +336,6 @@ Add production-grade metrics for:
 - [ ] Deployment failures
 - [ ] Rollbacks
 - [ ] Concurrent deployment conflicts
-- [ ] Queue depth
 
 ## Storage
 
@@ -603,7 +566,7 @@ Until the current core is stable:
 - [ ] Do NOT add SSR runtime
 - [ ] Do NOT add Lambda runtime
 - [ ] Do NOT add Worker runtime
-- [ ] Do NOT over-engineer Cloud Build
+- [ ] Do NOT re-introduce build workers
 - [ ] Do NOT replace the manifest architecture
 - [ ] Do NOT use `blob_tree_entries` for request-time serving
 - [ ] Do NOT introduce unnecessary queues
@@ -668,7 +631,7 @@ When working on PageX:
 6. Prefer current code + tests as implementation truth.
 7. Do not implement future roadmap items unless explicitly requested.
 8. Do not add CDN yet.
-9. Treat Cloud Build as experimental.
+9. All deployments are CLI deploys (cloud builds removed).
 10. Never use `blob_tree_entries` for normal request-time serving.
 11. Preserve content-addressed blob storage.
 12. Preserve immutable manifests.

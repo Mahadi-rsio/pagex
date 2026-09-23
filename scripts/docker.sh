@@ -27,12 +27,9 @@ usage() {
 Usage: scripts/docker.sh <command> [args...]
 
 Commands:
-  up [services...]       Start core stack in detached mode (default: all core)
-  up --with-workers      Start core stack + workers profile
-  workers [services...]  Start services with the workers profile
-  down [args...]         Stop and remove containers (includes workers profile)
+  up [services...]       Start core stack in detached mode
+  down [args...]         Stop and remove containers
   build [services...]    Build images
-  build --with-workers   Build including worker services
   rebuild [services...]  Build images with --no-cache, then up -d
   restart [services...]  Restart running services
   ps                     List containers
@@ -51,7 +48,6 @@ Environment overrides:
 
 Examples:
   scripts/docker.sh up
-  scripts/docker.sh up --with-workers
   scripts/docker.sh up api console db redis
   scripts/docker.sh logs console
   scripts/docker.sh rebuild console
@@ -64,28 +60,13 @@ shift || true
 
 case "$cmd" in
   up)
-    if [[ $# -eq 0 ]]; then
-      compose up -d
-    elif [[ "$1" == "--all" || "$1" == "--with-workers" ]]; then
-      shift || true
-      compose --profile workers up -d "$@"
-    else
-      compose up -d "$@"
-    fi
-    ;;
-  workers)
-    compose --profile workers up -d "$@"
+    compose up -d "$@"
     ;;
   down)
-    compose --profile workers down "$@"
+    compose down "$@"
     ;;
   build)
-    if [[ "${1:-}" == "--with-workers" ]]; then
-      shift
-      compose --profile workers build "$@"
-    else
-      compose build "$@"
-    fi
+    compose build "$@"
     ;;
   rebuild)
     if [[ $# -eq 0 ]]; then

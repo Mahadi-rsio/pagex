@@ -43,7 +43,9 @@ export function LoginPage() {
             }
         } catch (err: unknown) {
             const message =
-                err instanceof Error ? err.message : "An unexpected error occurred";
+                err instanceof Error
+                    ? err.message
+                    : "An unexpected error occurred";
             toast.error(message);
             setIsGithubLoading(false);
         }
@@ -62,7 +64,9 @@ export function LoginPage() {
             }
         } catch (err: unknown) {
             const message =
-                err instanceof Error ? err.message : "An unexpected error occurred";
+                err instanceof Error
+                    ? err.message
+                    : "An unexpected error occurred";
             toast.error(message);
             setIsGoogleLoading(false);
         }
@@ -91,7 +95,9 @@ export function LoginPage() {
             }
         } catch (err: unknown) {
             const message =
-                err instanceof Error ? err.message : "An unexpected error occurred";
+                err instanceof Error
+                    ? err.message
+                    : "An unexpected error occurred";
             toast.error(message);
             setIsEmailLoading(false);
         }
@@ -121,7 +127,9 @@ export function LoginPage() {
             }
         } catch (err: unknown) {
             const message =
-                err instanceof Error ? err.message : "An unexpected error occurred";
+                err instanceof Error
+                    ? err.message
+                    : "An unexpected error occurred";
             toast.error(message);
             setIsEmailLoading(false);
         }

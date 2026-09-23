@@ -4,18 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import type { Project } from "@/store/useAppStore";
 import { formatRelativeTime } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-    apiClient,
-    type ApiBuild,
-    type ApiDeployment,
-} from "@/lib/api-client";
+import { apiClient, type ApiBuild, type ApiDeployment } from "@/lib/api-client";
 import { toast } from "sonner";
 import {
     ExternalLink,
@@ -320,4 +311,3 @@ export function OverviewTab({ project }: { project: Project }) {
         </div>
     );
 }
-

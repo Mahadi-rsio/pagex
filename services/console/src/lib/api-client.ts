@@ -145,10 +145,10 @@ export interface ApiUsage {
         unique_ips: number;
     };
     status_codes?: {
-        '2xx': number;
-        '3xx': number;
-        '4xx': number;
-        '5xx': number;
+        "2xx": number;
+        "3xx": number;
+        "4xx": number;
+        "5xx": number;
     };
     peak?: {
         hour: string | null;
