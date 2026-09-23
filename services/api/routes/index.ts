@@ -1,6 +1,5 @@
 import { Router } from 'express'
 import pageRouter from './page.routes.js'
-import buildRouter from './build.routes.js'
 import deploymentRouter from './deployment.routes.js'
 import deployRouter from './deploy.routes.js'
 
@@ -28,7 +27,6 @@ router.get('/v1/check-domain', (req, res) => {
 
 router.use(pageRouter)
 router.use(deployRouter)
-router.use(buildRouter)
 router.use(deploymentRouter)
 
 export default router

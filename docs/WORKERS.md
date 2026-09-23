@@ -1,121 +1,22 @@
-# Cloudisy — BullMQ Workers Reference
+# Cloudisy — Deploy Pipeline Reference
 
 ---
 
-## Queue Overview
+## Cloud builds & BullMQ workers removed
 
-| Queue name constant | Queue name string | Worker file | Job interface |
-|--------------------|------------------|-------------|--------------|
-| `CLOUDISY_CLOUD_BUILDS_QUEUE` | `"cloudisy-cloud-builds"` | `build.worker.ts` | `CloudBuildJob` |
-| `CLOUDISY_CLOUD_BUILDS_DLQ` | `"cloudisy-cloud-builds-dlq"` | `dlq.worker.ts` | `FailedBuildJob` |
+- **BullMQ has been removed** from the API. There are no `build.worker` / `dlq.worker` processes and no `cloudisy-cloud-builds` / `cloudisy-cloud-builds-dlq` queues.
+- **Cloud builds (git-repo → Docker build) are removed and postponed.** The `build-env`, `build-env-loader`, `build-worker`, and `docker-dind` Compose services, the `builds` API routes, and the seccomp profile have all been removed.
+- **CLI deploy is the only deploy path.** Clients call `/api/deploy/prepare|presign|commit`; the API uploads/validates content-addressed blobs and activates a manifest via the shared commit path below.
 
-All workers share BullMQ `connection` from `src/infrastructure/cache/redis.ts` (Redis **DB2**).
-
-ZIP **upload worker was removed**. CLI deploys use `/api/deploy/prepare|presign|commit`.
-
-**Sync worker was removed.** Usage analytics are now flushed directly by the blob-server to `site_daily_stats` (via Redis `stats:*` keys) — no BullMQ cron.
-
----
-
-## Build Worker
-
-**File:** `src/queue/workers/build.worker.ts`  
-**Triggered by:** `POST /api/builds`
-
-### Job Data (`CloudBuildJob`)
-```typescript
-{
-  buildId: string
-  pageId: string
-  tenantId: string
-  siteId: string
-  repoUrl: string
-  gitProvider: string
-  gitToken: string
-  framework: string
-  buildCommand: string
-  outputDir: string | null
-  envVars: Record<string, string>
-}
-```
-
-### Execution Flow
-
-```
-Step 1 — Clone (10%)
-  git clone --depth=1 → /tmp/cloudisy-builds/{jobId}
-
-Step 2 — Docker Build (35%)
-  docker run --memory 1g cloudisy-build-env:latest
-  (pnpm install && {buildCommand})
-  Stats every 2s → job.log("[Stats] …")
-
-Step 3 — Detect Output Dir (70%)
-  configured outputDir, else .next / dist / out / build / public
-
-Step 4 — Validate + Deploy (90%)
-  validateOutputDir(detectedDir)
-    on failure → builds.status=failed, SSE error, return cleanly (no throw)
-  deployFromLocalDirectory(…)
-    → expand Brotli/Gzip/WebP variants
-    → store blobs/{sha256}
-    → commitBlobTreeDeploy (generates + persists manifest before activation)
-    → fire-and-forget runDeploymentGC
-
-Step 5 — Finalize (100%)
-  builds.status=completed, cleanup clone dir
-```
-
-### Progress Milestones
-| % | Step |
-|---|------|
-| 10 | Repo cloned |
-| 35 | Docker build started |
-| 70 | Output dir detected |
-| 90 | Validated + blob deploy |
-| 100 | DB finalized |
-
-### Retry & DLQ Configuration
-
-```typescript
-defaultJobOptions: {
-  attempts: 3,
-  backoff: { type: 'exponential', delay: 10000 },  // 10s base
-  removeOnComplete: 100,
-  removeOnFail: 0,  // Keep failed jobs for DLQ processing
-}
-```
-
-### Error Classification
-**File:** `src/queue/jobs/build.queue.ts` → `classifyBuildError(error)`
-
-| Category | Patterns | Behavior |
-|----------|----------|----------|
-| **Retryable** (default) | `econnrefused`, `etimedout`, `enotfound`, `socket hang up`, `network error`, `timeout`, `connection refused`, `connection reset`, `temporary failure`, `minio: connection`, `redis: connection`, `postgres: connection`, `docker: connection`, `git clone failed`, `git fetch failed`, `git push failed` | Retry up to 3x with exponential backoff |
-| **Permanent** | `invalid repo`, `repository not found`, `authentication failed`, `permission denied`, `invalid token`, `build command failed`, `output directory not found`, `no files found in output`, `validation failed`, `blocked file`, `exceeds limit`, `manifest validation`, `invalid framework` | Fail immediately, move to DLQ |
-
-### DLQ Handling
-When a job fails permanently or exhausts retries:
-1. `moveToDLQ()` enqueues to `cloudisy-cloud-builds-dlq` with `FailedBuildJob`:
-   ```typescript
-   {
-     ...CloudBuildJob,
-     failureReason: string,
-     failedAt: ISO timestamp,
-     attemptsMade: number,
-     errorType: 'retryable' | 'permanent'
-   }
-   ```
-2. **DLQ Worker** (`dlq.worker.ts`) logs full context for debugging/alerting
-3. **No secrets** in DLQ — `gitToken` excluded from `FailedBuildJob`
+Historical notes: the ZIP upload worker and the sync worker (analytics) were also removed earlier.
 
 ---
 
 ## Commit path (`commitBlobTreeDeploy`)
 
-**File:** `src/services/deploy.service.ts`
+**File:** `services/deploy.service.ts`
 
-Shared by CLI commit and cloud builds. Serialized per page by Redis `deploy:lock:{pageId}` (DB3).
+Used by the CLI commit path. Serialized per page by Redis `deploy:lock:{pageId}` (DB3).
 
 1. Acquire/refresh `deploy:lock:{pageId}` (SET NX, re-entrant for the same holder). Concurrent holders get HTTP 409.
 2. If the caller provided `baseVersion`, abort when a newer `deployments.version` already exists (stale deploy).
@@ -139,7 +40,7 @@ No MinIO `tenant/` copy. Caddy resolves subdomain → site_id → active deploym
 
 ## Rollback (`rollbackToDeployment`)
 
-**File:** `src/services/deployment.service.ts`
+**File:** `services/deployment.service.ts`
 
 1. Load deployment (tenant-scoped); require blob tree
 2. Acquire `deploy:lock:{pageId}` (409 if a deploy is in progress)
@@ -157,8 +58,8 @@ No MinIO `tenant/` copy. Caddy resolves subdomain → site_id → active deploym
 
 ## Background GC (`runDeploymentGC`)
 
-**File:** `src/services/gc.service.ts`  
-**Constant:** `DEPLOYMENT_RETENTION = 10` (inactive deployments kept)
+- **File:** `services/gc.service.ts`
+- **Constant:** `DEPLOYMENT_RETENTION = 10` (inactive deployments kept)
 
 ```
 1. SELECT id FROM deployments
@@ -196,7 +97,7 @@ pending
   │
   ├──→ active (atomic DB transaction, manifest validated)
   │
-  ├──→ failed (build/deploy error, NEVER becomes active)
+  ├──→ failed (deploy error, NEVER becomes active)
   │
   └──→ superseded (newer deployment activated, or rollback to older)
 
@@ -206,7 +107,7 @@ ACTIVE deployment MUST have finalized manifest (enforced by CHECK constraint)
 
 ---
 
-## MinIO Helpers (`src/infrastructure/storage/minio.ts`)
+## MinIO Helpers (`services/infrastructure/storage/minio.ts`)
 
 | Function | Description |
 |----------|-------------|
@@ -221,12 +122,12 @@ ACTIVE deployment MUST have finalized manifest (enforced by CHECK constraint)
 
 ## Idempotency Keys
 
-**File:** `src/services/idempotency.service.ts`
+**File:** `services/idempotency.service.ts`
 
 | Function | Purpose |
 |----------|---------|
 | `checkAndReserveIdempotencyKey()` | Insert if new; return existing if duplicate; verify request hash |
-| `completeIdempotencyKey()` | Set `resource_id` after successful deployment/build creation |
+| `completeIdempotencyKey()` | Set `resource_id` after successful deployment creation |
 | `failIdempotencyKey()` | Delete reservation on failure (allows retry) |
 | `cleanupExpiredIdempotencyKeys()` | Periodic cleanup of expired keys |
 

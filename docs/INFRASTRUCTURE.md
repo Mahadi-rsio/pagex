@@ -9,33 +9,23 @@
 | `app` | `express_app` | `Dockerfile` → `runner` | REST API (port 3000) |
 | `caddy` | `caddy_server` | `ghcr.io/mahadi-rsio/cdx_s3` | Caddy + static_s3 (blob-direct) + console `:3080` |
 | `db` | `postgres_db` | `postgres:16-alpine` | PostgreSQL |
-| `redis` | `redis` | `redis:7-alpine` | Cache + BullMQ + site/active_deployment/manifest (port **6379** published) |
-| `build_worker` | `build_w` | `Dockerfile` → `build-worker` | Cloud builds (`git` + `docker-cli`) |
-| `build_env` | (one-shot) | `Dockerfile` → `build-env` | Tags `cloudisy-build-env:latest` |
-| `migrator` | `drizzle_migrator` | `Dockerfile` → `migrator` | One-shot Drizzle migrations |
-| `next_web` | `next_web` | `ghcr.io/mahadi-rsio/next-web:latest` | Console API + static sync |
-| `next_web_migrator` | `next_web_migrator` | `config/next-web/Dockerfile.migrator` | Better Auth schema (one-shot) |
+| `redis` | `redis` | `redis:7-alpine` | Cache, rate limiting, deploy locks + site/active_deployment/manifest (port **6379** published) |
 
 **Not in Compose:** MinIO is external (`MINIO_ENDPOINT_URL`).  
-**Removed:** `upload_worker` / `upload_w` (ZIP path deleted). Use `--remove-orphans` if an old container lingers.
+**Removed:** `upload_worker` / `upload_w` (ZIP path deleted), and the cloud-build stack (`build_env`, `build_env_loader`, `build_worker`, `build_dind`). Deploys go through the CLI path only (`/api/deploy/prepare|presign|commit`). Use `--remove-orphans` if an old container lingers.
 
-**next-web:** shares `db` + `redis`. `next_web_migrator` runs after Cloudisy’s `migrator` and before `next_web` (table `next_web_drizzle_migrations`). Console UI is served by `caddy_server` on `:3080` (not a second Caddy).
+App sets `IN_DOCKER_COMPOSE=1` so `REDIS_URL=redis://redis:6379` keeps the Compose hostname. Host scripts remap `redis` → `localhost`.
 
-App / build workers set `IN_DOCKER_COMPOSE=1` so `REDIS_URL=redis://redis:6379` keeps the Compose hostname. Host scripts remap `redis` → `localhost`.
-
-Redis and Postgres use healthchecks; workers/app wait on `redis: service_healthy` and migrator success. `build_worker` also waits on `build_env` completing.
+Redis and Postgres use healthchecks; the API waits on `redis: service_healthy` and runs migrations on startup.
 
 ---
 
 ## Dockerfile Stages
 
 ```
-FROM node:20-alpine AS build-env     # pnpm pre-installed → cloudisy-build-env:latest
 FROM node:20-alpine AS deps          # npm install
-FROM deps AS migrator                # drizzle-kit migrate
-FROM node:20-alpine AS builder       # tsc → dist/
+FROM deps AS builder                 # tsc → dist/
 FROM node:20-alpine AS runner        # API (default: server.js)
-FROM node:20-alpine AS build-worker  # git + docker-cli → build.worker.js
 ```
 
 ---
@@ -43,11 +33,10 @@ FROM node:20-alpine AS build-worker  # git + docker-cli → build.worker.js
 ## Service Dependencies (startup order)
 
 ```
-postgres_db (healthy) ──► drizzle_migrator ──► express_app
-                        │                  └► build_w  ← also waits on build_env
-                        └► next_web_migrator ──► next_web
-redis (healthy)       ──┤
-                        └► caddy_server (app + next_web started; :80/:443 sites, :3080 console)
+db (healthy)     ──► api (runs migrations on startup)
+redis (healthy)  ──┤
+                 └► blob-server (api + console started; :80/:443 sites, :3080 console)
+console (healthy)─┘
 ```
 
 ---
@@ -57,15 +46,6 @@ redis (healthy)       ──┤
 | Volume / bind | Mount | Purpose |
 |---------------|-------|---------|
 | `pgdata` | `/var/lib/postgresql/data` | Postgres |
-| `caddy_data` / `caddy_config` | Caddy state | TLS / config |
-| `next_web_static` | `next_web:/shared/static`, `caddy:/srv` | Console static export |
-| `/tmp/cloudisy-builds` | `build_w:/tmp/cloudisy-builds` | DinD build clones (host path required) |
-| `/var/run/docker.sock` | `build_w` | Spawn sibling build containers |
-| `./config/next-web/caddy` | `caddy:/etc/caddy/caddy` | Console route snippets |
-
-```bash
-mkdir -p /tmp/cloudisy-builds
-```
 
 ---
 
@@ -81,20 +61,12 @@ mkdir -p /tmp/cloudisy-builds
 
 ---
 
-## Build Container (`cloudisy-build-env:latest`)
-
-Built by the `build_env` service at compose startup.
-
-- Base: `node:20-alpine` + global pnpm
-- Used by build worker with `--memory 1g` and host-mounted clone dir
-
 ---
 
 ## Getting Started
 
 ```bash
-cp env .env
-mkdir -p /tmp/cloudisy-builds
+cp .env.example .env
 docker compose up --build --remove-orphans
 ```
 

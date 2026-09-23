@@ -59,7 +59,7 @@ This document provides a comprehensive overview of the PageX platform architectu
 │                    │            Data Layer                              │          │
 │                    │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │          │
 │                    │  │  PostgreSQL  │  │    Redis     │  │    MinIO     │ │          │
-│                    │  │  (Primary DB)│  │  (Cache/Queue)│  │  (Storage)   │ │          │
+│                    │  │  (Primary DB)│  │    (Cache)    │  │  (Storage)   │ │          │
 │                    │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘ │          │
 │                    │         │                │                │        │          │
 │                    │         └────────────────┴────────────────┴────────┘          │
@@ -67,10 +67,7 @@ This document provides a comprehensive overview of the PageX platform architectu
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                      Background Processing                              │   │
-│  │  ┌─────────────────┐                                                 │   │
-│  │  │  Build Worker    │  GC runs fire-and-forget after deploy/rollback  │   │
-│  │  │  (Cloud Builds)   │  (not a BullMQ worker)                          │   │
-│  │  └─────────────────┘                                                 │   │
+│  │  GC runs fire-and-forget after deploy/rollback (no build workers).      │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -599,18 +596,13 @@ Client Request
 
 ### Background Processing
 
-**Decision:** Use BullMQ for background job processing
-
-**Rationale:**
-- **Reliability:** Jobs persist in Redis, survive worker restarts
-- **Scalability:** Multiple workers can process jobs in parallel
-- **Monitoring:** Built-in job tracking and retry logic
-- **Flexibility:** Support for delayed and recurring jobs
+**Decision (superseded):** Use BullMQ for background job processing — **removed.**
+BullMQ and the cloud-build worker/DLQ have been deleted; CLI deploy
+(`/api/deploy/prepare|presign|commit`) is the only deploy path.
 
 **Implementation:**
-- **Analytics:** Blob-server flushes Redis usage counters to PostgreSQL `site_daily_stats`
-- **Build Worker:** Processes cloud build jobs
-- **Queue:** Jobs stored in Redis with priority and retry logic
+- **Analytics:** Blob-server flushes Redis usage counters to PostgreSQL `site_daily_stats` (no queue)
+- **GC:** Runs fire-and-forget after deploy/rollback, in-process
 
 ### Deployment Safety (Production Hardening)
 
@@ -810,7 +802,6 @@ See [Development Guide](development.md) for detailed file structure and conventi
 | Library | Purpose | Service |
 |---------|---------|---------|
 | Drizzle ORM | Database ORM | API, Console |
-| BullMQ | Job queue | API |
 | ioredis | Redis client | API, Console |
 | minio | S3 client | API |
 | zod | Validation | API, Console |
@@ -827,7 +818,6 @@ See [Development Guide](development.md) for detailed file structure and conventi
 | Response Time | Caddy | Performance monitoring |
 | Cache Hit Rate | Caddy | Cache efficiency |
 | Database Queries | PostgreSQL | Query performance |
-| Job Queue | BullMQ | Background processing |
 
 ### Logging
 

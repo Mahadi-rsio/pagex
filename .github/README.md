@@ -69,17 +69,13 @@ This allows the same image to run on both x86_64 and ARM64 servers.
 
 **Features:**
 - Pulls `api`, `console`, and `blob-server` from GHCR
-- Builds infrastructure services (PostgreSQL, Redis, PgBouncer) locally
-- Builds migration containers locally
-- Optional worker services (sync-worker, build-worker, build-env)
+- Builds infrastructure services (PostgreSQL, Redis) locally
+- Deploys via the CLI path only (no worker services)
 
 **Usage:**
 ```bash
 # Start production stack with pre-built images
 docker compose -f docker-compose.yml up -d
-
-# Start with workers
-docker compose -f docker-compose.yml --profile workers up -d
 
 # Stop
 docker compose -f docker-compose.yml down

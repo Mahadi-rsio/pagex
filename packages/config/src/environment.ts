@@ -48,13 +48,6 @@ export type Environment = z.infer<typeof EnvironmentSchema>;
 // API service specific environment
 export const ApiEnvironmentSchema = EnvironmentSchema.extend({
   PORT: z.string().default('3000'),
-  
-  // Queue
-  BULLMQ_REDIS_URL: z.string().optional(),
-  
-  // Build
-  BUILD_ENV_IMAGE: z.string().default('pagex-build-env:latest'),
-  BUILD_WORKSPACE: z.string().default('/tmp/cloudisy-builds'),
 });
 
 export type ApiEnvironment = z.infer<typeof ApiEnvironmentSchema>;

@@ -92,126 +92,6 @@ services:
       start_period: 20s
 
   # ============================================================================
-  # Build Environment — For Cloud Builds (profile: workers)
-  # Built on the *host* Docker daemon. The isolated dind has a separate image
-  # store, so build-env-loader must copy this image in before builds can run.
-  # ============================================================================
-  build-env:
-    container_name: builder
-    build:
-      context: ./services/api
-      target: build-env
-    image: pagex-build-env:latest
-    pull_policy: build
-    restart: "no"
-    command: ["sh", "-c", "echo 'pagex-build-env ready'"]
-    networks:
-      - pagex
-
-  # ============================================================================
-  # Load pagex-build-env into the isolated dind image store.
-  # Host daemon (via socket) → save → pipe → dind (DOCKER_HOST=tcp://...).
-  # Without this step, docker create tries to pull from Docker Hub and fails
-  # with "pull access denied" because pagex-build-env is a local-only tag.
-  # ============================================================================
-  build-env-loader:
-    container_name: build_env_loader
-    image: docker:${DOCKER_DIND_TAG:-27}-cli
-    depends_on:
-      build-env:
-        condition: service_completed_successfully
-      docker-dind:
-        condition: service_healthy
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -eu
-        echo "[build-env-loader] Saving pagex-build-env:latest from host daemon..."
-        docker save pagex-build-env:latest | DOCKER_HOST=tcp://docker-dind:2375 docker load
-        echo "[build-env-loader] Image loaded into dind."
-        DOCKER_HOST=tcp://docker-dind:2375 docker images pagex-build-env:latest
-    restart: "no"
-    networks:
-      - build-net
-
-  # ============================================================================
-  # Build Worker — Cloud Builds (profile: workers)
-  # ============================================================================
-  build-worker:
-    container_name: build_w
-    build:
-      context: ./services/api
-      dockerfile: Dockerfile
-      target: build-worker
-    image: ghcr.io/mahadi-rsio/pagex/api-build-worker:latest
-    pull_policy: build
-    env_file: .env
-    environment:
-      - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      # Point the build worker at the ISOLATED dind daemon over TCP, never the
-      # host socket. This is the key hardening step: a compromised tenant build
-      # can only ever reach the sandbox daemon, not control the host Docker daemon.
-      - DOCKER_HOST=tcp://docker-dind:2375
-      - BUILD_ENV_IMAGE=pagex-build-env:latest
-      - BUILD_SECCOMP_PROFILE=/etc/seccomp/build.json
-      - BUILD_MAX_CONCURRENT_PER_TENANT=${BUILD_MAX_CONCURRENT_PER_TENANT:-2}
-    command: ["node","dist/queue/workers/build.worker.js"]
-    volumes:
-      - build-shared:/tmp/cloudisy-builds
-      - ./services/api/seccomp.build.json:/etc/seccomp/build.json:ro
-    depends_on:
-      redis:
-        condition: service_healthy
-      build-env:
-        condition: service_completed_successfully
-      build-env-loader:
-        condition: service_completed_successfully
-      docker-dind:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - pagex
-      - build-net
-
-  # ============================================================================
-  # Isolated Docker daemon — Cloud Builds sandbox
-  # The build worker talks to THIS daemon over TCP (tcp://docker-dind:2375) on
-  # the isolated build-net, never the host. All tenant build containers run
-  # inside this dind, so a container escape cannot reach the host daemon or host
-  # root. The daemon's socket is NOT shared with any other container.
-  # ============================================================================
-  docker-dind:
-    container_name: build_dind
-    image: docker:${DOCKER_DIND_TAG:-27}-dind
-    privileged: true
-    # privileged is required for DinD (nested namespaces/overlay). It is bounded:
-    # the daemon listens only on build-net (tcp:2375), is never published to the
-    # host, and compromise of a build container reaches this disposable daemon,
-    # not the host. Trade-off: nested-DinD must run privileged.
-    environment:
-      - DOCKER_TLS_CERTDIR=
-      - DOCKER_HOST=tcp://0.0.0.0:2375
-      - DOCKER_DRIVER=overlay2
-    volumes:
-      - docker-data:/var/lib/docker
-      - build-shared:/tmp/cloudisy-builds
-      - ./services/api/seccomp.build.json:/etc/seccomp/build.json:ro
-    security_opt:
-      - seccomp=unconfined
-    restart: unless-stopped
-    networks:
-      - build-net
-    healthcheck:
-      test: ["CMD", "docker", "info"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 20s
-
-  # ============================================================================
   # PostgreSQL Database
   # ============================================================================
   db:
@@ -265,7 +145,7 @@ services:
       - pagex
 
   # ============================================================================
-  # Redis — Cache and Queue
+  # Redis — Cache, rate limiting, and deploy locks
   # ============================================================================
   redis:
     container_name: redis
@@ -283,15 +163,7 @@ services:
 
 volumes:
   pgdata:
-  # Isolated dind data so the host daemon is never exposed.
-  docker-data:
-  build-shared:
 
 networks:
   pagex:
-    driver: bridge
-  # Isolated network for the sandbox daemon + build worker. Tenant build
-  # containers run with --network none, and the daemon itself cannot reach the
-  # main pagex network (no link between build-net and pagex).
-  build-net:
     driver: bridge
