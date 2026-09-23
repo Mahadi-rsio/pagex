@@ -1,0 +1,146 @@
+# ============================================================================
+# PageX — Production Docker Compose
+#
+# Pulls pre-built images from GHCR. This file contains NO `build:` sections,
+# so `docker compose -f docker-compose.prod.yml up -d` never builds locally.
+#
+# Images are published by the publish workflows on version tags:
+#   api/v1.4.0, console/v1.4.0, blob-server/v1.4.0
+#
+# Usage (from repo root):
+#   cp .env.example .env        # first run, then fill in required values
+#   pnpm docker:prod            # pull + up -d
+#   PAGEX_VERSION=1.5.0 pnpm docker:prod   # pin a different release
+# ============================================================================
+
+name: pagex-prod
+
+services:
+  # ============================================================================
+  # API Service — Express Backend
+  # ============================================================================
+  api:
+    image: ${PAGEX_REGISTRY:-ghcr.io/mahadi-rsio/pagex}/api:${PAGEX_VERSION:-1.4.0}
+    container_name: api
+    env_file: .env
+    environment:
+      - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
+    expose:
+      - "3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - pagex
+
+  # ============================================================================
+  # Blob Server — Caddy with static_s3 Plugin
+  # ============================================================================
+  blob-server:
+    image: ${PAGEX_REGISTRY:-ghcr.io/mahadi-rsio/pagex}/blob-server:${PAGEX_VERSION:-1.4.0}
+    container_name: caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "3080:3080"
+      - "2019:2019"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./services/blob-server/tls:/etc/caddy/tls:ro
+    environment:
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - MINIO_ENDPOINT_URL=${MINIO_ENDPOINT_URL}
+      - MINIO_BUCKET=${MINIO_BUCKET:-sites}
+      - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
+      - REDIRECT_TO_S3=${REDIRECT_TO_S3:-false}
+      - PRESIGN_REDIRECT=${PRESIGN_REDIRECT:-false}
+      - PRESIGN_LIFETIME=${PRESIGN_LIFETIME:-15m}
+      - CACHE_TTL=${CACHE_TTL:-2m}
+      - CACHE_SIZE=${CACHE_SIZE:-1000}
+      - MAX_CACHE_SIZE=${MAX_CACHE_SIZE:-512KiB}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - TLS_CFG=${TLS_CFG:-tls-off}
+    depends_on:
+      api:
+        condition: service_started
+      console:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - pagex
+
+  # ============================================================================
+  # Console — Next.js Standalone (port 3001)
+  # ============================================================================
+  console:
+    image: ${PAGEX_REGISTRY:-ghcr.io/mahadi-rsio/pagex}/console:${PAGEX_VERSION:-1.4.0}
+    container_name: web
+    env_file: .env
+    environment:
+      - DATABASE_URL=${NEXT_WEB_DATABASE_URL:-${DIRECT_DB:-postgresql://postgres:postgres@db:5432/pagex}}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - EXPRESS_URL=${NEXT_PUBLIC_API_URL:-http://api:3000}
+    expose:
+      - "3001"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - pagex
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ============================================================================
+  # PostgreSQL Database
+  # ============================================================================
+  db:
+    image: postgres:16-alpine
+    container_name: db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-pagex}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-pagex}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - pagex
+
+  # ============================================================================
+  # Redis — Cache, rate limiting, and deploy locks
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - pagex
+
+volumes:
+  pgdata:
+
+networks:
+  pagex:
+    driver: bridge

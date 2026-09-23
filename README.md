@@ -210,6 +210,17 @@ pnpm run db:migrate
 | `pnpm docker:migrate` | Run API and console database migrators |
 | `pnpm docker:api` | Start database, redis, migrator, and API |
 | `pnpm docker:console` | Start database, redis, migrator, console, and blob-server |
+| `pnpm docker:prod` | **Production:** pull GHCR images + start `docker-compose.prod.yml` (no local build) |
+| `pnpm docker:prod:pull` / `:down` / `:restart` / `:ps` / `:logs` | Production stack helpers |
+| `pnpm docker:prod:config` | Validate the production compose file |
+
+### Production stack
+
+`docker-compose.prod.yml` has **no `build:` sections** — it pulls versioned images from
+GHCR (`ghcr.io/mahadi-rsio/pagex/{api,console,blob-server}`). Images are published by the
+`.github/workflows/*-publish.yml` workflows on service version tags
+(`api/v1.4.0`, `console/v1.4.0`, `blob-server/v1.4.0`). Pin a release with
+`PAGEX_VERSION=1.4.0 pnpm docker:prod`; override the namespace with `PAGEX_REGISTRY`.
 
 ---
 

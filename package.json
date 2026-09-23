@@ -34,6 +34,13 @@
     "docker:console": "bash scripts/docker.sh console",
     "docker:api": "bash scripts/docker.sh api",
     "docker:config": "bash scripts/docker.sh config",
+    "docker:prod": "bash scripts/docker-prod.sh up",
+    "docker:prod:pull": "bash scripts/docker-prod.sh pull",
+    "docker:prod:down": "bash scripts/docker-prod.sh down",
+    "docker:prod:restart": "bash scripts/docker-prod.sh restart",
+    "docker:prod:ps": "bash scripts/docker-prod.sh ps",
+    "docker:prod:logs": "bash scripts/docker-prod.sh logs",
+    "docker:prod:config": "bash scripts/docker-prod.sh config",
     "clean": "rm -rf node_modules dist .next pnpm-lock.yaml",
     "clean:all": "rm -rf node_modules services/*/node_modules services/*/dist services/*/.next pnpm-lock.yaml"
   },
