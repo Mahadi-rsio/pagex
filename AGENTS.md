@@ -125,7 +125,7 @@ Strictly required to run anything against infra: `BETTER_AUTH_SECRET` (32+ hex c
 - `.gitignore` ignores `.env`, `dist/`, `.next/`, and `.agents/`.
 - Docs live in `docs/` (SCHEMA, API, RULES, WORKERS, architecture, development, INFRASTRUCTURE, PROJECT). `docs/RULES.md` and `README.md` sometimes use the legacy name "Cloudisy" / stale `src/` paths (the API was moved to top-level dirs) — trust the code and root `AGENTS.md` over those paths.
 - Docker images publish to GHCR on version tags: `console/v*`, `api/v*`, `blob-server/v*` (see `.github/workflows/`). All services share one platform version (currently `1.4.0`).
-- **Production compose:** root `docker-compose.prod.yml` (project `pagex-prod`) pulls versioned GHCR images and has **no `build:` sections**; `pnpm docker:prod` (script `scripts/docker-prod.sh`) pulls + starts it. Pin with `PAGEX_VERSION`, override namespace with `PAGEX_REGISTRY`. `db-backup` is intentionally excluded from prod.
+- **Production compose:** root `docker-compose.prod.yml` (project `pagex-prod`) pulls GHCR images (default tag `latest`, **no `build:` sections**); `pnpm docker:prod` (script `scripts/docker-prod.sh`) pulls + starts it. Pin with `PAGEX_VERSION=1.4.0`, override namespace with `PAGEX_REGISTRY`. `db-backup` is intentionally excluded from prod.
 - Root `Caddyfile` reverse-proxies the console (`:3080` → console:3001) and serves tenant sites via `static_s3` with MinIO + Postgres + Redis lookups. TLS/HTTPS blocks are toggled by `TLS_CFG` (off locally, on in prod).
 
 ## Subagent usage & parallel execution

@@ -9,8 +9,8 @@
 #
 # Usage (from repo root):
 #   cp .env.example .env        # first run, then fill in required values
-#   pnpm docker:prod            # pull + up -d
-#   PAGEX_VERSION=1.5.0 pnpm docker:prod   # pin a different release
+#   pnpm docker:prod            # pull + up -d (default tag: latest)
+#   PAGEX_VERSION=1.4.0 pnpm docker:prod   # pin a specific release
 # ============================================================================
 
 name: pagex-prod
@@ -20,7 +20,7 @@ services:
   # API Service — Express Backend
   # ============================================================================
   api:
-    image: ${PAGEX_REGISTRY:-ghcr.io/mahadi-rsio/pagex}/api:${PAGEX_VERSION:-1.4.0}
+    image: ${PAGEX_REGISTRY:-ghcr.io/mahadi-rsio/pagex}/api:${PAGEX_VERSION:-latest}
     container_name: api
     env_file: .env
     environment:
@@ -40,7 +40,7 @@ services:
   # Blob Server — Caddy with static_s3 Plugin
   # ============================================================================
   blob-server:
-    image: ${PAGEX_REGISTRY:-ghcr.io/mahadi-rsio/pagex}/blob-server:${PAGEX_VERSION:-1.4.0}
+    image: ${PAGEX_REGISTRY:-ghcr.io/mahadi-rsio/pagex}/blob-server:${PAGEX_VERSION:-latest}
     container_name: caddy
     ports:
       - "80:80"
@@ -77,7 +77,7 @@ services:
   # Console — Next.js Standalone (port 3001)
   # ============================================================================
   console:
-    image: ${PAGEX_REGISTRY:-ghcr.io/mahadi-rsio/pagex}/console:${PAGEX_VERSION:-1.4.0}
+    image: ${PAGEX_REGISTRY:-ghcr.io/mahadi-rsio/pagex}/console:${PAGEX_VERSION:-latest}
     container_name: web
     env_file: .env
     environment:

@@ -219,8 +219,9 @@ pnpm run db:migrate
 `docker-compose.prod.yml` has **no `build:` sections** — it pulls versioned images from
 GHCR (`ghcr.io/mahadi-rsio/pagex/{api,console,blob-server}`). Images are published by the
 `.github/workflows/*-publish.yml` workflows on service version tags
-(`api/v1.4.0`, `console/v1.4.0`, `blob-server/v1.4.0`). Pin a release with
-`PAGEX_VERSION=1.4.0 pnpm docker:prod`; override the namespace with `PAGEX_REGISTRY`.
+(`api/v1.4.0`, `console/v1.4.0`, `blob-server/v1.4.0`). The default tag is `latest`;
+pin a release with `PAGEX_VERSION=1.4.0 pnpm docker:prod` and override the namespace
+with `PAGEX_REGISTRY`.
 
 ---
 

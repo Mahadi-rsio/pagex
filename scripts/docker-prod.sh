@@ -33,14 +33,14 @@ Commands:
   help                   Show this help
 
 Environment overrides:
-  PAGEX_VERSION   Image tag to deploy (default: 1.4.0)
+  PAGEX_VERSION   Image tag to deploy (default: latest)
   PAGEX_REGISTRY  Image registry/namespace (default: ghcr.io/mahadi-rsio/pagex)
   ENV_FILE        Path to env file (default: ./.env)
   COMPOSE_FILE    Path to compose file (default: ./docker-compose.prod.yml)
 
 Examples:
   scripts/docker-prod.sh up
-  PAGEX_VERSION=1.5.0 scripts/docker-prod.sh up
+  PAGEX_VERSION=1.4.0 scripts/docker-prod.sh up
   scripts/docker-prod.sh logs console
 EOF
 }
