@@ -1,0 +1,27 @@
+name: Send Image Webhook
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - master
+  workflow_dispatch:
+
+jobs:
+  send-image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Send image to webhook
+        run: |
+          ls -a
+          curl -X POST https://smee.io/La4pXqk6z2qJ3RuW \
+          -F "file=@img.jpg" \
+          -F "message=Image from GitHub Actions 🚀" \
+          -F "repo=${{ github.repository }}" \
+          -F "branch=${{ github.ref }}" \
+          -F "commit=${{ github.sha }}"
