@@ -60,7 +60,7 @@ Multi-tenant static site hosting platform. pnpm monorepo (pnpm@8.15.0, Node >=18
 
 ## Layout
 
-- `services/api/` — Express 5 backend, **ESM**. `server.ts` is the entrypoint. Top-level dirs: `routes/`, `controllers/`, `services/`, `validators/`, `queue/`, `infrastructure/`, `utils/`. Deploys sites, manages deployments/pages, auth, background workers (BullMQ), MinIO blob storage.
+- `services/api/` — Express 5 backend, **ESM**. `server.ts` is the entrypoint. Top-level dirs: `routes/`, `controllers/`, `services/`, `validators/`, `infrastructure/`, `utils/`. Deploys sites, manages deployments/pages, auth, MinIO blob storage. Deploys go through the CLI path only (`/api/deploy/prepare|presign|commit`); cloud builds and BullMQ workers were removed.
 - `services/console/` — Next.js 16 App Router monolith (Better Auth, Drizzle, Zustand, shadcn/ui). Has its own detailed **`services/console/AGENTS.md` — read it before touching the console**; a lot of root-level guesses will be wrong here.
 - `services/blob-server/` — Go Caddy server + custom `static_s3` plugin (`cmd/caddy`). Go tests: `pnpm test:blob-server`.
 - `packages/{config,types,utils}/` — shared libs `@pagex/*`. Not directly published; consumed via workspace.
@@ -80,7 +80,7 @@ mem0 is installed (`@mem0/opencode-plugin`) and stores project-scoped memories. 
 
 Context7 is available as an MCP server (`context7`) configured in `.opencode/opencode.json`. It fetches **up-to-date library/framework docs on demand** — use it instead of relying on possibly-stale model training when the exact API/version matters:
 
-- **Always resolve the exact library + version you're working with** (e.g. `context7 resolve drizzle-orm@0.45.2`, `express@5.x`, `better-auth@1.7.1`, `next@16`). This repo pins unusual versions (Express 5, Next 16, Zod 4, Tailwind v4, Biome 2, BullMQ 5) that differ from common defaults — never assume API shapes from memory.
+- **Always resolve the exact library + version you're working with** (e.g. `context7 resolve drizzle-orm@0.45.2`, `express@5.x`, `better-auth@1.7.1`, `next@16`). This repo pins unusual versions (Express 5, Next 16, Zod 4, Tailwind v4, Biome 2) that differ from common defaults — never assume API shapes from memory.
 - Use the `open-doc` tool on a resolved doc to pull specifics (function signatures, config options, breaking changes) only when answering a question about library behavior.
 - **Version-match to what's actually in `package.json`** — don't fetch docs for a newer major than the repo uses.
 

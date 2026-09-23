@@ -280,45 +280,25 @@ Never delete a blob unless it is proven unreferenced.
 
 ---
 
-# 4. 🧪 Cloud Build — EXPERIMENTAL
+# 4. ⛔ Cloud Build & Workers — REMOVED (POSTPONED)
 
-> Cloud Build is currently **EXPERIMENTAL**.
+> Cloud Build / BullMQ workers have been **removed** from the repository.
 >
-> It is **not part of the core production-readiness milestone**.
-> Do not block the core project on Cloud Build.
+> They are **not part of the core production-readiness milestone** and are
+> **postponed**. Do not re-add them without an explicit decision.
 
-Current direction:
+Removed:
 
-```text
-Git repository
-    ↓
-BullMQ
-    ↓
-Experimental Build Worker
-    ↓
-Docker build environment
-    ↓
-Static output
-    ↓
-Existing blob deployment pipeline
-```
+- [x] `bullmq` dependency and all queue code (`queue/jobs`, `queue/workers`)
+- [x] Build worker + DLQ worker processes
+- [x] `build.service.ts`, `build.controller.ts`, `build.routes.ts`, `build.validator.ts`
+- [x] `build-env`, `build-env-loader`, `build-worker`, `docker-dind` Compose services
+- [x] seccomp build profile and the `api-build-worker` image publish job
 
-Future Cloud Build work:
+**CLI deploy is the only deploy path** (`/api/deploy/prepare|presign|commit`).
 
-- [ ] Improve build isolation
-- [ ] Improve timeout handling
-- [ ] Improve build cancellation
-- [ ] Improve build logs
-- [ ] Improve resource limits
-- [ ] Improve framework detection
-- [ ] Improve output directory detection
-- [ ] Add build cache
-- [ ] Add build concurrency limits
-- [ ] Add build quotas
-
-Cloud Build should consume the existing deployment pipeline.
-
-Do NOT redesign the core blob/manifest architecture specifically for Cloud Build.
+If Cloud Build is ever resumed, it must consume the existing blob/manifest
+deployment pipeline and must not require redesigning the core architecture.
 
 ---
 
@@ -372,7 +352,6 @@ Add production-grade metrics for:
 - [ ] Deployment failures
 - [ ] Rollbacks
 - [ ] Concurrent deployment conflicts
-- [ ] Queue depth
 
 ## Storage
 
@@ -603,7 +582,7 @@ Until the current core is stable:
 - [ ] Do NOT add SSR runtime
 - [ ] Do NOT add Lambda runtime
 - [ ] Do NOT add Worker runtime
-- [ ] Do NOT over-engineer Cloud Build
+- [ ] Do NOT re-add Cloud Build / BullMQ workers
 - [ ] Do NOT replace the manifest architecture
 - [ ] Do NOT use `blob_tree_entries` for request-time serving
 - [ ] Do NOT introduce unnecessary queues
@@ -668,7 +647,7 @@ When working on PageX:
 6. Prefer current code + tests as implementation truth.
 7. Do not implement future roadmap items unless explicitly requested.
 8. Do not add CDN yet.
-9. Treat Cloud Build as experimental.
+9. Cloud Build / BullMQ workers are removed and postponed; CLI deploy is the only deploy path.
 10. Never use `blob_tree_entries` for normal request-time serving.
 11. Preserve content-addressed blob storage.
 12. Preserve immutable manifests.

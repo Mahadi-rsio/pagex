@@ -17,11 +17,10 @@
 | Runtime | Node.js (ESM, TypeScript compiled to `dist/`) |
 | HTTP Framework | Express 5 |
 | Database | PostgreSQL via Drizzle ORM |
-| Queue / Worker | BullMQ (backed by Redis DB2) |
+| Deploy path | CLI only — `/api/deploy/prepare\|presign\|commit` |
 | Cache | Redis (ioredis) — DB0 site/active_deployment/manifest, DB3 tokens/usage |
 | Object Storage | MinIO (S3-compatible) — external |
 | Auth | JOSE — JWKS from next-web (`AUTH_JWKS_URL`) |
-| Build containers | Docker — `cloudisy-build-env:latest` (pnpm, 1 GB RAM) |
 | Image / compress | `sharp` (WebP), Node `zlib` (Brotli/Gzip) |
 | Validation | Zod + `file-type` magic bytes |
 | Rate limiting | express-rate-limit + rate-limit-redis |
@@ -39,29 +38,25 @@ pagex/
 │   ├── middleware/auth.middleware.ts
 │   ├── infrastructure/
 │   │   ├── db/db.ts, schema.ts     # sites, pages, stats, builds, deployments, blobs, blob_tree_entries
-│   │   ├── cache/redis.ts          # redis (DB0), usageRedis (DB3), BullMQ connection (DB2)
+│   │   ├── cache/redis.ts          # redis (DB0), usageRedis (DB3)
 │   │   └── storage/minio.ts        # blobObjectKey, objectMetaForPath, deleteBlobObjects
-│   ├── controllers/                # page, deploy, build, deployment
+│   ├── controllers/                # page, deploy, deployment
 │   ├── services/
 │   │   ├── deploy.service.ts       # prepare / presign / commitBlobTreeDeploy / manifest / variants
 │   │   ├── deployment-lock.service.ts # per-page Redis deploy:lock:{pageId}
 │   │   ├── deployment.service.ts   # listDeployments, rollbackToDeployment
 │   │   ├── gc.service.ts           # runDeploymentGC (fire-and-forget)
-│   │   ├── build.service.ts
 │   │   └── page.service.ts
-│   ├── queue/
-│   │   ├── jobs/build.queue.ts
-│   │   └── workers/build.worker.ts
-│   ├── routes/                     # page, deploy, build, deployment (+ /health)
+│   ├── routes/                     # page, deploy, deployment (+ /health)
 │   ├── scripts/migrate-to-blob-serving.ts
 │   ├── utils/
 │   │   ├── deployment-validator.ts # ≤100 files, ≤10 MB, blocked extensions
 │   │   ├── file-validator.ts       # magic bytes + EXT_ALIASES (svg↔xml)
 │   │   └── http-error.ts
-│   └── validators/                 # page, build, deploy
+│   └── validators/                 # page, deploy
 ├── drizzle/                        # committed migrations
 ├── docker-compose.yml
-├── Dockerfile                      # build-env, deps, migrator, builder, runner, build-worker
+├── Dockerfile                      # deps, builder, runner
 ├── docs/                           # AI docs (this folder)
 ├── README.md
 └── test.js
@@ -73,11 +68,10 @@ pagex/
 
 | Process | File | Started by |
 |---------|------|-----------|
-| API server | `dist/src/server.js` | `express_app` |
-| Build worker | `dist/src/queue/workers/build.worker.js` | `build_w` |
-| Migrations | `drizzle-kit migrate` | `drizzle_migrator` (one-shot) |
+| API server | `dist/server.js` | `api` |
+| Migrations | `drizzle-kit migrate` | run at API startup |
 
-No upload worker — CLI blob deploy replaced ZIP uploads.
+No workers — cloud builds / BullMQ were removed, and CLI blob deploy replaced ZIP uploads.
 
 ---
 
@@ -134,7 +128,6 @@ Blob objects may carry `Content-Type` and `Content-Encoding` (`br` / `gzip`) for
 | `requests:{domain}` | 3* | counter | — | Caddy |
 | `bandwidth:{domain}` | 3* | counter | — | Caddy |
 | `db_cache:{domain}` | 3* | JSON | 15 min | page.service |
-| BullMQ keys | 2 | — | — | BullMQ |
 
 \* Usage keys use the `usageRedis` client (DB3). Compose sets `IN_DOCKER_COMPOSE=1` so hostname `redis` is kept inside containers; host scripts remap to `localhost`.
 

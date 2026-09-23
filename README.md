@@ -16,7 +16,7 @@ pagex/
 │   ├── SCHEMA.md                 # Database schema documentation
 │   ├── API.md                    # REST API endpoints & contracts
 │   ├── RULES.md                  # Development rules & guidelines
-│   ├── WORKERS.md                # Background worker architecture
+│   ├── WORKERS.md                # Deploy commit / rollback / GC reference
 │   ├── development.md            # Local development guide
 │   ├── INFRASTRUCTURE.md         # Infrastructure & deployment guide
 │   ├── PROJECT.md                # Project overview & roadmap
@@ -255,7 +255,7 @@ For detailed guides, refer to the files inside `docs/`:
 - [Database Schema](docs/SCHEMA.md)
 - [API Endpoints & Contracts](docs/API.md)
 - [Infrastructure & Deployment](docs/INFRASTRUCTURE.md)
-- [Background Workers](docs/WORKERS.md)
+- [Deploy Pipeline](docs/WORKERS.md)
 - [Development Rules](docs/RULES.md)
 
 ---

@@ -33,7 +33,6 @@
     "docker:migrate": "bash scripts/docker.sh migrate",
     "docker:console": "bash scripts/docker.sh console",
     "docker:api": "bash scripts/docker.sh api",
-    "docker:workers": "bash scripts/docker.sh workers",
     "docker:config": "bash scripts/docker.sh config",
     "clean": "rm -rf node_modules dist .next pnpm-lock.yaml",
     "clean:all": "rm -rf node_modules services/*/node_modules services/*/dist services/*/.next pnpm-lock.yaml"

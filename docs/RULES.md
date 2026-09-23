@@ -24,12 +24,10 @@
 
 | Type | Convention | Example |
 |------|-----------|---------|
-| Services | `<domain>.service.ts` | `build.service.ts` |
-| Controllers | `<domain>.controller.ts` | `build.controller.ts` |
-| Routes | `<domain>.routes.ts` | `build.routes.ts` |
-| Workers | `<domain>.worker.ts` | `build.worker.ts` |
-| Queue jobs | `<domain>.queue.ts` or `<domain>.job.ts` | `build.queue.ts` |
-| Validators | `<domain>.validator.ts` | `build.validator.ts` |
+| Services | `<domain>.service.ts` | `deploy.service.ts` |
+| Controllers | `<domain>.controller.ts` | `deploy.controller.ts` |
+| Routes | `<domain>.routes.ts` | `deploy.routes.ts` |
+| Validators | `<domain>.validator.ts` | `deploy.validator.ts` |
 
 ---
 
@@ -125,26 +123,9 @@ Route path convention: `/api/<resource>/<action>`.
 
 ---
 
-## BullMQ Queue Pattern
+## No Job Queues
 
-```typescript
-// Define the queue + interface in queue/jobs/<name>.queue.ts
-export const MY_QUEUE = "my-queue-name"
-export interface MyJobData { ... }
-export const myQueue = new Queue<MyJobData>(MY_QUEUE, { connection })
-
-// Add jobs from a service:
-await myQueue.add('job-name', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } })
-
-// Create worker in queue/workers/<name>.worker.ts
-const worker = new Worker<MyJobData>(MY_QUEUE, async (job) => {
-    const { field } = job.data
-    await job.updateProgress(50)
-    await job.log("Step: doing something...")
-}, { connection })
-```
-
-**Log format:** Use `job.log()` for all build output. Stats lines must be prefixed with `[Stats]` so the SSE handler and test scripts can identify them.
+BullMQ and background build/worker queues were removed. Deploys are synchronous through the CLI path (`/api/deploy/prepare|presign|commit`); do not introduce queue/worker infrastructure.
 
 ---
 
