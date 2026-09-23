@@ -1,4 +1,4 @@
-name: Publish API & Workers to GHCR
+name: Publish API to GHCR
 
 on:
   push:
@@ -66,38 +66,9 @@ jobs:
           cache-from: type=gha,scope=api-runner
           cache-to: type=gha,mode=max,scope=api-runner
 
-      # ---------------------------------------------------------
-      # 2. Build Worker (target: build-worker)
-      # ---------------------------------------------------------
-      - name: Extract metadata for Build Worker
-        id: meta-build-worker
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.REPO }}/api-build-worker
-          tags: |
-            type=raw,value=latest
-            type=raw,value=${{ steps.tag.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag.outputs.version }}
-            type=semver,pattern={{major}},value=${{ steps.tag.outputs.version }}
-            type=sha,prefix=sha-
-
-      - name: Build & Push Build Worker
-        uses: docker/build-push-action@v6
-        with:
-          context: ./services/api
-          file: ./services/api/Dockerfile
-          target: build-worker
-          push: true
-          platforms: linux/amd64
-          tags: ${{ steps.meta-build-worker.outputs.tags }}
-          labels: ${{ steps.meta-build-worker.outputs.labels }}
-          cache-from: type=gha,scope=api-build-worker
-          cache-to: type=gha,mode=max,scope=api-build-worker
-
       - name: Write job summary
         run: |
-          echo "### ✅ API & Build Worker Images Published to GHCR" >> "$GITHUB_STEP_SUMMARY"
+          echo "### ✅ API Image Published to GHCR" >> "$GITHUB_STEP_SUMMARY"
           echo "| Image | Target | Version |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
           echo "| \`${{ env.REGISTRY }}/${{ env.REPO }}/api\` | \`runner\` | \`${{ steps.tag.outputs.version }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| \`${{ env.REGISTRY }}/${{ env.REPO }}/api-build-worker\` | \`build-worker\` | \`${{ steps.tag.outputs.version }}\` |" >> "$GITHUB_STEP_SUMMARY"

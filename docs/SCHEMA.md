@@ -58,14 +58,14 @@ INDEX: idx_site_daily_stats_site_date ON (site_id, date)
 
 ---
 
-### `builds`
-Build job records. One row per triggered build.
+### `builds` (legacy, unused)
+Cloud-build job records from the removed BullMQ/cloud-build stack. Retained so no migration is needed; no writer remains.
 
 ```sql
 id            UUID      PRIMARY KEY
 page_id       UUID      FK → pages(id) ON DELETE CASCADE
 tenant_id     TEXT      NOT NULL
-job_id        TEXT      -- BullMQ job ID
+job_id        TEXT      -- legacy BullMQ job ID (unused)
 status        TEXT      NOT NULL DEFAULT 'queued'
               -- queued | running | completed | failed | cancelled
 repo_url / git_provider / framework / build_command / output_dir / error / triggered_by
@@ -204,7 +204,7 @@ npm run migrate   # drizzle-kit migrate (also on compose up)
 | `stats:*` | 3 | counters | — | blob-server analytics | blob-server flush → `site_daily_stats` |
 | `db_cache:{domain}` | 3 | JSON | 15 min | page.service | page.service |
 
-**BullMQ (DB2):** queues `cloudisy-cloud-builds` (main), `cloudisy-cloud-builds-dlq` (dead letter).
+**BullMQ was removed** — there are no queue keys. `deploy:lock:{pageId}` (DB3) is the only lock mechanism.
 
 ---
 

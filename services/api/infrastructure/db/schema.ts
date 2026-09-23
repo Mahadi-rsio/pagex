@@ -219,8 +219,8 @@ export const idempotencyKeys = pgTable('idempotency_keys', {
 }));
 
 /**
- * `build_failures` — durable failure records written by the DLQ worker when a
- * build job exhausts all BullMQ retries. This table must NEVER contain secrets
+ * `build_failures` — legacy table from the removed cloud-build / BullMQ stack,
+ * retained (empty) so no migration is needed. Must NEVER contain secrets
  * (no env_vars, no tokens, no passwords).
  */
 export const buildFailures = pgTable('build_failures', {

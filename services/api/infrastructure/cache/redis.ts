@@ -23,19 +23,6 @@ function resolveRedisUrl(): string {
 
 const REDIS_URL = resolveRedisUrl()
 
-function connectionFromUrl(db: number) {
-    const url = new URL(REDIS_URL)
-    return {
-        host: url.hostname,
-        port: Number(url.port || 6379),
-        db,
-        ...(url.password ? { password: decodeURIComponent(url.password) } : {}),
-    }
-}
-
-/** BullMQ — Redis DB2 (derived from REDIS_URL host/port). */
-export const connection = connectionFromUrl(2)
-
 function attachErrorHandler(client: Redis, label: string): Redis {
     client.on('error', (err: Error) => {
         console.error(`[redis:${label}]`, err.message)

@@ -427,7 +427,6 @@ services/api/
 │   ├── controllers/      # HTTP controllers
 │   ├── services/        # Business logic
 │   ├── infrastructure/  # External services (DB, cache, storage)
-│   ├── queue/           # BullMQ queue and workers
 │   ├── routes/          # Express routes
 │   ├── middleware/      # Express middleware
 │   ├── validators/      # Request validation
