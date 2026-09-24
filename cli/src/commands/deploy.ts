@@ -6,21 +6,29 @@ import { deploy } from "../utils/deployHandler.js";
 import { runBuild } from "../utils/buildHandler.js";
 import { config } from "../config.js";
 import { handleError, ConfigError } from "../utils/errors.js";
+import { logger } from "../utils/logger.js";
 
 interface PagexConfig {
     id?: string;
     project_name?: string;
+    domain?: string;
 }
 
 interface DeployArgs {
     build: boolean;
 }
 
-function resolvePageId(cwd: string): string {
+interface ResolvedTarget {
+    pageId: string;
+    projectName: string;
+    domain?: string;
+}
+
+function resolveTarget(cwd: string): ResolvedTarget {
     const cfgPath = path.join(cwd, config.CONFIG_FILE);
     if (!fs.existsSync(cfgPath)) {
         throw new ConfigError(
-            `No ${config.CONFIG_FILE} found. Run \`pagex init\` to create or link a project.`,
+            `No ${config.CONFIG_FILE} found here. Run \`pagex init\` to create or link a project.`,
         );
     }
 
@@ -31,7 +39,10 @@ function resolvePageId(cwd: string): string {
             `${config.CONFIG_FILE} is missing id and project_name. Run \`pagex init\` again.`,
         );
     }
-    return pageId;
+
+    const target: ResolvedTarget = { pageId, projectName: cfg.project_name ?? pageId };
+    if (cfg.domain) target.domain = cfg.domain;
+    return target;
 }
 
 export const deployCmd: CommandModule = {
@@ -39,23 +50,30 @@ export const deployCmd: CommandModule = {
     describe:
         "Deploy an existing build to the cloud (uploads originals; server optimizes assets at commit)",
     builder: (yargs) =>
-        yargs.option("build", {
-            type: "boolean",
-            default: false,
-            describe: "Run the project's build script before deploying",
+        yargs.options({
+            build: {
+                alias: "b",
+                type: "boolean" as const,
+                default: false,
+                describe: "Run the project's build script before deploying",
+            },
         }),
     handler: async (argv) => {
         const { build } = argv as unknown as DeployArgs;
         try {
-            await checkStatus();
+            const session = await checkStatus();
             const cwd = process.cwd();
+
+            logger.step(1, `Authenticated as ${session.session?.name ?? "you"}`);
 
             if (build) {
                 await runBuild(cwd);
             }
 
-            const pageId = resolvePageId(cwd);
-            await deploy("./", pageId);
+            const { pageId, projectName, domain } = resolveTarget(cwd);
+            logger.step(2, `Deploying to ${projectName}`);
+            await deploy("./", pageId, domain);
+            logger.hintCommand("pagex deploy", "deploy a new version:");
         } catch (err) {
             handleError(err);
         }

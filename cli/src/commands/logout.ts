@@ -5,11 +5,16 @@ import { clearJwtCache } from "../utils/jwt.js";
 
 export const logoutCmd: CommandModule = {
     command: "logout",
-    describe: "Log out and clear saved session",
+    describe: "Log out and clear the saved session",
     handler: () => {
-        clearToken();
-        clearJwtCache()
+        const hadSession = clearToken();
+        clearJwtCache();
 
-        logger.success("Logged out successfully. Run `pagex login` to authenticate again.");
+        if (hadSession) {
+            logger.success("Logged out successfully.");
+        } else {
+            logger.warn("No active session to clear.");
+        }
+        logger.hintCommand("pagex login");
     },
 };

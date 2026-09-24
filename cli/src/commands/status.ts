@@ -5,28 +5,39 @@ import { logger } from "../utils/logger.js";
 import { handleError, AuthError } from "../utils/errors.js";
 
 async function statusCommand() {
-    const spinner = logger.spinner("Checking account status...").start();
+    const token = getToken();
 
-    const { data: sessionData, error: sessionError } = await authClient.getSession({
-        fetchOptions: {
-            headers: { Authorization: `Bearer ${getToken()}` },
-        },
-    });
-
-    const { data: jwtData, error: jwtError } = await authClient.token({
-        fetchOptions: {
-            headers: { Authorization: `Bearer ${getToken()}` },
-        },
-    });
-
-    spinner.stop();
-
-    if (sessionError || jwtError || !sessionData) {
-        throw new AuthError("Could not retrieve session. Please run `pagex login`.");
+    if (!token) {
+        logger.warn("You are not logged in.");
+        logger.hintCommand("pagex login");
+        return;
     }
 
-    logger.success(`Logged in as ${sessionData.user.name} (${sessionData.user.email})`);
-    logger.verbose(`Token: ${jwtData?.token ?? "(unavailable)"}`);
+    const spinner = logger.spinner("Checking account status…").start();
+
+    try {
+        const { data: sessionData, error: sessionError } = await authClient.getSession({
+            fetchOptions: {
+                headers: { Authorization: `Bearer ${token}` },
+            },
+        });
+
+        const { data: jwtData } = await authClient.token({
+            fetchOptions: {
+                headers: { Authorization: `Bearer ${token}` },
+            },
+        });
+
+        if (sessionError || !sessionData) {
+            throw new AuthError("Could not retrieve your session. Please run `pagex login`.");
+        }
+
+        logger.success(`Logged in as ${sessionData.user.name} (${sessionData.user.email})`);
+        logger.hintCommand("pagex deploy");
+        logger.verbose(`Token: ${jwtData?.token ?? "(unavailable)"}`);
+    } finally {
+        spinner.stop();
+    }
 }
 
 export const statusCmd: CommandModule = {

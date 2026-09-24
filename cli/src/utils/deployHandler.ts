@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import chalk from "chalk";
 import { createHash } from "crypto";
 import pLimit from "p-limit";
 import { config } from "../config.js";
@@ -85,16 +86,22 @@ function printPrepareSummary(
     const upload = human(summary.uploadSizeHuman, summary.uploadSize);
     const reused = formatBytes(summary.reusedSize);
 
-    logger.info(`${summary.totalFiles} files · ${total} total`);
+    logger.info(`  ${summary.totalFiles} files · ${total} total`);
     logger.info(
-        `Upload ${upload} (${prep.filesToUpload} new) · reuse ${reused} (${prep.filesReused} blobs)`,
+        `  Upload: ${upload} (${prep.filesToUpload} new) · Reused: ${reused} (${prep.filesReused} blobs)`,
     );
     if (typeof prep.expiresIn === "number") {
         logger.verbose(`Deployment token expires in ${prep.expiresIn}s`);
     }
 }
 
-function printCommitSummary(result: CommitResponse): void {
+/** Build a https:// site URL from a stored domain, tolerating an existing scheme. */
+function siteUrl(domain: string): string {
+    if (/^https?:\/\//i.test(domain)) return domain;
+    return `https://${domain}`;
+}
+
+function printCommitSummary(result: CommitResponse, domain?: string): void {
     const { summary, filesDeployed, filesReused, deployment } = result;
     const version = deployment?.version;
     const title =
@@ -102,7 +109,11 @@ function printCommitSummary(result: CommitResponse): void {
             ? `Deployed v${version}`
             : "Deployed successfully";
 
-    logger.success(title);
+    logger.success(`\n${title}`);
+    if (domain) {
+        logger.info(`  ${chalk.cyan("URL")}: ${chalk.underline(chalk.cyan(siteUrl(domain)))}`);
+    }
+    logger.hint("Deployment summary:");
 
     const total = human(summary.totalSizeHuman, summary.totalSize);
     logger.info(`  ${summary.totalFiles} files · ${total} total`);
@@ -140,7 +151,7 @@ async function uploadRequiredBlobs(
     deploymentToken: string,
 ): Promise<void> {
     if (!uploadRequired || uploadRequired.length === 0) {
-        logger.info("All blobs reused — skipping upload");
+        logger.info("All blobs reused — nothing to upload");
         return;
     }
 
@@ -204,7 +215,7 @@ async function uploadRequiredBlobs(
  * Deploy build output via prepare → presign → PUT → commit.
  * CLI uploads original files only; compression and WebP run server-side at commit.
  */
-export async function deploy(projectPath: string, pageId: string) {
+export async function deploy(projectPath: string, pageId: string, domain?: string) {
     const buildPath = config.BUILD_DIRS
         .map((d) => path.join(projectPath, d))
         .find((p) => fs.existsSync(p));
@@ -223,12 +234,12 @@ export async function deploy(projectPath: string, pageId: string) {
 
     // 1. Collect + hash
     const collectSpinner = logger
-        .spinner(`Scanning ${path.basename(buildPath)}...`)
+        .spinner(`Scanning ${path.basename(buildPath)}…`)
         .start();
     let files: LocalFile[];
     try {
         files = collectBuildFiles(buildPath);
-        collectSpinner.succeed(`Found ${files.length} file(s) in ${path.basename(buildPath)}`);
+        collectSpinner.succeed(`Found ${files.length} file${files.length === 1 ? "" : "s"} in ${path.basename(buildPath)}`);
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         collectSpinner.fail(`Scan failed: ${msg}`);
@@ -250,7 +261,7 @@ export async function deploy(projectPath: string, pageId: string) {
     }));
 
     // 3. Prepare
-    const prepSpinner = logger.spinner("Preparing deployment...").start();
+    const prepSpinner = logger.spinner("Preparing deployment…").start();
     let prep: PrepareResponse;
     try {
         prep = await prepareDeploy({ pageId, files: manifest });
@@ -272,7 +283,7 @@ export async function deploy(projectPath: string, pageId: string) {
 
     // 5. Commit (server optimizes: Brotli/Gzip/WebP)
     const commitSpinner = logger
-        .spinner("Committing deployment (server optimizing assets)...")
+        .spinner("Committing deployment (optimizing assets server-side)…")
         .start();
     let result: CommitResponse;
     try {
@@ -287,5 +298,5 @@ export async function deploy(projectPath: string, pageId: string) {
         throw new NetworkError("Deploy commit did not succeed");
     }
 
-    printCommitSummary(result);
+    printCommitSummary(result, domain);
 }

@@ -10,8 +10,7 @@ export function formatBytes(bytes: number): string {
         return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`;
     }
     if (bytes < 1024 * 1024 * 1024) {
-        const mb = bytes / (1024 * 1024);
-        return `${mb < 10 ? mb.toFixed(1) : mb.toFixed(1)} MB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     }
     const gb = bytes / (1024 * 1024 * 1024);
     return `${gb.toFixed(2)} GB`;

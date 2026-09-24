@@ -1,6 +1,6 @@
 import axios, { type AxiosInstance, type AxiosError } from "axios";
 import { config } from "../config.js";
-import { NetworkError, AuthError, ConfigError } from "../utils/errors.js";
+import { NetworkError, AuthError, ConfigError, PagexError } from "../utils/errors.js";
 import { jwtToken } from "../utils/jwt.js";
 
 // ---------------------------------------------------------------------------
@@ -34,17 +34,21 @@ export function createApiClient(): AxiosInstance {
     instance.interceptors.request.use(async (reqConfig) => {
         const token = await jwtToken();
 
-        if (token) {
-            reqConfig.headers = reqConfig.headers ?? {};
-            reqConfig.headers["Authorization"] = `Bearer ${token}`;
-        }
+        reqConfig.headers = reqConfig.headers ?? {};
+        reqConfig.headers["Authorization"] = `Bearer ${token}`;
         return reqConfig;
     });
 
-    // Translate HTTP errors into typed PageX errors
+    // Translate HTTP errors into typed PageX errors.
+    // Errors that are already PagexErrors (e.g. AuthError from the token
+    // interceptor) pass through untouched so they keep their own type/message.
     instance.interceptors.response.use(
         (res) => res,
-        (err: AxiosError) => {
+        (err: AxiosError | PagexError) => {
+            if (err instanceof PagexError) {
+                return Promise.reject(err);
+            }
+
             const status = err.response?.status;
             const data = err.response?.data;
             const message = status

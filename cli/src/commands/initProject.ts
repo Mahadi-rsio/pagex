@@ -77,7 +77,7 @@ async function ensureLoggedIn(): Promise<void> {
 async function createProject(cwd: string, projectName: string): Promise<void> {
     const framework = await detectFrameworkName(cwd);
 
-    logger.info("Creating project...");
+    logger.info("Creating your project…");
     // POST /api/pages/create — body is { project_name } only; tenant comes from JWT
     const { data } = await apiClient.post<CreateProjectResponse>(
         "/api/pages/create",
@@ -92,23 +92,23 @@ async function createProject(cwd: string, projectName: string): Promise<void> {
         created_at: data.createdAt,
     };
 
-    const configPath = writeLinkFile(cwd, linkFile);
+    writeLinkFile(cwd, linkFile);
     ignoreLinkFile(cwd);
 
-    logger.success(`Project "${data.project_name}" created successfully`);
-    logger.success(`Domain: ${data.domain}`);
-    logger.success(".gitignore file updated");
-    logger.verbose(`Config created at ${configPath}`);
+    logger.success(`Project "${data.project_name}" created successfully.`);
+    logger.info(`  Domain:   ${data.domain}`);
+    logger.info(`  Framework: ${framework || "unknown"}`);
+    logger.hint(`  Config:   ${cwd}/${config.CONFIG_FILE} (added to .gitignore)`);
+    logger.hintCommand("pagex deploy --build");
 }
 
 async function linkProject(cwd: string, target?: string): Promise<void> {
-    logger.info("Fetching your projects...");
+    logger.info("Fetching your projects…");
     const projects: Pages[] = await listPages();
 
     if (!projects || projects.length === 0) {
-        logger.warn(
-            "No existing projects found. Create one with: pagex init → Create a new project",
-        );
+        logger.warn("No existing projects found.");
+        logger.hintCommand("pagex init");
         return;
     }
 
@@ -151,12 +151,13 @@ async function linkProject(cwd: string, target?: string): Promise<void> {
         created_at: selected.createdAt,
     };
 
-    const configPath = writeLinkFile(cwd, linkFile);
+    writeLinkFile(cwd, linkFile);
     ignoreLinkFile(cwd);
 
-    logger.success(`Linked to project "${selected.project_name}"`);
-    logger.success(`Domain: ${selected.domain}`);
-    logger.verbose(`Config written at ${configPath}`);
+    logger.success(`Linked to project "${selected.project_name}".`);
+    logger.info(`  Domain:  ${selected.domain}`);
+    logger.hint(`  Config:  ${cwd}/${config.CONFIG_FILE} (added to .gitignore)`);
+    logger.hintCommand("pagex deploy");
 }
 
 async function initProject(args: InitArgs): Promise<void> {
@@ -179,7 +180,8 @@ async function initProject(args: InitArgs): Promise<void> {
     // --- Interactive ---
     const files = fs.readdirSync(cwd);
     if (files.length === 0) {
-        logger.warn("Directory is empty. Create a new project first.");
+        logger.warn("This directory is empty.");
+        logger.hint("Scaffold your app first, then run `pagex init` again.");
         return;
     }
 
@@ -207,14 +209,17 @@ async function initProject(args: InitArgs): Promise<void> {
     const detected = await detectFramework(cwd);
     const frameworks = Object.values(detected).flat();
     if (frameworks.length === 0) {
-        throw new ConfigError("No supported framework detected in this project.");
+        throw new ConfigError(
+            "No supported framework detected. Check that package.json (or requirements.txt/pyproject.toml) is present.",
+        );
     }
 
     const response = await prompts([
         {
             type: "text",
             name: "projectName",
-            message: "Enter your project name",
+            message: "Project name",
+            initial: frameworks[0]?.toLowerCase() ?? undefined,
             validate: (v: string) =>
                 v.trim().length === 0 ? "Project name cannot be empty" : true,
         },
@@ -226,7 +231,7 @@ async function initProject(args: InitArgs): Promise<void> {
     }
 
     await ensureLoggedIn();
-    await createProject(cwd, response.projectName as string);
+    await createProject(cwd, response.projectName.trim());
 }
 
 export const initCmd: CommandModule = {

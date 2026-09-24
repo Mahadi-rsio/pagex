@@ -71,20 +71,24 @@ export async function detectFramework(projectPath: string): Promise<Record<Frame
             detected.Other.push('Python Project');
         }
 
-        spinner.succeed("Framework detection complete!");
+        spinner.succeed("Framework detection complete");
 
         // Log only categories with detected frameworks
+        const found: string[] = [];
         Object.entries(detected).forEach(([category, list]) => {
             if (list.length > 0) {
-                logger.info(`${category}: ${list[0]}`);
+                found.push(`${category}: ${list.join(", ")}`);
             }
         });
+        for (const line of found) {
+            logger.verbose(line);
+        }
 
         return detected;
 
     } catch (err) {
-        spinner.fail("Error detecting frameworks");
-        logger.error(String(err));
+        spinner.fail("Could not detect frameworks");
+        logger.verbose(String(err));
         return {
             Frontend: [],
             Backend: [],

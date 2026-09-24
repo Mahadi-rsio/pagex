@@ -6,6 +6,7 @@ import { saveToken } from "../utils/session.js";
 import { jwtClient } from "better-auth/client/plugins";
 import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
+import { AuthError } from "../utils/errors.js";
 
 export const authClient = createAuthClient({
     baseURL: config.AUTH_BASE_URL,
@@ -15,8 +16,16 @@ export const authClient = createAuthClient({
     ],
 });
 
-export async function deviceLogin() {
-    const spinner = logger.spinner("Requesting device authorization").start();
+function formatUserCode(code: string): string {
+    const clean = code.replace(/\s+/g, "").toUpperCase();
+    return clean.length === 8 ? `${clean.slice(0, 4)}-${clean.slice(4)}` : clean;
+}
+
+/** Give up waiting for the user to authorize after this long so the CLI never hangs. */
+const MAX_POLL_MS = 15 * 60 * 1000;
+
+export async function deviceLogin(): Promise<string> {
+    const spinner = logger.spinner("Requesting device authorization…").start();
 
     const { data, error } = await authClient.device.code({
         client_id: config.CLIENT_ID,
@@ -24,11 +33,13 @@ export async function deviceLogin() {
     });
 
     if (error || !data) {
-        spinner.fail("Failed to start auth");
-        throw new Error(error?.error_description);
+        spinner.fail("Failed to start authorization");
+        throw new AuthError(
+            error?.error_description ?? "The auth server did not return a verification code.",
+        );
     }
 
-    spinner.stop();
+    spinner.succeed("Authorization started");
 
     const {
         device_code,
@@ -43,14 +54,16 @@ export async function deviceLogin() {
     // actually configured via PAGEX_AUTH_URL.
     const publicUrl = toPublicAuthUrl(verification_uri_complete || verification_uri);
 
-    console.log(chalk.cyan("\nDevice Authorization"));
-    console.log(chalk.yellow(`Code: ${user_code}`));
-    console.log(chalk.green(`Visit: ${publicUrl}\n`));
+    console.log("");
+    console.log(chalk.bold(chalk.yellow("  1. Enter this code on the authorization page:")));
+    console.log(chalk.bgYellow(chalk.black(`  ${formatUserCode(user_code)}  `)));
+    console.log("");
+    console.log(chalk.bold(chalk.yellow("  2. Then visit (opening your browser automatically):")));
+    console.log(chalk.cyan(`    ${publicUrl}`));
+    console.log("");
 
     await open(publicUrl).catch(() => {
-        logger.warn(
-            "Could not open a browser automatically — open the URL above manually.",
-        );
+        logger.hint(`Unable to open a browser automatically — open the URL above manually.`);
     });
 
     return pollForToken(device_code, interval);
@@ -69,51 +82,59 @@ function toPublicAuthUrl(url: string): string {
     }
 }
 
-async function pollForToken(deviceCode: string, interval: number) {
-    const spinner = logger.spinner("Waiting for authorization").start();
-
+async function pollForToken(deviceCode: string, interval: number): Promise<string> {
+    const spinner = logger.spinner("Waiting for authorization…").start();
+    const startedAt = Date.now();
     let pollingInterval = interval;
 
     return new Promise<string>((resolve, reject) => {
-        const poll = async () => {
+        const fail = (message: string): void => {
+            spinner.fail(message);
+            reject(new AuthError(message));
+        };
+
+        const poll = async (): Promise<void> => {
+            if (Date.now() - startedAt > MAX_POLL_MS) {
+                fail(
+                    "Timed out waiting for authorization. Run `pagex login` to try again.",
+                );
+                return;
+            }
+
             const { data, error } = await authClient.device.token({
                 grant_type: "urn:ietf:params:oauth:grant-type:device_code",
                 device_code: deviceCode,
                 client_id: config.CLIENT_ID,
             });
 
-
-
             if (data?.access_token) {
-                spinner.succeed("Authorization successful");
+                spinner.succeed("Authorization successful — you're logged in!");
+                saveToken(data.access_token);
                 resolve(data.access_token);
-                saveToken(data.access_token)
                 return;
             }
 
             if (error) {
                 switch (error.error) {
                     case "authorization_pending":
+                        // still waiting — keep polling
                         break;
 
                     case "slow_down":
                         pollingInterval += 5;
-                        spinner.text = `Slowing down polling (${pollingInterval}s)`;
+                        spinner.text = `Slow down requested — polling every ${pollingInterval}s`;
                         break;
 
                     case "access_denied":
-                        spinner.fail("User denied access");
-                        reject("Access denied");
+                        fail("Authorization denied. Run `pagex login` to try again.");
                         return;
 
                     case "expired_token":
-                        spinner.fail("Device code expired");
-                        reject("Token expired");
+                        fail("The verification code expired. Run `pagex login` to start again.");
                         return;
 
                     default:
-                        spinner.fail(error.error_description);
-                        reject(error.error_description);
+                        fail(error.error_description ?? "Device authorization failed.");
                         return;
                 }
             }

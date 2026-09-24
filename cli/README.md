@@ -38,7 +38,7 @@ pagex deploy --build
 | `pagex logout` | Clear the saved session |
 | `pagex status` | Show the current login status |
 | `pagex init` | Create a new project or link an existing one (`pagex.json`) |
-| `pagex deploy` | Deploy build output (uploads originals; server optimizes at commit) |
+| `pagex deploy` | Deploy build output — prints the live site URL when done |
 | `pagex pages` | List projects on your account |
 
 ### `pagex init` options
@@ -52,7 +52,7 @@ pagex deploy --build
 
 | Option | Description |
 |--------|-------------|
-| `--build` | Run the project's `build` script before uploading |
+| `-b, --build` | Run the project's `build` script before uploading |
 
 ### Global options
 
@@ -67,7 +67,9 @@ pagex deploy --build
 
 1. **Login** — Device-flow auth; the session token is stored in `~/.pagex.session.json`.
 2. **Init** — Detects the framework, then either creates a project via the API or links an existing one. Writes `pagex.json` in the project root and adds it to `.gitignore`.
-3. **Deploy** — Requires login, finds an existing build folder (`dist`, `build`, `.next`, or `out`), validates the manifest locally (≤100 files, ≤50 MB/file, ≤250 MB total), then **prepare → presign → PUT originals → commit**. Pass `--build` to run the project's build script first. The CLI uploads original files only; Brotli/Gzip and WebP run on the server at commit.
+3. **Deploy** — Requires login, finds an existing build folder (`dist`, `build`, `.next`, or `out`), validates the manifest locally (≤100 files, ≤50 MB/file, ≤250 MB total), then **prepare → presign → PUT originals → commit**. Pass `--build` to run the project's build script first. The CLI uploads original files only; Brotli/Gzip and WebP run on the server at commit. On success it prints the live site URL (`https://<domain>`).
+
+The build step automatically uses the project's own package manager — pnpm, yarn, bun, or npm (detected from your lockfile).
 
 ## Configuration
 
