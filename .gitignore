@@ -54,6 +54,8 @@ local.env
 services/*/node_modules/
 services/*/dist/
 services/*/.next/
+.open-next/
+services/*/.open-next/
 services/*/out/
 
 # Shared packages

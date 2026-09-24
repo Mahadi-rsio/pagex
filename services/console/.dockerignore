@@ -1,6 +1,7 @@
 node_modules
 .npm
 .next
+.open-next
 out
 dist
 Dockerfile

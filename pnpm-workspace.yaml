@@ -1,3 +1,9 @@
 packages:
   - "packages/*"
   - "services/*"
+allowBuilds:
+  '@tailwindcss/oxide': false
+  better-sqlite3: false
+  esbuild: false
+  sharp: false
+minimumReleaseAge: 0
