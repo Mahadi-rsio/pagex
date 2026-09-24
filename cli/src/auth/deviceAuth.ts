@@ -59,7 +59,7 @@ export async function deviceLogin(): Promise<string> {
     console.log(chalk.bgYellow(chalk.black(`  ${formatUserCode(user_code)}  `)));
     console.log("");
     console.log(chalk.bold(chalk.yellow("  2. Then visit (opening your browser automatically):")));
-    console.log(chalk.cyan(`    ${publicUrl}`));
+    console.log(chalk.green(`    ${publicUrl}`));
     console.log("");
 
     await open(publicUrl).catch(() => {

@@ -22,10 +22,10 @@ export function getLogLevel(): LogLevel {
 // ---------------------------------------------------------------------------
 
 export const logger = {
-    /** Plain informational output (cyan tint). */
+    /** Plain informational output (green tint). */
     info(message: string): void {
         if (currentLevel === "silent") return;
-        console.log(chalk.cyan(message));
+        console.log(chalk.green(message));
     },
 
     /** Success confirmation (green + checkmark). */
@@ -69,7 +69,7 @@ export const logger = {
      */
     step(step: number, message: string): void {
         if (currentLevel === "silent") return;
-        console.log(`${chalk.bold(chalk.cyan(`${step}.`))} ${message}`);
+        console.log(`${chalk.bold(chalk.green(`${step}.`))} ${message}`);
     },
 
     /** Render a subtle "next step" hint, e.g. `  next: $ pagex deploy`. */
@@ -85,6 +85,6 @@ export const logger = {
             // return a no-op spinner
             return ora({ text, isSilent: true });
         }
-        return ora({ text, color: "cyan", spinner: "dots" });
+        return ora({ text, color: "green", spinner: "dots" });
     },
 };

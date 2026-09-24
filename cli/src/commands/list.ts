@@ -11,16 +11,14 @@ function renderTable(projects: Pages[]): string {
     );
 
     const header =
-        chalk.bold(chalk.cyan("Project".padEnd(nameWidth))) +
+        chalk.bold(chalk.green("Project".padEnd(nameWidth))) +
         "  " +
-        chalk.bold(chalk.cyan("Domain".padEnd(28 - nameWidth))) +
-        "  " +
-        chalk.bold(chalk.cyan("Plan"));
+        chalk.bold(chalk.green("Domain".padEnd(28 - nameWidth)));
 
     const rows = projects.map((p) => {
         const name = p.project_name.padEnd(nameWidth);
         const domain = p.domain.padEnd(28 - nameWidth);
-        return `${name}  ${domain}  ${p.plan}`;
+        return `${name}  ${domain}`;
     });
 
     return [header, ...rows].join("\n");

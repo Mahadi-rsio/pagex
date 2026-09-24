@@ -61,10 +61,10 @@ const cli = yargs(hideBin(process.argv))
     .epilogue(
         [
             chalk.dim("\nRun "),
-            chalk.cyan("pagex <command> --help"),
+            chalk.green("pagex <command> --help"),
             chalk.dim(" for details on any command."),
             chalk.dim("\nDocs: "),
-            chalk.cyan("https://pagex.cloud"),
+            chalk.green("https://pagex.cloud"),
         ].join(""),
     );
 

@@ -111,7 +111,7 @@ function printCommitSummary(result: CommitResponse, domain?: string): void {
 
     logger.success(`\n${title}`);
     if (domain) {
-        logger.info(`  ${chalk.cyan("URL")}: ${chalk.underline(chalk.cyan(siteUrl(domain)))}`);
+        logger.info(`  ${chalk.green("URL")}: ${chalk.underline(chalk.green(siteUrl(domain)))}`);
     }
     logger.hint("Deployment summary:");
 
