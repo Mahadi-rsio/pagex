@@ -49,14 +49,17 @@ pnpm run dev:console
 
 # Start blob server (requires Go)
 cd services/blob-server
-go run .
+go run ./cmd/caddy
 ```
 
 ### Use Docker Compose for Full Stack
 
 ```bash
-# Copy default environment
-docker compose -f infrastructure/docker/compose/docker-compose.yml up -d
+# Copy the default environment template to the repo root
+cp .env.example .env
+
+# Start the full stack from the root compose file
+docker compose --env-file .env up -d
 
 # View logs
 docker compose logs -f
@@ -104,14 +107,14 @@ cd services/blob-server
 go mod download
 
 # Start development server
-go run .
+go run ./cmd/caddy
 
-# Or build and run
-xcaddy build --with github.com/Mahadi-rsio/pagex/services/blob-server=. --output ./caddy
+# Or build and run (from services/blob-server)
+pnpm run build
 ./caddy run --config Caddyfile
 
 # Run tests
-go test -v ./...
+go test -v ./src/...   # or pnpm test:blob-server
 ```
 
 **Development URL:** http://localhost:80
@@ -144,8 +147,8 @@ pnpm run db:generate
 The project uses Docker Compose for local development with all services.
 
 ```bash
-# Start all services
-docker compose -f infrastructure/docker/compose/docker-compose.yml up -d
+# Start all services (from repo root; root compose file)
+docker compose --env-file .env up -d
 
 # Start specific services
 docker compose up -d api db redis
@@ -167,9 +170,8 @@ docker compose down -v
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.yml` | Main development configuration |
-| `docker-compose.dev.yml` | Development overrides (optional) |
-| `docker-compose.prod.yml` | Production configuration (optional) |
+| `docker-compose.yml` | Main development configuration (repo root) |
+| `docker-compose.prod.yml` | Production configuration (GHCR images, no build) |
 
 ### Building Docker Images
 
@@ -283,7 +285,7 @@ The API service supports hot reloading in development:
 pnpm run dev:api
 ```
 
-Changes to `services/api/src/` will automatically restart the server.
+Changes to `services/api/` (top-level `controllers/`, `services/`, `routes/`, etc.) will automatically restart the server.
 
 ### Console Service
 
@@ -301,7 +303,7 @@ The blob server requires manual restart for Go code changes:
 
 ```bash
 # In one terminal
-go run .
+go run ./cmd/caddy
 
 # In another terminal, watch for changes and restart
 # (or use a file watcher like nodemon for Go)
@@ -337,7 +339,7 @@ pnpm run test
 node test.js
 
 # Or with specific token
-CLOUDISY_TOKEN=your-token node test.js
+PAGEX_TOKEN=your-token node test.js
 
 # Skip build step
 SKIP_BUILD=1 node test.js
@@ -366,8 +368,8 @@ pnpm run db:studio
 ### Database Schema
 
 Database schemas are defined in:
-- **API Service:** `services/api/drizzle/schema.ts`
-- **Console:** `services/console/drizzle/schema.ts`
+- **API Service:** `services/api/infrastructure/db/schema.ts`
+- **Console:** `services/console/src/db/schema.ts` (re-exported from modules)
 
 ### Multiple Databases
 
@@ -392,8 +394,7 @@ Environment variables are loaded from multiple sources:
 
 | File | Purpose |
 |------|---------|
-| `.env` | Default environment variables |
-| `infrastructure/configs/.env` | Infrastructure defaults |
+| `.env` | Default environment variables (copy from `.env.example`) |
 | `services/*/.env` | Service-specific overrides |
 
 ### Configuration Validation
@@ -401,7 +402,7 @@ Environment variables are loaded from multiple sources:
 Each service validates its configuration using Zod schemas:
 
 ```typescript
-// services/api/src/config.ts
+// services/api/infrastructure/config.ts
 import { z } from 'zod';
 
 const ConfigSchema = z.object({
@@ -423,38 +424,39 @@ function getConfig(): Config {
 
 ```
 services/api/
-├── src/
-│   ├── controllers/      # HTTP controllers
-│   ├── services/        # Business logic
-│   ├── infrastructure/  # External services (DB, cache, storage)
-│   ├── routes/          # Express routes
-│   ├── middleware/      # Express middleware
-│   ├── validators/      # Request validation
-│   ├── utils/           # Utility functions
-│   ├── constants/       # Constants
-│   ├── types/           # TypeScript types
-│   ├── app.ts           # Express app setup
-│   └── server.ts        # Server entrypoint
-├── drizzle/            # Database migrations
-├── Dockerfile          # Docker configuration
-└── package.json        # Package configuration
+├── server.ts               # Server entrypoint
+├── app.ts                  # Express app setup
+├── constants/              # Constants
+├── controllers/            # HTTP controllers
+├── services/               # Business logic
+├── infrastructure/         # External services (DB at infrastructure/db/schema.ts, cache, storage)
+├── routes/                 # Express routes
+├── middleware/             # Express middleware
+├── validators/             # Request validation
+├── utils/                  # Utility functions
+├── drizzle/                # Database migrations
+├── Dockerfile              # Docker configuration
+└── package.json            # Package configuration
 ```
 
 ### Blob Server
 
 ```
 services/blob-server/
-├── src/
-│   ├── cache/          # LRU cache implementation
-│   ├── handler/        # HTTP handlers
-│   ├── plugin/         # Caddy plugin
-│   ├── analytics/      # Analytics middleware
-│   └── storage/        # S3/MinIO clients
-├── Caddyfile           # Caddy configuration
-├── go.mod              # Go module
-├── go.sum              # Go dependencies
-├── Dockerfile          # Docker configuration
-└── package.json        # Package scripts
+├── cmd/caddy/main.go      # Caddy entrypoint
+├── src/                   # static_s3 plugin source
+│   ├── plugin.go          # Caddy plugin
+│   ├── handler.go         # HTTP handlers / serving
+│   ├── blob_fetch.go      # MinIO blob fetch
+│   ├── manifest.go        # Manifest resolution
+│   ├── manifest_cache.go  # Manifest caching (LRU → PostgreSQL)
+│   ├── cache.go           # Site/path cache (LRU → PostgreSQL)
+│   └── sql_helpers.go     # PostgreSQL helpers
+├── vector/                # Vector log aggregation config
+├── Caddyfile              # Caddy configuration
+├── go.mod / go.sum        # Go module
+├── Dockerfile             # Docker configuration
+└── package.json           # Package scripts
 ```
 
 ### Console Service

@@ -1,10 +1,10 @@
-# Cloudisy — Deploy Pipeline Reference
+# PageX — Deploy Pipeline Reference
 
 ---
 
 ## Cloud builds & BullMQ workers removed
 
-- **BullMQ has been removed** from the API. There are no `build.worker` / `dlq.worker` processes and no `cloudisy-cloud-builds` / `cloudisy-cloud-builds-dlq` queues.
+- **BullMQ has been removed** from the API. There are no `build.worker` / `dlq.worker` processes and no build/worker queues.
 - **Cloud builds (git-repo → Docker build) are removed and postponed.** The `build-env`, `build-env-loader`, `build-worker`, and `docker-dind` Compose services, the `builds` API routes, and the seccomp profile have all been removed.
 - **CLI deploy is the only deploy path.** Clients call `/api/deploy/prepare|presign|commit`; the API uploads/validates content-addressed blobs and activates a manifest via the shared commit path below.
 
@@ -14,7 +14,7 @@ Historical notes: the ZIP upload worker and the sync worker (analytics) were als
 
 ## Commit path (`commitBlobTreeDeploy`)
 
-**File:** `services/deploy.service.ts`
+**File:** `services/api/services/deploy.service.ts`
 
 Used by the CLI commit path. Serialized per page by Redis `deploy:lock:{pageId}` (DB3).
 
@@ -40,7 +40,7 @@ No MinIO `tenant/` copy. Caddy resolves subdomain → site_id → active deploym
 
 ## Rollback (`rollbackToDeployment`)
 
-**File:** `services/deployment.service.ts`
+**File:** `services/api/services/deployment.service.ts`
 
 1. Load deployment (tenant-scoped); require blob tree
 2. Acquire `deploy:lock:{pageId}` (409 if a deploy is in progress)
@@ -58,7 +58,7 @@ No MinIO `tenant/` copy. Caddy resolves subdomain → site_id → active deploym
 
 ## Background GC (`runDeploymentGC`)
 
-- **File:** `services/gc.service.ts`
+- **File:** `services/api/services/gc.service.ts`
 - **Constant:** `DEPLOYMENT_RETENTION = 10` (inactive deployments kept)
 
 ```
@@ -107,7 +107,7 @@ ACTIVE deployment MUST have finalized manifest (enforced by CHECK constraint)
 
 ---
 
-## MinIO Helpers (`services/infrastructure/storage/minio.ts`)
+## MinIO Helpers (`services/api/infrastructure/storage/minio.ts`)
 
 | Function | Description |
 |----------|-------------|
@@ -115,14 +115,14 @@ ACTIVE deployment MUST have finalized manifest (enforced by CHECK constraint)
 | `objectMetaForPath(path, contentType?, contentEncoding?)` | PutObject metadata |
 | `deleteBlobObjects(hashes)` | Batch delete; returns successfully deleted hashes |
 | `ensureSharedBucket()` | Idempotent bucket create |
-| `liveSitePrefix(siteId)` | Legacy `tenant/{siteId}/` (migration script only) |
+| `manifestObjectKey(deploymentId)` | `manifests/{deploymentId}.json` |
 | `SHARED_BUCKET` / `minioClient` | Env-driven bucket + client |
 
 ---
 
 ## Idempotency Keys
 
-**File:** `services/idempotency.service.ts`
+**File:** `services/api/services/idempotency.service.ts`
 
 | Function | Purpose |
 |----------|---------|

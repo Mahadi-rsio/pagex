@@ -1,4 +1,4 @@
-# Cloudisy — Database Schema & Redis Keys
+# PageX — Database Schema
 
 ---
 
@@ -44,7 +44,7 @@ createdAt        TIMESTAMP NOT NULL DEFAULT now()
 ---
 
 ### `site_daily_stats`
-Per-site daily analytics written by the Caddy plugin.
+Per-site daily analytics written by the API usage-ingest service (fed by Vector).
 
 ```sql
 id                  UUID    PRIMARY KEY
@@ -59,7 +59,7 @@ INDEX: idx_site_daily_stats_site_date ON (site_id, date)
 ---
 
 ### `bandwidth_usage_hourly`
-Billing **usage** aggregate (bandwidth only), written by the Caddy plugin flush every ~5 min.
+Billing **usage** aggregate (bandwidth only), written by the API usage-ingest service (fed by Vector).
 Hourly buckets are additive (`ON CONFLICT ... DO UPDATE SET bytes = bytes + EXCLUDED.bytes`).
 
 ```sql
@@ -74,13 +74,13 @@ INDEX: idx_bandwidth_usage_tenant_bucket ON (tenant_id, bucket)
 INDEX: idx_bandwidth_usage_site_bucket   ON (site_id, bucket)
 ```
 
-Tenant id is resolved at flush time via `INSERT ... SELECT p.tenant_id FROM pages p WHERE p.site_id = $1`
+Tenant id is resolved at ingest time via `INSERT ... SELECT p.tenant_id FROM pages p WHERE p.site_id = $1`
 (no per-request DB lookup). **Requests are not metered here** — bandwidth only.
 
 ---
 
 ### `service_metrics_hourly`
-Operational **metrics** (separate from billing usage), written by the same Caddy flush.
+Operational **metrics** (separate from billing usage), written by the API usage-ingest service (fed by Vector).
 
 ```sql
 site_id         UUID      FK → sites(id) ON DELETE CASCADE
@@ -215,6 +215,17 @@ INDEX: idx_idempotency_keys_resource ON (resource_type, resource_id)
 
 ---
 
+### `usage_ingest_dedup`
+Idempotency ledger for the usage-ingest pipeline. The API's ingest service applies pre-aggregated records
+transactionally and uses this table to deduplicate records from Vector's repeated POSTs.
+
+```sql
+ingest_id   TEXT        PRIMARY KEY
+applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+---
+
 ## Drizzle Migration Files
 
 | File | Contents |
@@ -231,6 +242,7 @@ INDEX: idx_idempotency_keys_resource ON (resource_type, resource_id)
 | `drizzle/0009_db_invariants.sql` | DB invariants indexes (hand-written) |
 | `drizzle/0010_idempotency_status.sql` | idempotency_keys: status column + index (hand-written, no snapshot) |
 | `drizzle/0011_red_true_believers.sql` | `bandwidth_usage_hourly` + `service_metrics_hourly` tables |
+| `drizzle/0012_normal_vulcan.sql` | `usage_ingest_dedup` idempotency ledger table |
 
 ```bash
 npm run gen       # drizzle-kit generate
@@ -249,15 +261,10 @@ npm run migrate   # drizzle-kit migrate (also on compose up)
 | `manifest:{deployment_id}` | 0 | JSON manifest | 24 h | deploy / rollback | Caddy (L1 → Redis → MinIO) |
 | `deploy:token:{token}` | 3 | JSON | 10 min | prepareDeploy | presign / commit |
 | `deploy:lock:{pageId}` | 3 | String (holder id) | 10 min prepare / ~6 min commit | prepare / commit / rollback | prepare / commit / rollback |
-| `stats:*` | 3 | counters | — | blob-server analytics | blob-server flush → `site_daily_stats` |
 | `db_cache:{domain}` | 3 | JSON | 15 min | page.service | page.service |
-| `metrics:{siteId}:{YYYYMMDDHHmm}` | 0 | Hash | 3 h | blob-server (`request/status/bytes/cache/latency`) | blob-server flush → `service_metrics_hourly` |
-| `usage:bw:{siteId}:{YYYYMMDDHH}` | 0 | String (INCRBY bytes) | 48 h | blob-server (bandwidth only) | blob-server flush → `bandwidth_usage_hourly`; API live reads |
 
 **Billing unit is decimal GB (1 GB = 1,000,000,000 bytes).** Only bandwidth is metered;
-request counts are unlimited and never quota-checked. The API reads live usage from the
-DB0 `usage:bw:*` counters plus flushed rows; flushed counters are deleted (GetDel) so
-nothing is double-counted.
+request counts are unlimited and never quota-checked.
 
 **BullMQ was removed** — there are no queue keys. `deploy:lock:{pageId}` (DB3) is the only lock mechanism.
 
@@ -266,7 +273,7 @@ nothing is double-counted.
 ## ORM Import Pattern
 
 ```typescript
-import { pages, sites, builds, deployments, blobs, blobTreeEntries, idempotencyKeys } from '../infrastructure/db/schema.js'
+import { pages, sites, builds, deployments, blobs, blobTreeEntries, idempotencyKeys, usageIngestDedup } from '../infrastructure/db/schema.js'
 import { db } from '../infrastructure/db/db.js'
 import { eq, and, desc, ne, inArray, notInArray } from 'drizzle-orm'
 

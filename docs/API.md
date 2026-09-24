@@ -1,8 +1,8 @@
-# Cloudisy — Complete API Reference
+# PageX — Complete API Reference
 
 > All endpoints are prefixed with the server root (default: `http://localhost:3000`).
 > All protected endpoints require: `Authorization: Bearer <JWT>`
-> The JWT is issued by next-web Better Auth (console on `:3080`). The payload must contain `id` (tenant ID) and `name` (tenant name). Express verifies via `AUTH_JWKS_URL` (Compose: `http://next_web:3000/api/auth/jwks`).
+> The JWT is issued by the console Better Auth. The payload must contain `id` (tenant ID) and `name` (tenant name). Express verifies via `AUTH_JWKS_URL` (Compose: `http://console:3001/api/auth/jwks`).
 
 ---
 
@@ -15,6 +15,47 @@ No auth required.
 ```json
 { "message": "ok" }
 ```
+
+---
+
+## Internal — Usage Ingest
+
+### `POST /internal/usage/ingest`
+**Internal-only** endpoint used by the Vector service to push pre-aggregated hourly usage records. Mounted at `/internal` in `app.ts` **before** the global JSON body parser and the public rate limiter; it reads the raw body itself via `express.text({ limit: '50mb', type: () => true })`.
+
+**Auth:** Bearer token compared constant-time against `USAGE_INGEST_TOKEN` (NOT the public JWT `authMiddleware`).
+- `401` if the token is missing or wrong.
+- `500` if `USAGE_INGEST_TOKEN` is not configured.
+
+**Body:** A JSON array **or** newline-delimited JSON (NDJSON) of pre-aggregated hourly records. Use `Content-Type: application/x-ndjson` for NDJSON.
+
+Each record fields:
+
+| Field | Notes |
+|-------|-------|
+| `ingest_id` | Deterministic idempotency key (string) |
+| `site_id` | Site UUID |
+| `bucket` | ISO hour, e.g. `"2026-09-24T14:00:00.000Z"` |
+| `bandwidth_bytes` | Bandwidth in bytes |
+| `requests` | Request count |
+| `status_2xx` / `status_3xx` / `status_4xx` / `status_5xx` | Per-status-class counts |
+| `cache_hits` / `cache_misses` | Cache counts |
+| `latency_sum_ms` | Sum of latencies in ms |
+| `latency_le_50` / `latency_le_100` / `latency_le_250` / `latency_le_500` / `latency_le_1000` / `latency_le_2500` | Latency histogram buckets |
+
+**Response `200`:**
+```json
+{ "ok": true, "applied": <n>, "skipped": <n> }
+```
+
+| Status | Meaning |
+|--------|---------|
+| `200` | `{ ok: true, applied, skipped }` |
+| `400` | `"Empty body"` or `"No valid records in payload"` |
+| `401` | Missing/wrong bearer token |
+| `500` | `"Failed to ingest usage"` or `USAGE_INGEST_TOKEN` not configured |
+
+Source: `services/api/routes/internal.routes.ts`, `services/api/controllers/usage-ingest.controller.ts`, `services/api/services/usage-ingest.service.ts`.
 
 ---
 
@@ -35,7 +76,7 @@ Validation: `project_name` must be ≥ 3 characters.
   "id": "<page_uuid>",
   "site_id": "<site_uuid>",
   "tenant_id": "HjwPwRE2...",
-  "tenant_name": "cloudisy",
+  "tenant_name": "Example Tenant",
   "plan": "free",
   "domain": "my-site.localhost",
   "project_name": "my-site",
@@ -135,7 +176,7 @@ Validate the file manifest, check which blobs already exist, issue a 10-minute d
 
 Blocked: `.env`, executables, archives (zip/tar/gz/…), and MIME/extension mismatches.
 
-**Response `409`:** `{ "error": "A deployment is already in progress for this page" }` — another prepare, commit, cloud-build commit, or rollback holds `deploy:lock:{pageId}`.
+**Response `409`:** `{ "error": "A deployment is already in progress for this page" }` — another prepare, commit, or rollback holds `deploy:lock:{pageId}`.
 
 ---
 

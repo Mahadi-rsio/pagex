@@ -1,292 +1,194 @@
-# PageX - Multi-Tenant Static Site Hosting Platform
+# PageX — Multi-Tenant Static Site Hosting Platform
 
-A scalable pnpm monorepo for hosting multi-tenant static sites with content-addressed blob storage, deployment manifests, automatic compression/optimization, and instant deployments.
+A pnpm monorepo for hosting multi-tenant static sites with content-addressed blob storage, deployment manifests, automatic compression/optimization, instant deployments, and a Vector-powered usage/metrics pipeline.
 
 ---
 
-## 📚 Complete Project Index & Directory Tree
-
-PageX is organized as a modular pnpm workspace monorepo. Below is the complete index of every service, package, infrastructure component, script, and documentation file in the repository:
+## Repository Layout
 
 ```
 pagex/
-├── .agents/                      # AI assistant skills & configurations
-│   └── skills/                   # Specialized agent skills (caveman, review, commit, etc.)
-├── docs/                         # Comprehensive system documentation
-│   ├── SCHEMA.md                 # Database schema documentation
-│   ├── API.md                    # REST API endpoints & contracts
-│   ├── RULES.md                  # Development rules & guidelines
-│   ├── WORKERS.md                # Deploy commit / rollback / GC reference
-│   ├── development.md            # Local development guide
-│   ├── INFRASTRUCTURE.md         # Infrastructure & deployment guide
-│   ├── PROJECT.md                # Project overview & roadmap
-│   ├── SKILL.md                  # Agent skill definitions
-│   └── architecture.md           # System architecture deep dive
-├── infrastructure/               # Infrastructure as Code (IaC) & Configs
-│   ├── certs/                    # SSL/TLS certificates (cert.pem, key.pem)
-│   ├── configs/                  # Service & infrastructure configuration files
-│   │   ├── .env                  # Docker Compose environment template
-│   │   ├── caddy/                # Caddy server configurations
-│   │   ├── databases/            # Database initialization scripts
-│   │   └── config/               # Caddyfiles, migrator Dockerfiles, Drizzle configs
-│   └── docker/                   # Docker setups
-│       └── compose/              # Docker Compose multi-service stacks (docker-compose.yml)
-├── packages/                     # Shared monorepo packages (reusable libraries)
-│   ├── config/                   # Shared configuration management & schemas (@pagex/config)
-│   ├── types/                    # Shared TypeScript interfaces & API contracts (@pagex/types)
-│   └── utils/                    # Shared utility functions (validation, crypto, file, logging) (@pagex/utils)
-├── services/                     # Core independent microservices
-│   ├── api/                      # Main Express backend REST API (@pagex/api)
-│   │   ├── src/                  # TypeScript source code (site/deployment management, auth)
-│   │   ├── Dockerfile            # Multi-stage production Docker build & migrator target
-│   │   └── package.json          # API service dependencies & scripts
-│   ├── blob-server/              # High-performance Caddy server with static_s3 plugin (@pagex/blob-server)
-│   │   ├── src/                  # Go source code for custom Caddy static_s3 plugin & cache engine
-│   │   ├── Dockerfile            # Go + Caddy multi-stage builder Dockerfile
-│   │   ├── Caddyfile             # Caddy routing, caching, and compression rules
-│   │   └── package.json          # Package management for blob-server
-│   └── console/                  # Next.js web dashboard & console app (@pagex/console)
-│       ├── src/                  # Next.js App Router source (auth, projects, storage, settings)
-│       │   ├── app/              # App router pages, API routes, and proxy handlers
-│       │   ├── components/       # UI components (shadcn/ui library, console views, skeletons)
-│       │   ├── db/               # Drizzle ORM schema & client definitions
-│       │   ├── lib/              # API client, mappers, deployment utilities
-│       │   ├── modules/          # Authentication module (Better Auth integration)
-│       │   └── store/            # Zustand state stores
-│       ├── Dockerfile            # Next.js production Docker build
-│       ├── Dockerfile.migrator   # Database migrator Dockerfile for Better Auth / console DB
-│       └── package.json          # Console dependencies & scripts
-├── scripts/                      # Global orchestration scripts
-│   └── docker.sh                 # Robust Docker Compose wrapper (env validation, service shortcuts)
-├── .env                          # Local environment variables template
-├── .env.example                  # Environment variables example file
-├── Caddyfile                     # Root Caddy reverse proxy configuration
-├── package.json                  # Root package.json defining pnpm workspaces & scripts
-└── pnpm-workspace.yaml           # pnpm workspace package globs
+├── services/
+│   ├── api/                        # Express 5 backend (ESM)
+│   │   ├── server.ts               # entrypoint
+│   │   ├── controllers/ services/ routes/ validators/ middleware/
+│   │   ├── infrastructure/         # db (schema.ts), cache (redis), storage (minio)
+│   │   ├── drizzle/                # committed migrations
+│   │   └── Dockerfile
+│   ├── blob-server/                # Go Caddy server + static_s3 plugin
+│   │   ├── src/                    # handler, manifest, blob_fetch, cache (LRU→PostgreSQL)
+│   │   ├── vector/                 # vector.yaml: access-log aggregation → API ingest
+│   │   ├── Caddyfile / Dockerfile / cmd/caddy
+│   │   └── README.md               # blob-server design docs
+│   ├── console/                    # Next.js console (Better Auth, Drizzle, Zustand, shadcn/ui)
+│   │   └── AGENTS.md               # read before touching the console
+│   └── packages/                   # @pagex/{config,types,utils} (workspace-shared)
+├── cli/                            # `pagex` CLI — init / deploy / status
+├── docker-compose.yml              # dev stack (api, blob-server, vector, console, db, redis)
+├── docker-compose.prod.yml         # production (GHCR images, no build sections)
+├── Caddyfile                       # reverse proxy + static_s3 site serving + console :3080
+├── .env.example                    # env template (copy to .env)
+├── docs/                           # architecture docs (SCHEMA, API, RULES, WORKERS, …)
+└── AGENTS.md                       # repo conventions for AI assistants
 ```
 
 ---
 
-## 🏗️ Architecture & Data Flow
+## Architecture & Data Flow
 
-PageX combines a Next.js control panel, an Express management API, a custom Caddy blob-serving plugin in Go, and shared infrastructure (PostgreSQL, Redis, MinIO/S3).
+PageX combines a Next.js control panel, an Express management API, a custom Caddy blob-serving plugin written in Go, and shared infrastructure (PostgreSQL, Redis, MinIO/S3). Vector aggregates access logs into usage/metrics, which the API persists.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         PageX Platform                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
-│  │   Console    │    │ Blob Server  │    │     API      │       │
-│  │  (Next.js)   │    │   (Caddy)    │    │  (Express)   │       │
-│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘       │
-│         │                  │                  │                 │
-│         └──────────┬───────┘                  │                 │
-│                    │                          │                 │
-│         ┌──────────▼───────┐                  │                 │
-│         │     Caddy        │◄─────────────────┘                 │
-│         │ (Reverse Proxy)  │                                    │
-│         └──────────┬───────┘                                    │
-│                    │                                            │
-│         ┌──────────▼───────┐                                    │
-│         │     Client       │                                    │
-│         │    (Browser)     │                                    │
-│         └──────────────────┘                                    │
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │                  Shared Infrastructure                  │    │
-│  ├─────────────────┬─────────────────┬─────────────────────┤    │
-│  │   PostgreSQL    │      Redis      │        MinIO        │    │
-│  │   (Database)    │  (Cache/Queue)  │     (S3 Storage)    │    │
-│  └─────────────────┴─────────────────┴─────────────────────┘    │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+                ┌─────────────────────┐
+                │ Console (Next.js)   │  :3080
+                │  Better Auth / UI   │
+                └──────────┬──────────┘
+                           │
+      ┌────────────────────┼────────────────────┐
+      │                    │                    │
+┌─────▼──────┐      ┌──────▼──────┐      ┌──────▼──────┐
+│ API        │      │ Blob Server │      │   Vector    │
+│ (Express)  │      │ (Caddy Go)  │      │ aggregation │
+│ :3000      │      │ :80/:443    │      │             │
+└─────┬──────┘      └──────┬──────┘      └──────┬──────┘
+      │                    │                    │
+      │        access logs (caddy_logs) ◄───────│
+      │                    │                    │
+      │              POST /internal/usage/ingest
+      │                    │                    │
+┌─────┴────────────────────┴────────────────────┴──────┐
+│             Shared Infrastructure                     │
+│  PostgreSQL (source of truth)   MinIO (blobs)        │
+│  Redis (API cache/rate-limit/locks, deploy locks)    │
+└──────────────────────────────────────────────────────┘
 ```
 
----
+### Site serving path
+
+1. Caddy extracts the subdomain from the `Host` header → resolves `site_id`
+2. Path → blob hash via the active deployment's manifest (MinIO `manifests/{deploymentID}.json`, cached in PostgreSQL LRU)
+3. File streamed from MinIO `blobs/{sha256}` with correct `Content-Type`, precompressed `.br`/`.gz`/`.webp` variant negotiation, and range support
+4. Atomic activation: a deploy/rollback flips `is_active` in one DB transaction, then bumps the Redis site version to invalidate Caddy's L1 cache
 
 ### Metrics & usage pipeline
 
-Operational metrics and billing usage are **separate systems**:
+- **Caddy** writes JSON access logs (with `site_id`, `deployment_id`, `cache_hit`, `from_manifest`) to the shared `/var/log/caddy` volume (`caddy_logs`).
+- **Vector** reads those logs, aggregates per site + hour in ~30s windows, and POSTs pre-aggregated records to `POST /internal/usage/ingest` (bearer-token auth via `USAGE_INGEST_TOKEN`).
+- **API** applies each record transactionally into `bandwidth_usage_hourly` (billing), `service_metrics_hourly` (operational), and `site_daily_stats` (rollup), with idempotent dedup via the `usage_ingest_dedup` table (deterministic `ingest_id`).
 
-- **Metrics** (`service_metrics_hourly`, Redis `metrics:{siteId}:{YYYYMMDDHHmm}`) — requests, status classes, cache hit/miss, cumulative latency histogram. Never billed.
-- **Usage** (`bandwidth_usage_hourly`, Redis `usage:bw:{siteId}:{YYYYMMDDHH}`) — bandwidth only, metered in **decimal GB (1 GB = 1,000,000,000 bytes)**. Free = 100 GB/mo, Paid = 500 GB/mo. **Requests are unlimited and never quota-checked.**
+**Billing:** only **bandwidth** is metered, in decimal GB (1 GB = 1,000,000,000 bytes). **Requests are unlimited and never billed/quota-checked.**
 
-The Caddy blob-server is authoritative: it aggregates in Redis and flushes additive
-hour-bucket upserts to PostgreSQL every ~5 min (no per-request DB writes). New read
-endpoints live under `/api/v1/...` (`/sites/:id/usage`, `/sites/:id/metrics`,
-`/projects/:id/usage`, `/account/usage`, `/account/quota`). See `docs/SCHEMA.md` for
-table/key detail.
+See [`docs/`](docs/) for full detail.
 
 ---
 
-## 🚀 Getting Started & Prerequisites
+## Getting Started
 
 ### Prerequisites
-- **Docker & Docker Compose** — for the full local stack (recommended)
-- **pnpm** (v8+) — monorepo package manager
-- **Node.js** (v18+) — API and console development
-- **Go** (v1.20+) — blob-server (Caddy plugin) development
 
----
+- **Node.js 18+** and **pnpm** (8+) — monorepo package manager
+- **Go 1.20+** — blob-server (Caddy plugin)
+- **Docker & Docker Compose** — full local stack
+- **MinIO/S3** — external object storage (or a compose service)
 
-## 🐳 Quick Start: Docker Compose
-
-1. **Configure Environment:**
-   ```bash
-   cp infrastructure/configs/.env infrastructure/configs/.env.backup
-   # Edit infrastructure/configs/.env and set BETTER_AUTH_SECRET + S3 credentials
-   ```
-
-2. **Start the Full Stack:**
-   ```bash
-   # Using pnpm script helper
-   pnpm docker:up
-
-   # Or using the docker helper script directly
-   ./scripts/docker.sh up
-   ```
-
-3. **Verify Containers & Access:**
-   ```bash
-   pnpm docker:ps
-   ```
-   - **Console UI:** http://localhost:3080
-   - **API Service:** http://localhost:3000
-   - **PostgreSQL:** localhost:5432
-   - **Redis:** localhost:6379
-
----
-
-## 🛠️ Local Development
+### Quick start (Docker)
 
 ```bash
-# Install all monorepo dependencies
+cp .env.example .env       # fill in required values (see below)
+docker compose up -d       # api, blob-server, vector, console, db, redis
+```
+
+Wait for containers to be healthy, then:
+
+- **Console UI:** http://localhost:3080
+- **API:** http://localhost:3000
+- **PostgreSQL:** localhost:5432 (db `pagex`)
+- **Redis:** localhost:6379
+
+### Local development (no Docker)
+
+Run PostgreSQL, Redis, and MinIO separately, then:
+
+```bash
 pnpm install
+pnpm dev:api             # Express API (tsx watch server.ts)
+pnpm dev:console         # Next.js console
+pnpm dev:blob-server     # Go Caddy `go run ./cmd/caddy`
+```
 
-# Start individual services
-pnpm run dev:api
-pnpm run dev:console
-pnpm run dev:blob-server
+Set `IN_DOCKER_COMPOSE=0` in `.env` when running outside Docker so Redis/MinIO hostnames resolve to `localhost`.
 
-# Build all workspace packages and services
-pnpm run build
+---
 
-# Run tests and linters
-pnpm run test
-pnpm run lint
+## Required Environment Variables
 
-# Database migrations (API)
-pnpm run db:migrate
+Strictly required to run anything against infra (see `.env.example` for the full list):
+
+| Variable | Description |
+|---|---|
+| `BETTER_AUTH_SECRET` | Better Auth secret (32+ hex chars — `openssl rand -hex 32`) |
+| `BASE_DOMAIN` | Base domain for site subdomains (`localhost` for local dev) |
+| `DB` / `DIRECT_DB` / `NEXT_WEB_DATABASE_URL` | PostgreSQL connection URLs |
+| `REDIS_URL` | Redis connection string |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | MinIO/S3 credentials |
+| `MINIO_ENDPOINT_URL` | MinIO/S3 endpoint (must include scheme) + `MINIO_BUCKET` |
+| `USAGE_INGEST_TOKEN` | Shared secret for the Vector → API ingest endpoint |
+
+Optional: `TLS_CFG` (tls-off locally, tls-on in prod, needs `CLOUDFLARE_API_TOKEN`), `REDIRECT_TO_S3`/`PRESIGN_REDIRECT` (direct S3 downloads), SMTP + OAuth keys.
+
+---
+
+## Useful Commands (from repo root)
+
+```bash
+pnpm install                  # install all workspace deps (pnpm only)
+pnpm build                    # build all packages + services
+pnpm dev:api / dev:console / dev:blob-server
+pnpm test:blob-server         # Go tests: go test -v ./src/...
+pnpm lint                     # Biome format (format-only, not a real lint)
+pnpm db:generate / db:migrate # API Drizzle migrations (run in services/api)
+```
+
+### Production
+
+`docker-compose.prod.yml` has **no `build:` sections** — it pulls versioned images from GHCR (`ghcr.io/mahadi-rsio/pagex/{api,console,blob-server}`). Images are published by the `.github/workflows/*-publish.yml` workflows on service version tags (`api/v1.5.0`, `console/v1.5.0`, `blob-server/v1.5.0`).
+
+```bash
+pnpm docker:prod                              # pull latest + up
+PAGEX_VERSION=1.5.0 pnpm docker:prod          # pin a release
+PAGEX_REGISTRY=<registry> pnpm docker:prod    # override namespace
 ```
 
 ---
 
-## 📋 Comprehensive pnpm & Docker Script Reference
+## CLI
 
-### Root `package.json` Scripts
+The `pagex` CLI handles project init and deployment (`cli/`):
 
-| Script | Action |
-|---|---|
-| `pnpm install` | Install all workspace dependencies |
-| `pnpm build` | Build all workspace packages and services |
-| `pnpm test` | Run tests in packages that define a `test` script |
-| `pnpm dev:api` | Start the Express API in development mode |
-| `pnpm dev:console` | Start the Next.js Console in development mode |
-| `pnpm db:migrate` | Execute database migrations across services |
-| `pnpm lint` | Run code linters across the monorepo |
+```bash
+pagex status                                # auth + current project
+pagex init --name my-site                  # create a project + site
+pagex deploy                               # build + upload + activate
+```
 
-### Docker Compose Helper Commands (`pnpm docker:*`)
-
-| Command | Description |
-|---|---|
-| `pnpm docker:up` | Start all services in detached mode (`-d`) |
-| `pnpm docker:down` | Stop and remove all Docker containers |
-| `pnpm docker:build` | Build container images |
-| `pnpm docker:rebuild` | Perform a clean `--no-cache` rebuild and start |
-| `pnpm docker:restart` | Restart all containers |
-| `pnpm docker:ps` | List running containers and status |
-| `pnpm docker:logs` | Stream container logs |
-| `pnpm docker:migrate` | Run API and console database migrators |
-| `pnpm docker:api` | Start database, redis, migrator, and API |
-| `pnpm docker:console` | Start database, redis, migrator, console, and blob-server |
-| `pnpm docker:prod` | **Production:** pull GHCR images + start `docker-compose.prod.yml` (no local build) |
-| `pnpm docker:prod:pull` / `:down` / `:restart` / `:ps` / `:logs` | Production stack helpers |
-| `pnpm docker:prod:config` | Validate the production compose file |
-
-### Production stack
-
-`docker-compose.prod.yml` has **no `build:` sections** — it pulls versioned images from
-GHCR (`ghcr.io/mahadi-rsio/pagex/{api,console,blob-server}`). Images are published by the
-`.github/workflows/*-publish.yml` workflows on service version tags
-(`api/v1.4.0`, `console/v1.4.0`, `blob-server/v1.4.0`). The default tag is `latest`;
-pin a release with `PAGEX_VERSION=1.4.0 pnpm docker:prod` and override the namespace
-with `PAGEX_REGISTRY`.
+Defaults: `PAGEX_API_URL=http://localhost:3000`, `PAGEX_AUTH_URL=http://localhost:3080`; session stored at `~/.pagex.session.json`.
 
 ---
 
-## ⚙️ Configuration Reference
+## Documentation Index
 
-Key environment variables in `infrastructure/configs/.env`:
-
-| Variable | Default | Description |
-|---|---|---|
-| `NODE_ENV` | `development` | Runtime environment mode |
-| `DATABASE_URL` | - | PostgreSQL connection string for console/Better Auth |
-| `REDIS_URL` | `redis://redis:6379` | Redis cache and queue connection URL |
-| `EXPRESS_URL` | `http://api:3000` | Internal Express API URL (used by Next.js proxy) |
-| `MINIO_ENDPOINT_URL` | - | S3/MinIO endpoint URL (must include `http://` or `https://`) |
-| `S3_ACCESS_KEY` | - | S3 storage access key |
-| `S3_SECRET_KEY` | - | S3 storage secret key |
-| `MINIO_BUCKET` | `pagex-blobs` | S3 bucket name for static asset blobs |
-| `BASE_DOMAIN` | `localhost` | Base domain for multi-tenant subdomain routing |
-| `BETTER_AUTH_SECRET` | - | Secret key for authentication (required, 32+ hex chars) |
-
-### 🔴 Strictly Required Environment Variables
-
-These variables MUST be set in `infrastructure/configs/.env` (for Docker) or `.env` (for local dev) before launching:
-
-1. **`BETTER_AUTH_SECRET`**: Secret key used for session signing and auth token encryption (minimum 32 hex chars).
-   - Generate via: `openssl rand -hex 32`
-2. **`BASE_DOMAIN`**: Base domain for multi-tenant subdomain resolution (`localhost` for local dev, `yourdomain.com` for production).
-3. **`DB` / `NEXT_WEB_DATABASE_URL`**: PostgreSQL connection URL (`postgresql://postgres:postgres@db:5432/pagex`).
-4. **`REDIS_URL`**: Redis connection string for background jobs and LRU cache backing (`redis://redis:6379`).
-5. **`S3_ACCESS_KEY` & `S3_SECRET_KEY`**: Credentials for MinIO/S3 object storage.
-6. **`MINIO_ENDPOINT_URL`**: Full URL to MinIO/S3 API including scheme (`http://minio:9000` or `https://s3.amazonaws.com`).
-7. **`MINIO_BUCKET`**: Bucket name for deployment blobs (`pagex-blobs`).
-
-### ⚪ Optional Environment Variables
-
-- **OAuth Authentication:** `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (For social logins).
-- **Direct S3 Downloads:** `REDIRECT_TO_S3=true`, `PRESIGN_REDIRECT=true`, `PRESIGN_LIFETIME=15m` (Redirects client requests directly to S3/MinIO signed URLs to save server bandwidth).
-- **Email Notifications:** `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SENDER` (For transactional password resets and emails).
-
----
-
-## ✨ Features & Ease of Use
-
-PageX is designed from the ground up for maximum ease of use, rapid deployment, and developer efficiency:
-
-- **Zero-Config One-Command Setup:** Bring up the entire microservices stack (Next.js Console, Express API, Caddy Blob Server, PostgreSQL, Redis, MinIO S3) with a single command: `pnpm docker:up`.
-- **Manifest-Based Runtime Serving:** Finalized deployments get an immutable MinIO manifest; Caddy resolves `path → blob hash` from L1 memory / Redis / MinIO without querying `blob_tree_entries` per request.
-- **Content-Addressed & Instant Deployment:** Submitting a deployment uploads static blobs to MinIO with instant atomic site updates handled by Caddy edge proxying.
-- **pnpm Workspace Monorepo:** Shared TypeScript types (`@pagex/types`), utilities (`@pagex/utils`), and config (`@pagex/config`) with per-service scripts at the root.
-
----
-
-## 📄 Documentation Index
-
-For detailed guides, refer to the files inside `docs/`:
-- [Architecture Overview](docs/architecture.md)
+- [Architecture](docs/architecture.md)
 - [Development Guide](docs/development.md)
 - [Database Schema](docs/SCHEMA.md)
-- [API Endpoints & Contracts](docs/API.md)
+- [API Reference](docs/API.md)
 - [Infrastructure & Deployment](docs/INFRASTRUCTURE.md)
-- [Deploy Pipeline](docs/WORKERS.md)
-- [Development Rules](docs/RULES.md)
+- [Deploy Pipeline (commit/rollback/GC)](docs/WORKERS.md)
+- [Coding Rules](docs/RULES.md)
+- [Project Map](docs/PROJECT.md)
+- [AI Skill Guide](docs/SKILL.md)
 
 ---
 
-## 📄 License
+## License
 
-Licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see the [LICENSE](LICENSE) file.

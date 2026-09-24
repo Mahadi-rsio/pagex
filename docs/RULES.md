@@ -1,4 +1,4 @@
-# Cloudisy — Coding Rules & Conventions
+# PageX — Coding Rules & Conventions
 
 > Read this before modifying any source file. These are the patterns consistently used in this codebase. Deviating from them will create inconsistencies.
 
@@ -110,11 +110,11 @@ if (!tenantId) return res.status(401).json({ error: 'Unauthorized' })
 
 ## Route Registration
 
-All routes are mounted in `src/routes/index.ts`. When adding a new router:
+All routes are mounted in `services/api/routes/index.ts`. When adding a new router:
 
 ```typescript
-// 1. Create src/routes/my-feature.routes.ts
-// 2. Import and use in src/routes/index.ts:
+// 1. Create services/api/routes/my-feature.routes.ts
+// 2. Import and use in services/api/routes/index.ts:
 import myFeatureRouter from './my-feature.routes.js'
 router.use(myFeatureRouter)
 ```
@@ -131,8 +131,9 @@ BullMQ and background build/worker queues were removed. Deploys are synchronous 
 
 ## MinIO Access
 
-Always use helpers from `src/infrastructure/storage/minio.ts`:
+Always use helpers from `services/api/infrastructure/storage/minio.ts`:
 - `blobObjectKey(hash)` — `blobs/{hash}`
+- `manifestObjectKey(deploymentId)` — `manifests/{deploymentId}.json`
 - `objectMetaForPath(path, contentType?, contentEncoding?)` — putObject metadata
 - `deleteBlobObjects(hashes)` — GC batch delete; returns successfully deleted hashes
 - `ensureSharedBucket()` — idempotent bucket create
@@ -140,7 +141,7 @@ Always use helpers from `src/infrastructure/storage/minio.ts`:
 
 **Key layout:**
 - Live serving: `blobs/{sha256}` only (path→hash resolved via the active deployment manifest)
-- Legacy `tenant/{siteId}/` — do not write; one-off purge via `migrate-to-blob-serving.ts`
+- Deployment manifests: `manifests/{deploymentId}.json` (immutable)
 
 ---
 
@@ -167,20 +168,20 @@ Loaded via `dotenv`. All env access should use `process.env.VAR_NAME`.
 
 ## Adding a New Feature Checklist
 
-1. **Schema** (if needed): edit `src/infrastructure/db/schema.ts`, run `npm run gen`, commit migration
-2. **Validator**: create `src/validators/<name>.validator.ts` with Zod schema
-3. **Service**: create `src/services/<name>.service.ts` with business logic
-4. **Controller**: create `src/controllers/<name>.controller.ts` — thin, calls service
-5. **Routes**: create `src/routes/<name>.routes.ts`, mount in `src/routes/index.ts`
-6. **Build & test**: `npm run build`, then test with `node test.js` or curl
-7. **Redeploy**: `docker compose up --build -d --remove-orphans app` (or relevant service)
+1. **Schema** (if needed): edit `services/api/infrastructure/db/schema.ts`, run `pnpm db:generate` in `services/api`, commit migration
+2. **Validator**: create `services/api/validators/<name>.validator.ts` with Zod schema
+3. **Service**: create `services/api/services/<name>.service.ts` with business logic
+4. **Controller**: create `services/api/controllers/<name>.controller.ts` — thin, calls service
+5. **Routes**: create `services/api/routes/<name>.routes.ts`, mount in `services/api/routes/index.ts`
+6. **Build & test**: `pnpm build:api`, then test with curl
+7. **Redeploy**: `docker compose up -d --build api`
 8. **Update docs**: update `docs/API.md`, `docs/SCHEMA.md`, `docs/WORKERS.md` as needed
 
 ---
 
 ## What NOT To Do
 
-- ❌ Do not import from `dist/` — always import from `src/`
+- ❌ Do not import from `dist/` — always import from source (`services/api/{controllers,services,routes,validators,infrastructure}`)
 - ❌ Do not skip the `.js` extension on local imports
 - ❌ Do not put business logic in controllers
 - ❌ Do not hardcode bucket names, queue names, or domain strings — use constants
@@ -189,3 +190,4 @@ Loaded via `dotenv`. All env access should use `process.env.VAR_NAME`.
 - ❌ Do not delete MinIO `blobs/{hash}` except via GC after cross-check
 - ❌ Do not run two simultaneous deployments for the same page — take `deploy:lock:{pageId}` (see `deployment-lock.service.ts`)
 - ❌ Do not edit `drizzle/` migration files manually after they've been applied
+- ❌ Do not add a Vector Postgres sink or DB credentials to Vector — the API owns the schema; Vector only POSTs to `/internal/usage/ingest`

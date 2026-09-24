@@ -84,7 +84,7 @@ Client Request
 ┌─────────────────────────────────────┐
 │  Caddy (Blob Server)                  │
 │  1. Extract subdomain from Host header│
-│     e.g., "mysite.cloudisy.com" → "mysite"
+│     e.g., "mysite.example.com" → "mysite"
 └─────────────────┬───────────────────┘
                   │
                   ▼
@@ -601,7 +601,7 @@ BullMQ and the cloud-build worker/DLQ have been deleted; CLI deploy
 (`/api/deploy/prepare|presign|commit`) is the only deploy path.
 
 **Implementation:**
-- **Analytics:** Blob-server flushes Redis usage counters to PostgreSQL `site_daily_stats` (no queue)
+- **Analytics / usage:** Vector aggregates Caddy access logs per site+hour and POSTs to the API ingest endpoint; the API applies them to `site_daily_stats`, `service_metrics_hourly`, and `bandwidth_usage_hourly` with idempotent dedup (no queue).
 - **GC:** Runs fire-and-forget after deploy/rollback, in-process
 
 ### Deployment Safety (Production Hardening)
@@ -650,16 +650,9 @@ pending
 - `failIdempotencyKey()` — deletes reservation on failure
 - Request hash verification prevents silent corruption
 
-**Queue Retry & DLQ:**
-- 3 attempts with exponential backoff (10s base)
-- Error classification: `classifyBuildError()` distinguishes retryable (network, MinIO, Redis, git) vs permanent (auth, validation, config) errors
-- Permanent errors fail immediately → DLQ
-- DLQ queue: `cloudisy-cloud-builds-dlq` with `FailedBuildJob` containing:
-  - job_id, build_id, page_id, tenant_id, site_id
-  - failureReason, failedAt, attemptsMade, errorType ('retryable'|'permanent')
-  - Full context for debugging/alerting
-- **No secrets** in DLQ — gitToken excluded
-- DLQ worker logs full context for ops review
+**Usage-ingest idempotency (Vector → API):**
+- Vector computes a deterministic `ingest_id` per site+hour-bucket+counters; the API claims it in `usage_ingest_dedup` (`INSERT … ON CONFLICT DO NOTHING`) so retried HTTP POSTs or a Vector replay can never double-count.
+- **No Vector→Postgres sink.** The API owns the schema; Vector only POSTs pre-aggregated records to `POST /internal/usage/ingest` (bearer token `USAGE_INGEST_TOKEN`).
 
 ### Caching Strategy
 
@@ -813,10 +806,10 @@ See [Development Guide](development.md) for detailed file structure and conventi
 
 | Metric | Source | Purpose |
 |--------|--------|---------|
-| Request Count | Caddy | Traffic monitoring |
-| Bandwidth | Caddy | Usage tracking |
-| Response Time | Caddy | Performance monitoring |
-| Cache Hit Rate | Caddy | Cache efficiency |
+| Request Count | Caddy access logs → Vector → API | Traffic monitoring |
+| Bandwidth | Caddy access logs → Vector → API | Billing usage |
+| Response Time | Caddy access logs → Vector → API | Performance monitoring |
+| Cache Hit Rate | Caddy `cache_hit` flag → Vector → API | Cache efficiency |
 | Database Queries | PostgreSQL | Query performance |
 
 ### Logging
