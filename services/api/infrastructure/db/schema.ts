@@ -156,6 +156,22 @@ export const serviceMetricsHourly = pgTable("service_metrics_hourly", {
 }));
 
 /**
+ * `usage_ingest_dedup` — idempotency ledger for the internal usage-ingest
+ * endpoint.
+ *
+ * Vector aggregates access-log records per site per hour-bucket into batches and
+ * POSTs them to `/internal/usage/ingest`. Each record carries a deterministic
+ * `ingest_id` (hash of site_id + bucket + counters), so a retried batch (or a
+ * Vector replay after a crash) cannot double-count usage/metrics. Rows are
+ * pruned periodically once their hourly buckets are well past the aggregation
+ * window.
+ */
+export const usageIngestDedup = pgTable("usage_ingest_dedup", {
+    ingestId: text("ingest_id").primaryKey(),
+    appliedAt: timestamp("applied_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
  * `blobs` — content-addressed blob store (SHA256 → MinIO object).
  * Invariant 4: blob hashes are unique (enforced by PRIMARY KEY on hash).
  */

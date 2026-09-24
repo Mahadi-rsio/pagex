@@ -1,7 +1,6 @@
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm'
 import { db } from '../infrastructure/db/db.js'
 import { bandwidthUsageHourly, pages, serviceMetricsHourly } from '../infrastructure/db/schema.js'
-import { redis } from '../infrastructure/cache/redis.js'
 import { getPlan, type PlanId } from '../constants/pricing.js'
 import { buildUsageResponse, currentUsageWindow, type UsageResponse, type UsageWindow } from '../utils/usage.js'
 import {
@@ -15,14 +14,14 @@ import {
 /**
  * Usage / metrics read model.
  *
- * Usage (bandwidth, billing/quota) comes from `bandwidth_usage_hourly` plus the
- * unflushed live counters in Redis DB0. Metrics (requests/status/latency/cache)
- * come from `service_metrics_hourly`. Every lookup is tenant-scoped: a site or
- * project that does not belong to the caller is treated as not found.
+ * Usage (bandwidth, billing/quota) comes from `bandwidth_usage_hourly`.
+ * Metrics (requests/status/latency/cache) come from `service_metrics_hourly`.
+ * Both are written by the internal ingest endpoint (fed by Vector from Caddy
+ * access logs). Every lookup is tenant-scoped: a site or project that does not
+ * belong to the caller is treated as not found.
  */
 
 const PLAN_RANK: Record<PlanId, number> = { free: 0, paid: 1 }
-const HOUR_MS = 3600_000
 
 interface TenantPage {
     id: string
@@ -72,48 +71,6 @@ function highestPlan(plans: string[]): PlanId {
     return best
 }
 
-function formatHourBucket(date: Date): string {
-    return date.toISOString().slice(0, 13).replace(/[-T:]/g, '')
-}
-
-/**
- * Sum unflushed bandwidth counters from Redis for the window. Bounded to the
- * last 48h (the Redis bucket TTL); flushed buckets are deleted from Redis, so
- * this never double-counts with the DB aggregate.
- */
-async function readLiveBandwidth(siteIds: string[], window: UsageWindow, now: Date): Promise<number> {
-    if (siteIds.length === 0) return 0
-
-    const liveFromMs = Math.max(window.start.getTime(), now.getTime() - 48 * HOUR_MS)
-    const fromHour = new Date(Math.floor(liveFromMs / HOUR_MS) * HOUR_MS)
-    const toHour = new Date(Math.floor(now.getTime() / HOUR_MS) * HOUR_MS)
-
-    const keys: string[] = []
-    for (const siteId of siteIds) {
-        for (let t = fromHour.getTime(); t <= toHour.getTime(); t += HOUR_MS) {
-            keys.push(`usage:bw:${siteId}:${formatHourBucket(new Date(t))}`)
-        }
-    }
-    if (keys.length === 0) return 0
-
-    let total = 0
-    try {
-        const CHUNK = 1000
-        for (let i = 0; i < keys.length; i += CHUNK) {
-            const values = await redis.mget(keys.slice(i, i + CHUNK))
-            for (const value of values) {
-                const n = Number(value)
-                if (Number.isFinite(n) && n > 0) total += n
-            }
-        }
-    } catch (err) {
-        // Redis is a read-through accelerator here; the flushed DB totals remain
-        // authoritative, so degrade gracefully instead of failing the request.
-        console.error('[usage] live bandwidth read failed:', (err as Error).message)
-    }
-    return total
-}
-
 async function sumBandwidthFromDb(siteIds: string[], tenantId: string, window: UsageWindow): Promise<number> {
     if (siteIds.length === 0) return 0
     const [row] = await db
@@ -141,11 +98,8 @@ export async function getSiteUsage(
     if (!page) return null
 
     const window = currentUsageWindow(now)
-    const [dbBytes, liveBytes] = await Promise.all([
-        sumBandwidthFromDb([page.siteId], tenantId, window),
-        readLiveBandwidth([page.siteId], window, now),
-    ])
-    return buildUsageResponse(page.plan, dbBytes + liveBytes, window)
+    const dbBytes = await sumBandwidthFromDb([page.siteId], tenantId, window)
+    return buildUsageResponse(page.plan, dbBytes, window)
 }
 
 export async function getProjectUsage(
@@ -157,11 +111,8 @@ export async function getProjectUsage(
     if (!page) return null
 
     const window = currentUsageWindow(now)
-    const [dbBytes, liveBytes] = await Promise.all([
-        sumBandwidthFromDb([page.siteId], tenantId, window),
-        readLiveBandwidth([page.siteId], window, now),
-    ])
-    return buildUsageResponse(page.plan, dbBytes + liveBytes, window)
+    const dbBytes = await sumBandwidthFromDb([page.siteId], tenantId, window)
+    return buildUsageResponse(page.plan, dbBytes, window)
 }
 
 export async function getAccountUsage(tenantId: string, now: Date = new Date()): Promise<UsageResponse> {
@@ -170,11 +121,8 @@ export async function getAccountUsage(tenantId: string, now: Date = new Date()):
     const siteIds = tenantPages.map((p) => p.siteId)
     const plan = highestPlan(tenantPages.map((p) => p.plan))
 
-    const [dbBytes, liveBytes] = await Promise.all([
-        sumBandwidthFromDb(siteIds, tenantId, window),
-        readLiveBandwidth(siteIds, window, now),
-    ])
-    return buildUsageResponse(plan, dbBytes + liveBytes, window)
+    const dbBytes = await sumBandwidthFromDb(siteIds, tenantId, window)
+    return buildUsageResponse(plan, dbBytes, window)
 }
 
 export interface AccountQuota {
@@ -191,11 +139,8 @@ export async function getAccountQuota(tenantId: string, now: Date = new Date()):
     const siteIds = tenantPages.map((p) => p.siteId)
     const plan = highestPlan(tenantPages.map((p) => p.plan))
 
-    const [dbBytes, liveBytes] = await Promise.all([
-        sumBandwidthFromDb(siteIds, tenantId, window),
-        readLiveBandwidth(siteIds, window, now),
-    ])
-    const usage = buildUsageResponse(plan, dbBytes + liveBytes, window)
+    const dbBytes = await sumBandwidthFromDb(siteIds, tenantId, window)
+    const usage = buildUsageResponse(plan, dbBytes, window)
     return {
         plan: usage.plan,
         planName: usage.planName,

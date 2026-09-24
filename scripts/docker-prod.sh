@@ -40,7 +40,7 @@ Environment overrides:
 
 Examples:
   scripts/docker-prod.sh up
-  PAGEX_VERSION=1.4.0 scripts/docker-prod.sh up
+  PAGEX_VERSION=1.5.0 scripts/docker-prod.sh up
   scripts/docker-prod.sh logs console
 EOF
 }

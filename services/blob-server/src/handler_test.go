@@ -36,7 +36,6 @@ func testPluginWithWarmManifest(t *testing.T, depID string, files map[string]str
 func TestWarmCacheHotPathZeroExternal(t *testing.T) {
 	const depID = "dep-warm"
 	const siteID = "site-warm"
-	const version = "7"
 
 	p := testPluginWithWarmManifest(t, depID, map[string]string{
 		"index.html":    "aaaa11111111111111111111111111111111111111111111111111111111111111",
@@ -45,29 +44,23 @@ func TestWarmCacheHotPathZeroExternal(t *testing.T) {
 		"logo.png.webp":  "dddd44444444444444444444444444444444444444444444444444444444444444",
 	})
 
-	// Warm active-deployment L1 (siteID:__active__:version).
-	p.cacheActiveDeployment(siteID, version, depID)
+	// Warm active-deployment L1 (siteID → depID).
+	p.cacheActiveDeployment(siteID, depID)
 
 	// Warm subdomain→siteID L1 so tenant resolution is also memory-only.
 	p.cacheSiteID("site-warm", siteID)
 
-	// Warm the version L1 so all version-scoped keys line up.
-	p.cache.Set("site-warm:__version__", &CacheItem{
-		Key:     "site-warm:__version__",
-		Content: []byte(version),
-		Exists:  true,
-	}, time.Minute)
-
-	// Warm path-resolution LRU entries (skip manifest + Redis on hot path).
-	p.cache.Set("site-warm:7:/:raw", &CacheItem{
-		Key:         "site-warm:7:/:raw",
+	// Warm path-resolution LRU entries (skip manifest on hot path), scoped by
+	// deployment ID so a deploy instantly invalidates cached paths.
+	p.cache.Set("site-warm:"+depID+":/:raw", &CacheItem{
+		Key:         "site-warm:" + depID + ":/:raw",
 		BlobHash:    "aaaa11111111111111111111111111111111111111111111111111111111111111",
 		ContentType: "text/html",
 		FilePath:    "index.html",
 		Exists:      true,
 	}, time.Minute)
-	p.cache.Set("site-warm:7:/:br", &CacheItem{
-		Key:             "site-warm:7:/:br",
+	p.cache.Set("site-warm:"+depID+":/:br", &CacheItem{
+		Key:             "site-warm:" + depID + ":/:br",
 		BlobHash:        "bbbb22222222222222222222222222222222222222222222222222222222222222",
 		ContentType:     "text/html",
 		ContentEncoding: "br",
@@ -77,15 +70,15 @@ func TestWarmCacheHotPathZeroExternal(t *testing.T) {
 
 	// Warm blob body cache for the requested paths.
 	body := []byte("<h1>hi</h1>")
-	p.cache.Set("site-warm:7:/:raw:body", &CacheItem{
-		Key:     "site-warm:7:/:raw:body",
+	p.cache.Set("site-warm:"+depID+":/:raw:body", &CacheItem{
+		Key:     "site-warm:" + depID + ":/:raw:body",
 		ETag:    `"etag-1"`,
 		Size:    int64(len(body)),
 		Content: body,
 		Exists:  true,
 	}, time.Minute)
-	p.cache.Set("site-warm:7:/:br:body", &CacheItem{
-		Key:             "site-warm:7:/:br:body",
+	p.cache.Set("site-warm:"+depID+":/:br:body", &CacheItem{
+		Key:             "site-warm:" + depID + ":/:br:body",
 		ETag:            `"etag-br"`,
 		Size:            int64(len(body)),
 		Content:         body,
@@ -95,8 +88,7 @@ func TestWarmCacheHotPathZeroExternal(t *testing.T) {
 		Exists:          true,
 	}, time.Minute)
 
-	// No redis, no db, no s3 clients — any fallthrough would fail loudly.
-	p.redisClient = nil
+	// No db, no s3 clients — any fallthrough would fail loudly.
 	p.db = nil
 	p.s3Client = nil
 
@@ -143,22 +135,22 @@ func TestWarmCacheHotPathZeroExternal(t *testing.T) {
 	}
 }
 
-func TestActiveDeploymentL1VersionScoped(t *testing.T) {
+func TestActiveDeploymentL1DeploymentScoped(t *testing.T) {
 	p := &StaticPlugin{
 		cacheTTL: time.Minute,
 		cache:    NewLRUCache(1024, 1<<20),
 	}
 
-	// Seed L1 under version "5".
-	p.cacheActiveDeployment("site-1", "5", "dep-5")
-	got, _ := p.cache.Get(activeDeploymentL1Key("site-1", "5"))
+	// Seed L1 active deployment for site-1 → dep-5.
+	p.cacheActiveDeployment("site-1", "dep-5")
+	got, _ := p.cache.Get(activeDeploymentL1Key("site-1"))
 	if got == nil || string(got.Content) != "dep-5" {
 		t.Fatalf("expected L1 hit for dep-5, got %+v", got)
 	}
 
-	// Version bump (deploy/rollback) must make the old entry unreachable.
-	if _, ok := p.cache.Get(activeDeploymentL1Key("site-1", "6")); ok {
-		t.Fatal("version 6 must not hit the version-5 L1 entry")
+	// A different site must never share the same active-deployment mapping.
+	if _, ok := p.cache.Get(activeDeploymentL1Key("site-2")); ok {
+		t.Fatal("site-2 must not hit the site-1 L1 entry")
 	}
 }
 
@@ -167,10 +159,10 @@ func TestActiveDeploymentL1Negative(t *testing.T) {
 		cacheTTL: time.Minute,
 		cache:    NewLRUCache(1024, 1<<20),
 	}
-	p.cacheActiveDeploymentNegative("site-empty", "1")
+	p.cacheActiveDeploymentNegative("site-empty")
 
-	// With nil db/redis, a negative L1 hit must return "" without error.
-	id, err := p.resolveActiveDeploymentID(t.Context(), "site-empty", "1")
+	// With nil db, a negative L1 hit must return "" without error.
+	id, err := p.resolveActiveDeploymentID(t.Context(), "site-empty")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -249,13 +241,13 @@ func TestResolveBlobManifestServing(t *testing.T) {
 		"assets/app.js":    rawJS,
 		"assets/app.js.gz": gzJS,
 	})
-	p.cacheActiveDeployment(siteID, "1", depID)
+	p.cacheActiveDeployment(siteID, depID)
 
 	req := httptest.NewRequest("GET", "http://site-1.localhost/assets/app.js", nil)
 	req.Host = "site-1.localhost"
 	req.Header.Set("Accept-Encoding", "gzip")
 
-	res, err := p.resolveBlob(t.Context(), siteID, "1", "/assets/app.js", req)
+	res, err := p.resolveBlob(t.Context(), depID, "/assets/app.js", req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -273,7 +265,7 @@ func TestResolveBlobManifestServing(t *testing.T) {
 	// by this tenant's manifest — never another tenant's blob or a raw blob key.
 	req2 := httptest.NewRequest("GET", "http://site-1.localhost/../secret", nil)
 	req2.Host = "site-1.localhost"
-	res2, err := p.resolveBlob(t.Context(), siteID, "1", "/../secret", req2)
+	res2, err := p.resolveBlob(t.Context(), depID, "/../secret", req2)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -5,12 +5,12 @@
 # so `docker compose -f docker-compose.prod.yml up -d` never builds locally.
 #
 # Images are published by the publish workflows on version tags:
-#   api/v1.4.0, console/v1.4.0, blob-server/v1.4.0
+#   api/v1.5.0, console/v1.5.0, blob-server/v1.5.0
 #
 # Usage (from repo root):
 #   cp .env.example .env        # first run, then fill in required values
 #   pnpm docker:prod            # pull + up -d (default tag: latest)
-#   PAGEX_VERSION=1.4.0 pnpm docker:prod   # pin a specific release
+#   PAGEX_VERSION=1.5.0 pnpm docker:prod   # pin a specific release
 # ============================================================================
 
 name: pagex-prod
@@ -25,6 +25,7 @@ services:
     env_file: .env
     environment:
       - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
+      - USAGE_INGEST_TOKEN=${USAGE_INGEST_TOKEN}
     expose:
       - "3000"
     depends_on:
@@ -50,6 +51,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./services/blob-server/tls:/etc/caddy/tls:ro
+      - caddy_logs:/var/log/caddy
     environment:
       - S3_ACCESS_KEY=${S3_ACCESS_KEY}
       - S3_SECRET_KEY=${S3_SECRET_KEY}
@@ -68,6 +70,27 @@ services:
       api:
         condition: service_started
       console:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - pagex
+
+  # ============================================================================
+  # Vector — access-log aggregation → API ingest
+  # ============================================================================
+  vector:
+    image: timberio/vector:0.46.1-alpine
+    container_name: vector
+    command: ["--config", "/etc/vector/vector.yaml"]
+    volumes:
+      - ./services/blob-server/vector/vector.yaml:/etc/vector/vector.yaml:ro
+      - caddy_logs:/var/log/caddy
+      - vector_data:/var/lib/vector
+    environment:
+      - USAGE_INGEST_TOKEN=${USAGE_INGEST_TOKEN}
+      - USAGE_API_URL=${USAGE_API_URL:-http://api:3000/internal/usage/ingest}
+    depends_on:
+      api:
         condition: service_started
     restart: unless-stopped
     networks:
@@ -140,6 +163,8 @@ services:
 
 volumes:
   pgdata:
+  caddy_logs:
+  vector_data:
 
 networks:
   pagex:

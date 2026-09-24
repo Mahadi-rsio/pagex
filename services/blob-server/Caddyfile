@@ -30,7 +30,6 @@
             # Multi-tenant context config
             base_domain     localhost
             db_dsn          "postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable"
-            redis_url       "redis://redis:6379/0"
 
             # Redirect media directly to S3 (metadata + path resolution still cached)
             redirect_to_s3   true
@@ -59,7 +58,6 @@
             # Multi-tenant config
             base_domain     localhost
             db_dsn          "postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable"
-            redis_url       "redis://redis:6379/0"
 
             # Serve directly from Caddy (no redirection)
             redirect_to_s3   false
@@ -71,7 +69,6 @@
             
             # SPA fallback options
             fallback_except png css js svg ico woff woff2 ttf map
-	        analytics 	   on
         }
     }
 }

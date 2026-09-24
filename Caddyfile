@@ -40,7 +40,6 @@ http:// {
 			use_path_style  true
 			base_domain     {$BASE_DOMAIN:localhost}
 			db_dsn          "postgres://{$POSTGRES_USER:postgres}:{$POSTGRES_PASSWORD:postgres}@db:5432/{$POSTGRES_DB:pagex}?sslmode=disable"
-			redis_url       "redis://redis:6379/0"
 			redirect_to_s3   {$REDIRECT_TO_S3:false}
 			presign_redirect {$PRESIGN_REDIRECT:false}
 			presign_lifetime {$PRESIGN_LIFETIME:15m}
@@ -61,12 +60,10 @@ http:// {
 			use_path_style  true
 			base_domain     {$BASE_DOMAIN:localhost}
 			db_dsn          "postgres://{$POSTGRES_USER:postgres}:{$POSTGRES_PASSWORD:postgres}@db:5432/{$POSTGRES_DB:pagex}?sslmode=disable"
-			redis_url       "redis://redis:6379/0"
 			redirect_to_s3   false
 			cache_ttl       {$CACHE_TTL:2m}
 			cache_size      {$CACHE_SIZE:1000}
 			max_cache_size  {$MAX_CACHE_SIZE:512KiB}
-			analytics       on
 		}
 	}
 

@@ -17,7 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 // blobResolution holds the result of resolving a request path to a content-addressed blob.
@@ -50,54 +50,68 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 			return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("invalid subdomain %q", subdomain))
 		}
 
-		// 2. Resolve site_id via Redis → PostgreSQL
+		// 2. Resolve site_id via LRU → PostgreSQL
 		siteID, err := p.resolveSiteID(r.Context(), subdomain)
 		if err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		if siteID == "" {
+			p.addLogFields(r, siteID, "", false, false)
 			return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("tenant %q not found", subdomain))
 		}
 
-		// 2b. Deploy version for instant LRU invalidation (never blocks on failure)
-		version := p.resolveSiteVersion(r.Context(), subdomain, siteID)
-
-		// Latency clock for operational metrics starts once we know the site.
-		start := time.Now()
+		// Latency is captured by Caddy itself in the access log as "duration";
+		// Vector computes latency percentiles from it, so we don't need our own
+		// per-request clock here.
 
 		encKey := requestEncodingKey(r, urlPath)
-		cacheKey := subdomain + ":" + version + ":" + urlPath + ":" + encKey
-		negKey := subdomain + ":" + version + ":" + urlPath + ":404"
-		bodyKey := subdomain + ":" + version + ":" + urlPath + ":" + encKey + ":body"
+
+		// 3. Resolve active deployment ID (LRU → PostgreSQL, TTL-bounded).
+		//    Content is keyed by deployment ID below, so a change of the active
+		//    deployment instantly invalidates all cached paths for that site.
+		deploymentID, err := p.resolveActiveDeploymentID(r.Context(), siteID)
+		if err != nil {
+			return caddyhttp.Error(http.StatusInternalServerError, err)
+		}
+		if deploymentID == "" {
+			p.addLogFields(r, siteID, "", false, false)
+			return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("no active deployment for site %q", subdomain))
+		}
+
+		cacheKey := subdomain + ":" + deploymentID + ":" + urlPath + ":" + encKey
+		negKey := subdomain + ":" + deploymentID + ":" + urlPath + ":404"
+		bodyKey := subdomain + ":" + deploymentID + ":" + urlPath + ":" + encKey + ":body"
 
 		rec := caddyhttp.NewResponseRecorder(w, nil, nil)
 
-		// Path / encoding LRU cache (version-scoped)
+		// Path / encoding LRU cache (deployment-scoped)
+		cacheHit := false
 		if p.cacheTTL > 0 && p.cache != nil {
 			if item, ok := p.cache.Get(negKey); ok && !item.Exists {
-				p.recordAnalytics(siteID, "", r, http.StatusNotFound, 0, start, true)
+				p.addLogFields(r, siteID, deploymentID, true, false)
 				return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("cached 404 for path: %s", urlPath))
 			}
 			if item, ok := p.cache.Get(cacheKey); ok {
 				if !item.Exists {
-					p.recordAnalytics(siteID, "", r, http.StatusNotFound, 0, start, true)
+					p.addLogFields(r, siteID, deploymentID, true, false)
 					return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("cached 404 for path: %s", urlPath))
 				}
-				// Path-resolution hit → skip Redis, go to MinIO (or memory)
+				// Path-resolution hit → skip manifest lookup, go to MinIO (or memory)
 				if item.BlobHash != "" {
-					cacheHit, err := p.serveBlob(rec, r, item.BlobHash, item.FilePath, item.ContentEncoding, bodyKey, item)
+					hit, err := p.serveBlob(rec, r, item.BlobHash, item.FilePath, item.ContentEncoding, bodyKey, item)
 					if err != nil {
 						return caddyhttp.Error(http.StatusNotFound, err)
 					}
+					cacheHit = hit
 					rec.WriteResponse()
-					p.recordAnalytics(siteID, item.DeploymentID, r, rec.Status(), int64(rec.Size()), start, cacheHit)
+					p.addLogFields(r, siteID, deploymentID, cacheHit, false)
 					return nil
 				}
 			}
 		}
 
-		// 3–6. Resolve path via deployment manifest (L1 → Redis → MinIO)
-		resolved, err := p.resolveBlob(r.Context(), siteID, version, urlPath, r)
+		// 4. Resolve path via deployment manifest (L1 → MinIO)
+		resolved, err := p.resolveBlob(r.Context(), deploymentID, urlPath, r)
 		if err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
@@ -105,7 +119,7 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 			if p.cacheTTL > 0 && p.cache != nil {
 				p.cache.Set(negKey, &CacheItem{Key: negKey, Exists: false}, 1*time.Minute)
 			}
-			p.recordAnalytics(siteID, "", r, http.StatusNotFound, 0, start, false)
+			p.addLogFields(r, siteID, deploymentID, false, false)
 			return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("file not found for path: %s", urlPath))
 		}
 
@@ -122,13 +136,13 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 			}, p.cacheTTL)
 		}
 
-		cacheHit, err := p.serveBlob(rec, r, resolved.BlobHash, resolved.FilePath, resolved.ContentEncoding, bodyKey, nil)
+		cacheHit, err = p.serveBlob(rec, r, resolved.BlobHash, resolved.FilePath, resolved.ContentEncoding, bodyKey, nil)
 		if err != nil {
 			return caddyhttp.Error(http.StatusNotFound, err)
 		}
 
 		rec.WriteResponse()
-		p.recordAnalytics(siteID, resolved.DeploymentID, r, rec.Status(), int64(rec.Size()), start, cacheHit)
+		p.addLogFields(r, siteID, resolved.DeploymentID, cacheHit, true)
 		return nil
 	}
 
@@ -159,37 +173,29 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 	return nil
 }
 
-// recordAnalytics enqueues one request's operational metric + bandwidth usage.
-// It is best-effort and fully asynchronous: the values are measured here at the
-// blob-serving layer and never taken from the client.
-func (p *StaticPlugin) recordAnalytics(siteID, deploymentID string, r *http.Request, status int, bytes int64, start time.Time, cacheHit bool) {
-	if p.analytics == nil {
+// addLogFields attaches per-request multi-tenant context to Caddy's structured
+// access log. Caddy emits these fields at the top level of each JSON log line,
+// which Vector consumes downstream for usage/metrics aggregation. This is
+// best-effort and never blocks the request.
+func (p *StaticPlugin) addLogFields(r *http.Request, siteID, deploymentID string, cacheHit bool, fromManifest bool) {
+	extra, ok := r.Context().Value(caddyhttp.ExtraLogFieldsCtxKey).(*caddyhttp.ExtraLogFields)
+	if !ok {
 		return
 	}
-	ip := r.RemoteAddr
-	if idx := strings.LastIndex(ip, ":"); idx != -1 {
-		ip = ip[:idx]
-	}
-	p.analytics.Record(RequestMetric{
-		SiteID:       siteID,
-		DeploymentID: deploymentID,
-		StatusCode:   status,
-		BytesSent:    bytes,
-		DurationMs:   time.Since(start).Milliseconds(),
-		CacheHit:     cacheHit,
-		UserAgent:    r.Header.Get("User-Agent"),
-		IP:           ip,
-		Timestamp:    time.Now().UTC(),
-	})
+	extra.Set(zap.String("site_id", siteID))
+	extra.Set(zap.String("deployment_id", deploymentID))
+	extra.Set(zap.Bool("cache_hit", cacheHit))
+	extra.Set(zap.Bool("from_manifest", fromManifest))
 }
 
 // resolveSiteID looks up the site UUID for a given subdomain, using a
-// process-local LRU as L1, Redis as L2, and PostgreSQL as the fallback.
+// process-local LRU as L1 and PostgreSQL as the fallback. There is no Redis L2;
+// the LRU TTL (siteIDL1TTL) bounds how long a deleted/deactivated site keeps
+// being served.
 func (p *StaticPlugin) resolveSiteID(ctx context.Context, subdomain string) (string, error) {
-	redisKey := "site:" + subdomain
 	l1Key := subdomain + ":__site__"
 
-	// 1. Process-local L1 (warm hot path = zero Redis/PostgreSQL calls)
+	// 1. Process-local L1 (warm hot path = zero PostgreSQL calls)
 	if p.cacheTTL > 0 && p.cache != nil {
 		if item, ok := p.cache.Get(l1Key); ok {
 			if !item.Exists {
@@ -201,30 +207,7 @@ func (p *StaticPlugin) resolveSiteID(ctx context.Context, subdomain string) (str
 		}
 	}
 
-	// 2. Redis cache lookup
-	if p.redisClient != nil {
-		val, err := p.redisClient.Get(ctx, redisKey).Result()
-		if err == nil {
-			if val == "NOT_FOUND" {
-				p.cacheSiteIDNegative(subdomain)
-				return "", nil
-			}
-			p.cacheSiteID(subdomain, val)
-			return val, nil
-		}
-		if !errors.Is(err, redis.Nil) {
-			_ = err // unexpected — fall through to DB
-		} else {
-			// Redis miss for site: key → backend invalidated after deploy/delete.
-			// Evict the L1 site + version entries so the next lookup fetches fresh.
-			if p.cache != nil {
-				p.cache.Delete(subdomain + ":__version__")
-				p.cache.Delete(l1Key)
-			}
-		}
-	}
-
-	// 3. PostgreSQL lookup
+	// 2. PostgreSQL lookup
 	if p.db == nil {
 		return "", fmt.Errorf("static_s3: multi-tenant mode requires db_dsn")
 	}
@@ -237,18 +220,12 @@ func (p *StaticPlugin) resolveSiteID(ctx context.Context, subdomain string) (str
 	err := row.Scan(&siteID)
 	if err != nil {
 		if errors.Is(err, errNoRows) {
-			if p.redisClient != nil {
-				_ = p.redisClient.Set(ctx, redisKey, "NOT_FOUND", 1*time.Minute).Err()
-			}
 			p.cacheSiteIDNegative(subdomain)
 			return "", nil
 		}
 		return "", fmt.Errorf("static_s3: db query error: %w", err)
 	}
 
-	if p.redisClient != nil {
-		_ = p.redisClient.Set(ctx, redisKey, siteID, 5*time.Minute).Err()
-	}
 	p.cacheSiteID(subdomain, siteID)
 
 	return siteID, nil
@@ -270,44 +247,9 @@ func (p *StaticPlugin) cacheSiteIDNegative(subdomain string) {
 	p.cache.Set(key, &CacheItem{Key: key, Exists: false}, siteIDL1TTL)
 }
 
-// resolveSiteVersion returns the deploy version for a site used to scope LRU keys.
-// On any Redis failure or missing key, returns "0" without blocking the request.
-func (p *StaticPlugin) resolveSiteVersion(ctx context.Context, subdomain, siteID string) string {
-	versionKey := subdomain + ":__version__"
-
-	if p.cacheTTL > 0 && p.cache != nil {
-		if item, ok := p.cache.Get(versionKey); ok && item.Exists && len(item.Content) > 0 {
-			return string(item.Content)
-		}
-	}
-
-	version := "0"
-	if p.redisClient != nil {
-		val, err := p.redisClient.Get(ctx, "site_version:"+siteID).Result()
-		if err == nil && val != "" {
-			version = val
-		}
-		// redis.Nil or any error → keep "0"
-	}
-
-	if p.cacheTTL > 0 && p.cache != nil {
-		p.cache.Set(versionKey, &CacheItem{
-			Key:     versionKey,
-			Content: []byte(version),
-			Exists:  true,
-		}, p.cacheTTL)
-	}
-
-	return version
-}
-
-// resolveBlob maps a request URL path to a blob hash via the active deployment manifest.
-// Runtime path never queries blob_tree_entries.
-func (p *StaticPlugin) resolveBlob(ctx context.Context, siteID, version, urlPath string, r *http.Request) (*blobResolution, error) {
-	deploymentID, err := p.resolveActiveDeploymentID(ctx, siteID, version)
-	if err != nil {
-		return nil, err
-	}
+// resolveBlob maps a request URL path to a blob hash via the active deployment
+// manifest. Runtime path never queries blob_tree_entries.
+func (p *StaticPlugin) resolveBlob(ctx context.Context, deploymentID, urlPath string, r *http.Request) (*blobResolution, error) {
 	if deploymentID == "" {
 		return nil, nil
 	}

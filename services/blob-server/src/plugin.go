@@ -17,7 +17,6 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/dustin/go-humanize"
 	_ "github.com/lib/pq"
-	"github.com/redis/go-redis/v9"
 )
 
 func init() {
@@ -50,11 +49,6 @@ type StaticPlugin struct {
 	// Multi-tenant fields
 	BaseDomain string `json:"base_domain,omitempty"`
 	DBDSN      string `json:"db_dsn,omitempty"`
-	RedisURL   string `json:"redis_url,omitempty"`
-
-	// Analytics: set to false to disable per-site statistics collection.
-	// Defaults to true when both db_dsn and redis_url are configured.
-	AnalyticsEnabled bool `json:"analytics,omitempty"`
 
 	s3Client        *s3.Client
 	s3PresignClient *s3.PresignClient
@@ -65,8 +59,6 @@ type StaticPlugin struct {
 	maxCacheSize    int64
 	presignLifetime time.Duration
 	db              *sql.DB
-	redisClient     *redis.Client
-	analytics       *AnalyticsMiddleware
 }
 
 func (StaticPlugin) CaddyModule() caddy.ModuleInfo {
@@ -104,9 +96,6 @@ func (p *StaticPlugin) Provision(ctx caddy.Context) error {
 	if p.DBDSN == "" {
 		p.DBDSN = os.Getenv("DATABASE_URL")
 	}
-	if p.RedisURL == "" {
-		p.RedisURL = os.Getenv("REDIS_URL")
-	}
 
 	// Open PostgreSQL connection if multi-tenant mode is configured
 	if p.BaseDomain != "" && p.DBDSN != "" {
@@ -120,27 +109,6 @@ func (p *StaticPlugin) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("static_s3: postgres ping failed: %w", err)
 		}
 		p.db = db
-	}
-
-	// Open Redis connection if multi-tenant mode is configured
-	if p.BaseDomain != "" && p.RedisURL != "" {
-		opts, err := redis.ParseURL(p.RedisURL)
-		if err != nil {
-			return fmt.Errorf("static_s3: invalid redis_url: %w", err)
-		}
-		rdb := redis.NewClient(opts)
-		pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		if err := rdb.Ping(pingCtx).Err(); err != nil {
-			return fmt.Errorf("static_s3: redis ping failed: %w", err)
-		}
-		p.redisClient = rdb
-	}
-
-	// Initialize analytics middleware when both Redis and PostgreSQL are
-	// available and the operator has not explicitly disabled it.
-	if p.db != nil && p.redisClient != nil && p.AnalyticsEnabled {
-		p.analytics = NewAnalyticsMiddleware(p.redisClient, p.db)
 	}
 
 	// SPA Fallback: hardcoded to "index.html" in multi-tenant mode.
@@ -228,13 +196,8 @@ func (p *StaticPlugin) Provision(ctx caddy.Context) error {
 }
 
 // Cleanup implements caddy.CleanerUpper and is called by Caddy on reload or
-// shutdown.  It signals both background goroutines to stop, waits for the
-// final PostgreSQL flush to complete, and closes the database connection.
+// shutdown. It closes the PostgreSQL connection.
 func (p *StaticPlugin) Cleanup() error {
-	if p.analytics != nil {
-		close(p.analytics.done) // signal both goroutines to stop
-		p.analytics.wg.Wait()  // wait for final flush to complete
-	}
 	if p.db != nil {
 		p.db.Close()
 	}
@@ -341,16 +304,6 @@ func (p *StaticPlugin) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 				p.DBDSN = d.Val()
-			case "redis_url":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				p.RedisURL = d.Val()
-			case "analytics":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				p.AnalyticsEnabled = d.Val() == "true" || d.Val() == "yes" || d.Val() == "on"
 			default:
 				return d.Errf("unknown subdirective: %s", d.Val())
 			}

@@ -1,0 +1,201 @@
+# PageX blob-server — Vector metrics / usage pipeline
+#
+# Caddy JSON access logs → aggregate per site+hour → HTTP → API ingest
+#   (POST /internal/usage/ingest)
+#
+# The API owns the schema and applies each pre-aggregated hourly record
+# transactionally (bandwidth_usage_hourly, service_metrics_hourly,
+# site_daily_stats) with idempotent dedup via a deterministic ingest_id.
+# Vector does NO direct database access — no postgres sink, no DB credentials.
+#
+# Memory-conscious: short reduce windows, disk HTTP sink buffer, no Redis.
+# Run with ~128–256 MiB. Shares /var/log/caddy with the Caddy container.
+
+data_dir: /var/lib/vector
+
+api:
+  enabled: false
+
+# ── Sources ──────────────────────────────────────────────────────────────────
+
+sources:
+  caddy_access:
+    type: file
+    include:
+      - /var/log/caddy/access.log
+      - /var/log/caddy/access.log.*
+    read_from: end
+    ignore_checkpoints: false
+    oldest_first: true
+    # Rotation-safe: follow inode changes; checkpoint under data_dir.
+    fingerprint:
+      strategy: device_and_inode
+
+# ── Transforms ───────────────────────────────────────────────────────────────
+
+transforms:
+  parse_access:
+    type: remap
+    inputs: [caddy_access]
+    drop_on_error: true
+    source: |
+      raw = object!(parse_json!(.message))
+
+      site_id = to_string(raw.site_id) ?? ""
+      if site_id == "" {
+        abort
+      }
+      .site_id = site_id
+      .deployment_id = to_string(raw.deployment_id) ?? ""
+
+      .status = to_int(raw.status) ?? 0
+      .bytes = to_int(raw.size) ?? 0
+      if .bytes < 0 {
+        .bytes = 0
+      }
+
+      duration_s = to_float(raw.duration) ?? 0.0
+      .duration_ms = to_int(duration_s * 1000.0)
+      if .duration_ms < 0 {
+        .duration_ms = 0
+      }
+
+      .cache_hit = to_bool(raw.cache_hit) ?? false
+
+      ts = raw.ts
+      ts_time, err = from_unix_timestamp(ts, unit: "seconds")
+      if err != null {
+        ts_time = now()
+      }
+      .window_start = ts_time
+
+      .hour_bucket = format_timestamp!(ts_time, format: "%Y-%m-%dT%H:00:00Z")
+      .date = format_timestamp!(ts_time, format: "%Y-%m-%d")
+      .peak_hour = format_timestamp!(ts_time, format: "%H:00")
+
+      .requests = 1
+      .status_2xx = if .status >= 200 && .status < 300 { 1 } else { 0 }
+      .status_3xx = if .status >= 300 && .status < 400 { 1 } else { 0 }
+      .status_4xx = if .status >= 400 && .status < 500 { 1 } else { 0 }
+      .status_5xx = if .status >= 500 { 1 } else { 0 }
+
+      .cache_hits = if .cache_hit { 1 } else { 0 }
+      .cache_misses = if .cache_hit { 0 } else { 1 }
+
+      .latency_sum_ms = .duration_ms
+      .latency_le_50 = if .duration_ms <= 50 { 1 } else { 0 }
+      .latency_le_100 = if .duration_ms <= 100 { 1 } else { 0 }
+      .latency_le_250 = if .duration_ms <= 250 { 1 } else { 0 }
+      .latency_le_500 = if .duration_ms <= 500 { 1 } else { 0 }
+      .latency_le_1000 = if .duration_ms <= 1000 { 1 } else { 0 }
+      .latency_le_2500 = if .duration_ms <= 2500 { 1 } else { 0 }
+
+      del(.message)
+      del(.file)
+      del(.source_type)
+
+  # Aggregate ~30s windows per site+hour. Flushes idle groups after 90s.
+  # Requests are operational only — never billed. Bandwidth is the billing resource.
+  reduce_hourly:
+    type: reduce
+    inputs: [parse_access]
+    group_by:
+      - site_id
+      - hour_bucket
+    end_every_period_ms: 30000
+    expire_after_ms: 90000
+    flush_period_ms: 1000
+    merge_strategies:
+      window_start: discard
+      date: discard
+      peak_hour: discard
+      deployment_id: discard
+      requests: sum
+      bytes: sum
+      status_2xx: sum
+      status_3xx: sum
+      status_4xx: sum
+      status_5xx: sum
+      cache_hits: sum
+      cache_misses: sum
+      latency_sum_ms: sum
+      latency_le_50: sum
+      latency_le_100: sum
+      latency_le_250: sum
+      latency_le_500: sum
+      latency_le_1000: sum
+      latency_le_2500: sum
+
+  to_ingest:
+    type: remap
+    inputs: [reduce_hourly]
+    drop_on_error: true
+    source: |
+      site_id = to_string!(.site_id)
+      hour_bucket = to_string!(.hour_bucket)
+      requests = to_int(.requests) ?? 0
+      bytes = to_int(.bytes) ?? 0
+
+      # Deterministic idempotency key: identical flushed aggregates collide, so a
+      # retried HTTP POST of the same batch is deduped by the API.
+      .ingest_id = "v1|" + site_id + "|" + hour_bucket + "|" +
+        to_string(requests) + "|" + to_string(bytes) + "|" +
+        to_string(to_int(.status_2xx) ?? 0) + "|" +
+        to_string(to_int(.status_3xx) ?? 0) + "|" +
+        to_string(to_int(.status_4xx) ?? 0) + "|" +
+        to_string(to_int(.status_5xx) ?? 0)
+
+      . = {
+        "ingest_id": .ingest_id,
+        "site_id": site_id,
+        "bucket": hour_bucket,
+        "bandwidth_bytes": bytes,
+        "requests": requests,
+        "status_2xx": to_int(.status_2xx) ?? 0,
+        "status_3xx": to_int(.status_3xx) ?? 0,
+        "status_4xx": to_int(.status_4xx) ?? 0,
+        "status_5xx": to_int(.status_5xx) ?? 0,
+        "cache_hits": to_int(.cache_hits) ?? 0,
+        "cache_misses": to_int(.cache_misses) ?? 0,
+        "latency_sum_ms": to_int(.latency_sum_ms) ?? 0,
+        "latency_le_50": to_int(.latency_le_50) ?? 0,
+        "latency_le_100": to_int(.latency_le_100) ?? 0,
+        "latency_le_250": to_int(.latency_le_250) ?? 0,
+        "latency_le_500": to_int(.latency_le_500) ?? 0,
+        "latency_le_1000": to_int(.latency_le_1000) ?? 0,
+        "latency_le_2500": to_int(.latency_le_2500) ?? 0
+      }
+
+# ── Sinks (HTTP → API ingest) ────────────────────────────────────────────────
+# JSON codec sends one NDJSON object per event. The API parses NDJSON or a JSON
+# array. Disk buffer survives Vector restarts and absorbs API outages; the API
+# dedupes retried batches by ingest_id.
+
+sinks:
+  api_ingest:
+    type: http
+    inputs: [to_ingest]
+    uri: "${USAGE_API_URL}"
+    method: post
+    encoding:
+      codec: json
+    request:
+      headers:
+        authorization: "Bearer ${USAGE_INGEST_TOKEN}"
+        content-type: "application/x-ndjson"
+      retry_attempts: 10
+      retry_initial_backoff_secs: 1
+      retry_max_duration_secs: 600
+    # The ingest endpoint is a bearer-auth POST; a GET healthcheck would 404, so
+    # we rely on end-to-end acknowledgements + retries instead.
+    healthcheck:
+      enabled: false
+    batch:
+      max_events: 100
+      timeout_secs: 5
+    buffer:
+      type: disk
+      max_size: 268435488
+      when_full: block
+    acknowledgements:
+      enabled: true

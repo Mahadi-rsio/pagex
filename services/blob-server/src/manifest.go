@@ -15,24 +15,22 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/redis/go-redis/v9"
 )
 
 const (
 	manifestSchemaVersion = 1
 	maxManifestSizeBytes  = 50 * 1024 * 1024
-	manifestRedisTTL      = 24 * time.Hour
 	// manifestL1TTL is the process-local manifest cache TTL. Manifests are
 	// immutable and keyed by deployment ID, so no invalidation is ever needed —
-	// a long TTL is safe and keeps hot-path requests entirely off Redis/MinIO.
+	// a long TTL is safe and keeps hot-path requests entirely off MinIO.
 	manifestL1TTL = 1 * time.Hour
 	// activeDeploymentL1TTL bounds the process-local siteID→active deployment
-	// mapping. Version scoping (siteID:__active__:version) makes entries from a
-	// previous deploy unreachable immediately after activation/rollback.
-	activeDeploymentL1TTL = 5 * time.Minute
-	// siteIDL1TTL bounds the process-local subdomain→siteID mapping. It matches
-	// the Redis site:{subdomain} TTL so a deleted/deactivated site stops being
-	// served within the same window as the legacy Redis cache.
+	// mapping. Without Redis there is no push-based invalidation, so a deploy
+	// or rollback propagates within this window. Keep it short (deploys become
+	// visible quickly) at the cost of a PostgreSQL lookup every TTL.
+	activeDeploymentL1TTL = 60 * time.Second
+	// siteIDL1TTL bounds the process-local subdomain→siteID mapping. A
+	// deactivated/deleted site stops being served within this window.
 	siteIDL1TTL = 5 * time.Minute
 	// manifestLoadErrorTTL negative-caches failed manifest loads so a missing or
 	// corrupt manifest cannot stampede MinIO with one fetch per request.
@@ -71,8 +69,6 @@ type manifestErrorEntry struct {
 type ServeMetrics struct {
 	ManifestL1Hit            int64
 	ManifestL1Miss           int64
-	ManifestRedisHit         int64
-	ManifestRedisMiss        int64
 	ManifestObjectStorageHit int64
 	ManifestLoadErrors       int64
 	BlobCacheHit             int64
@@ -83,12 +79,8 @@ func manifestObjectKey(deploymentID string) string {
 	return "manifests/" + deploymentID + ".manifest.json"
 }
 
-func manifestRedisKey(deploymentID string) string {
-	return "manifest:" + deploymentID
-}
-
-func activeDeploymentRedisKey(siteID string) string {
-	return "active_deployment:" + siteID
+func activeDeploymentL1Key(siteID string) string {
+	return siteID + ":__active__"
 }
 
 // normalizeManifestPath canonicalizes request paths for manifest lookup.
@@ -181,17 +173,13 @@ func validateDeploymentManifest(raw []byte, expectedDeploymentID string) (*Deplo
 }
 
 // activeDeploymentL1Key scopes the process-local active-deployment mapping by
-// site_version. Deploys/rollbacks INCR site_version, so a stale mapping is
-// never reused — the key changes and the next request re-resolves from Redis.
-func activeDeploymentL1Key(siteID, version string) string {
-	return siteID + ":__active__:" + version
-}
-
-func (p *StaticPlugin) cacheActiveDeployment(siteID, version, deploymentID string) {
+// site. Deployments are immutable and keyed by deployment ID; the mapping is
+// refreshed by TTL (activeDeploymentL1TTL) since there is no push invalidation.
+func (p *StaticPlugin) cacheActiveDeployment(siteID, deploymentID string) {
 	if p.cacheTTL <= 0 || p.cache == nil {
 		return
 	}
-	key := activeDeploymentL1Key(siteID, version)
+	key := activeDeploymentL1Key(siteID)
 	p.cache.Set(key, &CacheItem{
 		Key:     key,
 		Content: []byte(deploymentID),
@@ -199,21 +187,21 @@ func (p *StaticPlugin) cacheActiveDeployment(siteID, version, deploymentID strin
 	}, activeDeploymentL1TTL)
 }
 
-func (p *StaticPlugin) cacheActiveDeploymentNegative(siteID, version string) {
+func (p *StaticPlugin) cacheActiveDeploymentNegative(siteID string) {
 	if p.cacheTTL <= 0 || p.cache == nil {
 		return
 	}
-	key := activeDeploymentL1Key(siteID, version)
+	key := activeDeploymentL1Key(siteID)
 	p.cache.Set(key, &CacheItem{
 		Key:    key,
 		Exists: false,
 	}, activeDeploymentL1TTL)
 }
 
-func (p *StaticPlugin) resolveActiveDeploymentID(ctx context.Context, siteID, version string) (string, error) {
-	// L1: process-local LRU (siteID → active deployment ID), version-scoped.
-	// A hit means zero Redis and zero PostgreSQL work on the hot path.
-	l1Key := activeDeploymentL1Key(siteID, version)
+func (p *StaticPlugin) resolveActiveDeploymentID(ctx context.Context, siteID string) (string, error) {
+	// L1: process-local LRU (siteID → active deployment ID). A hit means zero
+	// PostgreSQL work on the hot path.
+	l1Key := activeDeploymentL1Key(siteID)
 	if p.cacheTTL > 0 && p.cache != nil {
 		if item, ok := p.cache.Get(l1Key); ok {
 			if !item.Exists {
@@ -225,19 +213,9 @@ func (p *StaticPlugin) resolveActiveDeploymentID(ctx context.Context, siteID, ve
 		}
 	}
 
-	// L2: Redis read-through cache.
-	if p.redisClient != nil {
-		val, err := p.redisClient.Get(ctx, activeDeploymentRedisKey(siteID)).Result()
-		if err == nil && val != "" {
-			p.cacheActiveDeployment(siteID, version, val)
-			return val, nil
-		}
-		// redis.Nil or transient error → fall through to PostgreSQL
-	}
-
-	// L3: PostgreSQL fallback (control-plane source of truth).
+	// L2: PostgreSQL fallback (control-plane source of truth).
 	if p.db == nil {
-		return "", fmt.Errorf("static_s3: active deployment lookup requires db_dsn or warm Redis cache")
+		return "", fmt.Errorf("static_s3: active deployment lookup requires db_dsn")
 	}
 
 	var deploymentID string
@@ -248,16 +226,13 @@ func (p *StaticPlugin) resolveActiveDeploymentID(ctx context.Context, siteID, ve
 	`, siteID)
 	if err := row.Scan(&deploymentID); err != nil {
 		if errors.Is(err, errNoRows) {
-			p.cacheActiveDeploymentNegative(siteID, version)
+			p.cacheActiveDeploymentNegative(siteID)
 			return "", nil
 		}
 		return "", fmt.Errorf("static_s3: active deployment query error: %w", err)
 	}
 
-	if p.redisClient != nil && deploymentID != "" {
-		_ = p.redisClient.Set(ctx, activeDeploymentRedisKey(siteID), deploymentID, 0).Err()
-	}
-	p.cacheActiveDeployment(siteID, version, deploymentID)
+	p.cacheActiveDeployment(siteID, deploymentID)
 
 	return deploymentID, nil
 }
@@ -331,28 +306,6 @@ func (p *StaticPlugin) loadManifestCoalesced(ctx context.Context, deploymentID s
 }
 
 func (p *StaticPlugin) loadManifestFromRemote(ctx context.Context, deploymentID string) (*DeploymentManifest, error) {
-	if p.redisClient != nil {
-		val, err := p.redisClient.Get(ctx, manifestRedisKey(deploymentID)).Result()
-		if err == nil && val != "" {
-			m, vErr := validateDeploymentManifest([]byte(val), deploymentID)
-			if vErr != nil {
-				if p.metrics != nil {
-					p.metrics.ManifestLoadErrors++
-				}
-				return nil, vErr
-			}
-			if p.metrics != nil {
-				p.metrics.ManifestRedisHit++
-			}
-			return m, nil
-		}
-		if err != nil && !errors.Is(err, redis.Nil) {
-			// Redis unavailable — fall through to MinIO
-		} else if p.metrics != nil {
-			p.metrics.ManifestRedisMiss++
-		}
-	}
-
 	if p.s3Client == nil {
 		return nil, errors.New("static_s3: manifest load requires S3 client")
 	}
@@ -387,10 +340,6 @@ func (p *StaticPlugin) loadManifestFromRemote(ctx context.Context, deploymentID 
 
 	if p.metrics != nil {
 		p.metrics.ManifestObjectStorageHit++
-	}
-
-	if p.redisClient != nil {
-		_ = p.redisClient.Set(ctx, manifestRedisKey(deploymentID), string(raw), manifestRedisTTL).Err()
 	}
 
 	return m, nil

@@ -8,16 +8,16 @@ It is designed for production efficiency, security, and scalability, featuring b
 
 ## Key Features
 
-- **Multi-Tenant Blob-Direct Serving:** Route `tenant-a.cloudisy.com` → resolve `site_id` via Redis/PostgreSQL → resolve the active deployment's manifest (MinIO `manifests/{deploymentID}.json`, cached in Redis `manifest:{deploymentId}`) → stream `blobs/{sha256}` from MinIO. Zero per-tenant Caddy config.
+- **Multi-Tenant Blob-Direct Serving:** Route `tenant-a.example.com` → resolve `site_id` via LRU/PostgreSQL → resolve the active deployment's manifest (MinIO `manifests/{deploymentID}.json`, cached in LRU) → stream `blobs/{sha256}` from MinIO. Zero per-tenant Caddy config. No Redis.
 - **Pre-compressed & WebP variants:** Automatically selects `.br`, `.gz`, or `.webp` variants from the path map based on `Accept-Encoding` / `Accept`.
 - **Universal S3 Compatibility:** Works with any S3-compliant storage by configuring custom endpoints and region settings.
 - **Memory-Efficient Streaming:** Streams files directly from S3 to the client. Never loads large files entirely into Caddy's memory.
-- **High-Performance Caching:** Thread-safe LRU cache with configurable TTL:
-  - Path resolution cache: `{subdomain}:{version}:{path}:{encoding}` → blob hash (skips Redis on hit)
-  - Negative cache: `{subdomain}:{version}:{path}:404` (1 minute TTL)
-  - File content cache: `{subdomain}:{version}:{path}:{encoding}:body`
-  - Version key: `{subdomain}:__version__` (from Redis `site_version:{site_id}`)
-  - Instant deploy invalidation via version bump — old LRU entries become unreachable without a prefix scan
+- **High-Performance Caching:** Thread-safe LRU cache (L1) with PostgreSQL as the fallback (L2). No Redis:
+  - Path resolution cache: `{deploymentID}:{path}:{encoding}` → blob hash
+  - Negative cache: `{deploymentID}:{path}:404` (1 minute TTL)
+  - File content cache: `{deploymentID}:{path}:{encoding}:body`
+  - Active-deployment / site-id / manifest lookups cached in LRU (see tables below)
+  - Cache keys are deployment-scoped so a new deploy makes old entries unreachable without a prefix scan
 - **Browser Cache Headers:** Sets `Cache-Control` by file type; `Vary: Accept-Encoding` when serving br/gz variants.
 - **Standard Range Requests:** Passes `Range` through to MinIO on `blobs/{hash}` unchanged.
 - **Ambient Credentials support:** Access keys are optional; falls back to the standard AWS credentials chain (IAM Roles, EKS/ECS/EC2, env vars).
@@ -56,14 +56,11 @@ Add the `static_s3` directive inside your site block.
 
             # --- Multi-Tenant Settings ---
             # Base domain for subdomain extraction (enables multi-tenant mode). (Optional)
-            # e.g. "cloudisy.com" → extracts "tenant-a" from "tenant-a.cloudisy.com"
-            base_domain "cloudisy.com"
+            # e.g. "example.com" → extracts "tenant-a" from "tenant-a.example.com"
+            base_domain "example.com"
             
-            # PostgreSQL DSN for site_id and blob-tree lookups. Falls back to DATABASE_URL. (Optional)
+            # PostgreSQL DSN for site_id and deployment lookups. Falls back to DATABASE_URL. (Optional)
             db_dsn "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
-            
-            # Redis URL for site:, site_version:, active_deployment:, and manifest: keys. Falls back to REDIS_URL. (Optional)
-            redis_url "redis://localhost:6379/0"
 
             # --- Routing & Paths ---
             # Sub-folder prefix inside the S3 bucket. (Optional)
@@ -114,45 +111,37 @@ When `base_domain` is set, the plugin switches into **multi-tenant blob-direct m
 ### How a request is handled
 
 ```
-tenant-a.cloudisy.com/about
+tenant-a.example.com/about
         │
         ▼
   1. Extract subdomain → "tenant-a"
         │
         ▼
   2. Resolve site_id:
-       LRU "{subdomain}:__site__" → hit
-       miss → Redis GET "site:tenant-a"
-              → PostgreSQL lookup → cache (TTL 5 min)
-              NOT_FOUND → negative-cache 10s → 404
+       LRU "subdomain:{site_id}:__site__" → hit
+       miss → PostgreSQL lookup → cache (TTL 5 min)
+       NOT_FOUND → negative-cache 10s → 404
         │
         ▼
   3. Resolve active deployment:
-       LRU "{site_id}:__active__:{version}" → hit
-       miss → Redis GET "active_deployment:{site_id}"
-             → PostgreSQL SELECT ... WHERE is_active AND
-               manifest_key IS NOT NULL → cache
+       LRU "subdomain:{deploymentID}:__active__" → hit
+       miss → PostgreSQL SELECT ... WHERE is_active AND
+             manifest_key IS NOT NULL → cache
              (deployments without a valid manifest are never served)
         │
         ▼
-  4. Resolve deploy version (for LRU scoping):
-       LRU "{subdomain}:__version__" → hit
-       miss → Redis GET "site_version:{site_id}" (default "0")
-        │
-        ▼
-  5. Load manifest:
+  4. Load manifest:
        LRU "manifest:{deployment_id}" (TTL 1h) → hit
        miss → single-flight coalesced load:
-              Redis GET "manifest:{deployment_id}" (TTL 24h)
-              miss → MinIO GET "manifests/{deployment_id}.json"
+              MinIO GET "manifests/{deployment_id}.json"
               missing/corrupt manifest → negative-cache 10s → 500
         │
         ▼
-  6. Resolve path candidates:
+  5. Resolve path candidates:
        /about → ["about/index.html", "about.html", "about"]
         │
         ▼
-  7. For each candidate, pick best variant from manifest.files:
+  6. For each candidate, pick best variant from manifest.files:
        Accept-Encoding: br   → try "{candidate}.br", else "{candidate}"
        Accept-Encoding: gzip → try "{candidate}.gz", else "{candidate}"
        Accept: image/webp    → try "{candidate}.webp" (image paths), else raw
@@ -160,13 +149,13 @@ tenant-a.cloudisy.com/about
        first hit → proceed; all miss → next candidate
         │
         ▼
-  8. All candidates miss → SPA fallback:
+  7. All candidates miss → SPA fallback:
        path has fallback_except extension → 404
        otherwise → "index.html" (same Accept-Encoding logic)
                    miss → 404
         │
         ▼
-  9. Stream from MinIO: blobs/{blob_hash}
+  8. Stream from MinIO: blobs/{blob_hash}
 ```
 
 ### PostgreSQL schema
@@ -212,37 +201,34 @@ my-bucket/
     └── {deployment_id}.json   ← path→sha256 map (+ .br/.gz/.webp variants)
 ```
 
-The manifest is generated by the API at commit/rollback time (`generateAndPersistManifest`) and stored **before** the deployment is activated. Caddy loads it through its L1 cache → Redis → MinIO (single-flight); it is never rebuilt from PostgreSQL at runtime.
+The manifest is generated by the API at commit/rollback time (`generateAndPersistManifest`) and stored **before** the deployment is activated. Caddy loads it through its LRU cache → MinIO (single-flight); it is never rebuilt from PostgreSQL at runtime.
 
-### Redis keys
+### Cache keys (LRU only — no Redis)
 
-| Scenario | Redis key | Value | TTL |
+| Scenario | LRU key | Value | TTL |
 |---|---|---|---|
-| Tenant found | `site:tenant-a` | site UUID | 5 min |
-| Tenant not found | `site:ghost` | `NOT_FOUND` | 10 s |
-| Deploy version | `site_version:{site_id}` | integer counter (string) | none (permanent) |
-| Active deployment | `active_deployment:{site_id}` | deployment UUID | none (flushed by API on deploy/rollback) |
-| Deployment manifest | `manifest:{deployment_id}` | JSON path→hash map | 24 h |
+| Tenant found | `subdomain:{site_id}:__site__` | site UUID | 5 min |
+| Tenant not found | `subdomain:__site__:404` | `NOT_FOUND` | 10 s |
+| Active deployment | `subdomain:{deployment_id}:__active__` | deployment UUID | 60 s |
+| Deployment manifest | `manifest:{deployment_id}` | JSON path→hash map | 1 h |
+| Manifest load error | `manifest:{deployment_id}:error` | `NOT_FOUND` | 10 s |
 
 Path lookups read from the manifest `files` map in memory — no Redis hash, no `HGETALL`.
-
-`site_version:{site_id}` has no TTL. The backend should `INCR` it after every successful commit/rollback, and `DEL` it when the site is deleted.
 
 ### LRU cache (multi-tenant)
 
 | Key | Value | TTL |
 |---|---|---|
-| `{subdomain}:__site__` | site UUID | 5 min |
-| `{site_id}:__active__:{version}` | deployment UUID | 5 min |
-| `{subdomain}:__version__` | deploy version string | `cache_ttl` |
+| `subdomain:{site_id}:__site__` | site UUID | 5 min |
+| `subdomain:{deployment_id}:__active__` | deployment UUID | 60 s |
 | `manifest:{deployment_id}` | parsed manifest | 1 h |
-| `{subdomain}:{version}:{path}:{br\|gz\|webp\|raw}` | blob hash | `cache_ttl` |
-| `{subdomain}:{version}:{path}:404` | `NOT_FOUND` | 1 min |
-| `{subdomain}:{version}:{path}:{encoding}:body` | file body and/or metadata | `cache_ttl` |
+| `{deployment_id}:{path}:{br\|gz\|webp\|raw}` | blob hash | `cache_ttl` |
+| `{deployment_id}:{path}:404` | `NOT_FOUND` | 1 min |
+| `{deployment_id}:{path}:{encoding}:body` | file body and/or metadata | `cache_ttl` |
 
-On LRU path hit: skip all Redis calls, go straight to MinIO (or serve cached body).
+On LRU path hit: skip all DB calls, go straight to MinIO (or serve cached body).
 
-The version key is **not** version-scoped. All other keys include the version so a deploy bump makes old entries unreachable without scanning the LRU. The active-deployment key is version-scoped too (`{site_id}:__active__:{version}`), so a version bump also invalidates the previously-cached active deployment lookup.
+Path and body cache keys are deployment-scoped (they embed the active `deployment_id`), so a new deploy makes old entries unreachable without scanning the LRU. The site-id and active-deployment lookups are short-lived, so a deploy is picked up within their TTL.
 
 ### Browser Cache-Control
 
@@ -260,25 +246,19 @@ Content-Type is inferred from the original file path (`.br`/`.gz` stripped). Nev
 ```
 Deploy / rollback succeeds
       ↓
-Backend: INCR site_version:{site_id}  →  "8"
-Backend: DEL site:{subdomain}
-Backend: SET active_deployment:{site_id} <new deployment UUID>
-Backend: SET manifest:{deployment_id} <manifest JSON> (TTL 24h)
+New deployment becomes active (PostgreSQL is_active)
       ↓
 Next request hits Caddy:
-  Redis GET site:mysite → miss
-  → evict LRU "mysite:__site__" only
-  → PostgreSQL lookup → site_id → cache site:mysite
-  → Redis GET site_version:{site_id} → "8"
-  → LRU store "mysite:__version__" = "8"
-  → active-deployment LRU (scoped to "8") misses → fresh lookup
-  → manifest for the new deployment is served from Redis/MinIO
-  → subsequent lookups use "mysite:8:..." and "site:8:..."
-  → old "mysite:7:*" / "site:7:*" keys are never looked up again
+  active-deployment LRU (TTL 60s) → miss or stale
+  → PostgreSQL lookup → new deployment_id
+  → manifest for the new deployment is fetched from MinIO
+  → path/body LRU keys are deployment-scoped → old entries unreachable
   → naturally evicted by LRU capacity or TTL
 ```
 
-No prefix scan, no Admin API — version scoping is the only invalidation mechanism.
+There is no push-based invalidation (no Redis, no Admin API). Deployment-scoped
+path keys plus the short active-deployment/site TTLs are the only mechanisms —
+a deploy is picked up within ~60s with no stale path served.
 
 ### Managing tenants
 
@@ -288,14 +268,9 @@ psql -c "INSERT INTO sites (subdomain) VALUES ('tenant-a');"
 
 # Disable a tenant immediately
 psql -c "UPDATE sites SET active=false WHERE subdomain='tenant-a';"
-redis-cli DEL site:tenant-a
 
-# After deploy / rollback (backend should do this)
-redis-cli INCR site_version:{site_id}
-redis-cli DEL site:tenant-a
-
-# On site delete
-redis-cli DEL site:tenant-a active_deployment:{site_id} site_version:{site_id}
+# After deploy / rollback the backend flips deployments.is_active and the
+# active-deployment LRU entry expires within 60s.
 ```
 
 ### Environment variables (multi-tenant)
@@ -304,7 +279,6 @@ redis-cli DEL site:tenant-a active_deployment:{site_id} site_version:{site_id}
 |---|---|---|
 | `BASE_DOMAIN` | `base_domain` | Base domain for subdomain extraction |
 | `DATABASE_URL` | `db_dsn` | PostgreSQL connection string |
-| `REDIS_URL` | `redis_url` | Redis connection URL |
 | `S3_ACCESS_KEY` | `access_key` | S3 access key |
 | `S3_SECRET_KEY` | `secret_key` | S3 secret key |
 
@@ -315,17 +289,16 @@ redis-cli DEL site:tenant-a active_deployment:{site_id} site_version:{site_id}
     order static_s3 before respond
 }
 
-*.cloudisy.com {
+*.example.com {
     static_s3 {
         endpoint        https://s3.dianahost.com
-        bucket          cloudisy-sites
+        bucket          example-sites
         access_key      {env.S3_ACCESS_KEY}
         secret_key      {env.S3_SECRET_KEY}
         use_path_style  true
 
-        base_domain     cloudisy.com
+        base_domain     example.com
         db_dsn          {env.DATABASE_URL}
-        redis_url       {env.REDIS_URL}
 
         cache_ttl       10m
         cache_size      2000
@@ -348,7 +321,7 @@ When `base_domain` is not set, the plugin serves objects by request path (option
 For platforms with high traffic or hosting massive static media files, routing all traffic through your VPS can consume excessive bandwidth and cause latency.
 
 By enabling `redirect_to_s3 true`, Caddy will:
-1. Resolve the blob (multi-tenant) or object key (single-tenant) via cache / Redis / HeadObject.
+1. Resolve the blob (multi-tenant) or object key (single-tenant) via cache / HeadObject.
 2. Catch missing files and run SPA fallback where applicable.
 3. Redirect the client's browser (HTTP `307 Temporary Redirect`) directly to the S3 provider (`blobs/{hash}` in multi-tenant mode).
 
@@ -412,15 +385,20 @@ static_s3 {
 ├── Caddyfile          # Development Caddy configuration file
 ├── go.mod             # Go module file
 ├── go.sum             # Go dependencies checksum file
-├── cache.go           # LRU cache implementation with TTL
-├── cache_test.go      # LRU cache unit tests
-├── handler.go         # Core middleware, blob resolution, multi-tenant routing, streaming
-├── plugin.go          # Caddy registration, configuration parser, PostgreSQL & Redis setup
-├── plugin_test.go     # Plugin & parser unit tests
-├── analytics.go       # Per-site analytics middleware
-├── sql_helpers.go     # Internal sql.ErrNoRows bridge
+├── src/
+│   ├── cache.go       # LRU cache implementation with TTL
+│   ├── cache_test.go  # LRU cache unit tests
+│   ├── handler.go     # Core middleware, blob resolution, multi-tenant routing, streaming, access-log fields
+│   ├── plugin.go      # Caddy registration, configuration parser, PostgreSQL setup
+│   ├── plugin_test.go # Plugin & parser unit tests
+│   ├── manifest.go    # Deployment manifest load (LRU → MinIO, single-flight)
+│   └── sql_helpers.go # Internal sql.ErrNoRows bridge
 └── README.md          # Project documentation
 ```
+
+Usage metrics are not tracked in-process; Caddy emits JSON access logs (with
+`site_id` / `deployment_id` / `cache_hit` via `ExtraLogFields`) that Vector
+aggregates and posts to the API. See `vector/README.md`.
 
 ---
 

@@ -10,6 +10,7 @@ services:
     env_file: .env
     environment:
       - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
+      - USAGE_INGEST_TOKEN=${USAGE_INGEST_TOKEN}
     expose:
       - "3000"
     ports:
@@ -34,9 +35,6 @@ services:
       - "443:443"
       - "3080:3080"
       - "2019:2019"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./services/blob-server/tls:/etc/caddy/tls:ro
     environment:
       - S3_ACCESS_KEY=${S3_ACCESS_KEY}
       - S3_SECRET_KEY=${S3_SECRET_KEY}
@@ -51,10 +49,35 @@ services:
       - MAX_CACHE_SIZE=${MAX_CACHE_SIZE:-512KiB}
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
       - TLS_CFG=${TLS_CFG:-tls-off}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./services/blob-server/tls:/etc/caddy/tls:ro
+      - caddy_logs:/var/log/caddy
     depends_on:
       api:
         condition: service_started
       console:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - pagex
+
+  # ============================================================================
+  # Vector — access-log aggregation → API ingest
+  # ============================================================================
+  vector:
+    container_name: vector
+    image: timberio/vector:0.46.1-alpine
+    command: ["--config", "/etc/vector/vector.yaml"]
+    volumes:
+      - ./services/blob-server/vector/vector.yaml:/etc/vector/vector.yaml:ro
+      - caddy_logs:/var/log/caddy
+      - vector_data:/var/lib/vector
+    environment:
+      - USAGE_INGEST_TOKEN=${USAGE_INGEST_TOKEN}
+      - USAGE_API_URL=${USAGE_API_URL:-http://api:3000/internal/usage/ingest}
+    depends_on:
+      api:
         condition: service_started
     restart: unless-stopped
     networks:
@@ -116,35 +139,6 @@ services:
       - pagex
 
   # ============================================================================
-  # DB Backup — every 25m pg_dump → MinIO (same bucket, backup/ prefix)
-  # ============================================================================
-  db-backup:
-    container_name: db_backup
-    build:
-      context: ./scripts/db-backup
-    env_file: .env
-    environment:
-      - PGHOST=db
-      - PGUSER=${POSTGRES_USER:-postgres}
-      - PGPASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - PGDATABASE=${POSTGRES_DB:-pagex}
-      - MINIO_ENDPOINT_URL=${MINIO_ENDPOINT_URL}
-      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
-      - S3_SECRET_KEY=${S3_SECRET_KEY}
-      - MINIO_BUCKET=${MINIO_BUCKET:-sites}
-      - BACKUP_PREFIX=${BACKUP_PREFIX:-backup}
-      - BACKUP_RETENTION_HOURS=${BACKUP_RETENTION_HOURS:-24}
-      - BACKUP_INTERVAL_SECONDS=${BACKUP_INTERVAL_SECONDS:-1500}
-      - BACKUP_MIN_BYTES=${BACKUP_MIN_BYTES:-2048}
-      - BACKUP_STARTUP_GRACE_SECONDS=${BACKUP_STARTUP_GRACE_SECONDS:-90}
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - pagex
-
-  # ============================================================================
   # Redis — Cache, rate limiting, and deploy locks
   # ============================================================================
   redis:
@@ -163,6 +157,8 @@ services:
 
 volumes:
   pgdata:
+  caddy_logs:
+  vector_data:
 
 networks:
   pagex:
