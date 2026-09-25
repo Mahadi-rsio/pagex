@@ -1,122 +1,99 @@
-# Project Context: Next.js Monolith
+# Project Context: Next.js Console and Native API
 
-This project is a standard monolithic Next.js web application configured to run on Node.js/Docker (not a Cloudflare runtime), using PostgreSQL, Redis, Drizzle ORM, and Better Auth.
+PageX's console is a Next.js 16 monolith with PostgreSQL, Redis, MinIO, Drizzle ORM, and Better Auth. The former Express API is now served by native App Router handlers in the same application.
 
-## 🛠 Tech Stack
+## Stack
 
-- **Core Framework**: [Next.js 16](https://nextjs.org/) (App Router; dual build: static `export` UI + `standalone` API)
-- **Programming Language**: [TypeScript](https://www.typescriptlang.org/)
-- **Styling**: [Tailwind CSS v4](https://tailwindcss.com/) + [tw-animate-css](https://github.com/mrcat-in-box/tw-animate-css)
-- **Linter & Formatter**: [Biome](https://biomejs.dev/)
-- **Database ORM**: [Drizzle ORM](https://orm.drizzle.team/)
-- **Database Engine**: PostgreSQL
-- **Caching & Session Storage**: Redis (using `ioredis`)
-- **Authentication**: [Better Auth](https://better-auth.com/) (Drizzle adapter)
-- **Edge / Static**: [Caddy](https://caddyserver.com/) serves the exported UI; reverse-proxies `/api/*` to the Node container
-- **Containerization**: Docker & Docker Compose
+- Next.js 16 App Router and React 19
+- TypeScript in strict mode
+- Tailwind CSS v4 and shadcn/ui
+- PostgreSQL with Drizzle ORM
+- Redis with ioredis
+- MinIO with the S3 client
+- Better Auth with JWT/JWKS
+- Zod validation
+- Biome 2 formatting
+- Caddy for the console reverse proxy and tenant `static_s3` serving
 
----
-
-## 📁 Directory Structure
+## Structure
 
 ```text
-/workspaces/next-web
-├── .github/                   # GitHub workflows and settings
-├── drizzle/                   # Drizzle migration files (production output)
-├── public/                    # Static assets
-├── src/                       # Main source code
-│   ├── app/                   # Next.js App Router routes & layouts
-│   │   ├── api/               # API routes (including better-auth endpoint)
-│   │   │   ├── auth/          # Better Auth all-catch route [...all]
-│   │   │   └── health/        # Health endpoint
-│   │   ├── device/            # Device auth flow pages
-│   │   ├── login/             # Login page
-│   │   ├── globals.css        # Global CSS styles (Tailwind v4 imports)
-│   │   ├── layout.tsx         # Main HTML layout wrapper
-│   │   └── page.tsx           # Homepage view
-│   ├── components/            # Shared UI components
-│   ├── constants/             # Global constants
-│   ├── db/                    # Drizzle connection & database schemas
-│   │   ├── index.ts           # Drizzle pool initializer
-│   │   └── schema.ts          # Aggregated schema exports
-│   ├── lib/                   # Utility libraries and helper functions
-│   └── modules/               # Domain-driven feature modules
-│       └── auth/              # Authentication module
-│           ├── schemas/       # Drizzle schema definitions for Auth
-│           └── utils/         # Authentication utility helpers
-│               ├── auth-client.ts # Client-side authClient
-│               ├── auth-utils.ts  # Server-side authInstance & getSession
-│               └── email.ts       # Email OTP delivery system (Brevo/SMTP)
-├── wrangler.jsonc             # Cloudflare D1/Wrangler configs (legacy or alternate runtime)
-├── Caddyfile                  # Site on :3000; imports caddy/snippets + caddy/routes
-├── caddy/                     # Caddy snippets + full static/dynamic route map
-│   ├── snippets.caddy         # dynamic_ssg / static_page helpers
-│   └── routes.caddy           # app_routes (API proxy + all UI paths)
-├── docker-compose.yml         # caddy (:3000), migrator, app, postgres, redis
-├── docker-entrypoint.sh       # Syncs /opt/static → shared volume, then starts Node
-├── Dockerfile                 # Dual-build image + migrator target (drizzle-kit migrate)
-├── package.json               # Node dependencies and scripts
-└── tsconfig.json              # TypeScript compilation options
+services/console/
+├── drizzle.config.ts          # Auth migration config
+├── drizzle.api.config.ts      # API migration config
+├── drizzle/                   # Auth migration history
+├── drizzle-api/               # API migration history
+├── scripts/                   # Migration and maintenance scripts
+├── tests/                     # API utility tests
+└── src/
+    ├── app/                   # Next.js pages and native route handlers
+    │   ├── api/[...path]/     # Public API entry
+    │   ├── api/auth/[...all]/ # Better Auth
+    │   ├── api/health/        # Console health
+    │   ├── api/proxy/[...path]/# Browser API compatibility proxy
+    │   ├── health/            # Top-level health alias
+    │   ├── internal/usage/    # Token-authenticated usage ingest
+    │   └── v1/check-domain/   # Domain check
+    ├── db/                    # Pool, migration runner, schema exports
+    ├── lib/                   # Shared client/server utilities
+    ├── modules/
+    │   ├── api/schemas/       # API Drizzle schema
+    │   └── auth/              # Better Auth module
+    └── server/api/
+        ├── constants/         # API limits and pricing
+        ├── http/              # Dispatcher, JWT auth, rate limits
+        ├── infrastructure/    # DB, Redis, MinIO
+        ├── services/          # Business logic
+        ├── utils/             # Validation, metrics, usage, errors
+        └── validators/        # Zod request schemas
 ```
 
-### Production serving model
+## Request Flow
 
-- **UI pages** are client components and statically exported (`BUILD_MODE=export` → `out/`). Auth gates run in the browser via `AuthGuard` / `authClient.useSession` — do **not** call server `getSession()` or set `force-dynamic` on pages.
-- **API** (`/api/auth`, `/api/health`) runs in the Next standalone Node process (`BUILD_MODE=standalone`).
-- **Migrator** (`Dockerfile` target `migrator`) runs `drizzle-kit migrate` once before `app` starts.
-- **Caddy** serves HTML/`_next`/public from the shared `static_assets` volume and proxies `/api/*` to `app:3000`.
-- The app entrypoint copies `/opt/static` into the shared volume on start so Caddy and the app share one artifact set.
+Public `/api/*` requests enter through `src/app/api/[...path]/route.ts`. The dispatcher matches the route, applies Redis rate limiting, verifies the Better Auth JWT through JOSE/JWKS, validates input, and calls a service. Services own PostgreSQL, Redis, and MinIO operations.
 
-`next.config.ts` switches on `BUILD_MODE` (`export` | `standalone`). Default local `next build` / `next dev` uses standalone.
+`/internal/usage/ingest` uses constant-time validation of `USAGE_INGEST_TOKEN` and bypasses public rate limiting. The Better Auth route remains under `/api/auth/*`.
 
----
+## Production Model
 
-## 🗄 Database Schema
+- `next build` produces the Node.js standalone application by default.
+- Root Caddy listens on `:3080` and reverse-proxies the console UI and API to `console:3001`.
+- Tenant sites are served by the blob server's `static_s3` Caddy plugin.
+- `src/instrumentation.ts` runs auth migrations, API migrations, and conditional bucket initialization in the Node.js runtime.
+- The API migration bootstrap records existing pushed API schemas in the original Drizzle migration history before applying new migrations.
 
-The database utilizes **PostgreSQL** configured via **Drizzle ORM**. Schemas are defined in `src/modules/auth/schemas/auth.schema.ts` and aggregated in `src/db/schema.ts`.
+## Database
 
-### Tables
+Schemas are defined in `src/modules/[module]/schemas/` and aggregated through `src/db/schema.ts`.
 
-1. **`user`**
-   - Stores user profiles.
-   - Fields: `id` (PK), `name`, `email` (unique), `emailVerified`, `image`, `createdAt`, `updatedAt`, `phoneNumber` (unique), `phoneNumberVerified`.
+- Auth uses `drizzle.config.ts`, `drizzle/`, and `drizzle.__drizzle_migrations_console`.
+- API uses `drizzle.api.config.ts`, `drizzle-api/`, and `drizzle.__drizzle_migrations`.
+- Fresh databases run auth migrations first and API migrations second.
+- Existing databases retain independent migration histories.
 
-2. **`session`**
-   - Manages user sessions.
-   - Fields: `id` (PK), `expiresAt`, `token` (unique), `createdAt`, `updatedAt`, `ipAddress`, `userAgent`, `userId` (FK referencing `user.id` on cascade delete).
+After a schema change:
 
-3. **`account`**
-   - Stores federated OAuth credentials (Google, GitHub, etc.) and credential-based passwords.
-   - Fields: `id` (PK), `accountId`, `providerId`, `userId` (FK referencing `user.id`), credentials tokens, expiry details, and passwords.
+```bash
+pnpm run db:generate
+pnpm run db:migrate
+```
 
-4. **`verification`**
-   - Used for email verification OTPs and phone SMS codes.
-   - Fields: `id` (PK), `identifier`, `value`, `expiresAt`, `createdAt`, `updatedAt`.
+## Environment
 
-5. **`jwks`**
-   - Cryptographic keys for signing JWTs.
-   - Fields: `id` (PK), `publicKey`, `privateKey`, `createdAt`.
+- Client-visible values use `NEXT_PUBLIC_*`; `PUBLIC_URL` is explicitly mapped in `next.config.ts`.
+- `BETTER_AUTH_SECRET`, `DATABASE_URL`, and `REDIS_URL` configure the Node runtime.
+- `MINIO_ENDPOINT`, `MINIO_PORT`, `MINIO_USE_SSL`, `MINIO_BUCKET`, `S3_ACCESS_KEY`, and `S3_SECRET_KEY` configure lazy storage access.
+- `BASE_DOMAIN` is used for page domain allocation and validation.
+- `USAGE_INGEST_TOKEN` authenticates internal usage ingestion.
+- `AUTH_JWKS_URL` can override request-relative JWKS discovery.
+- `IN_DOCKER_COMPOSE=1` selects Docker service hostnames for Redis and PostgreSQL-related integrations.
 
-6. **`deviceCode`**
-   - Handles OAuth 2.0 Device Authorization flow.
-   - Fields: `id` (PK), `deviceCode`, `userCode`, `userId`, `expiresAt`, `status`, `lastPolledAt`, `pollingInterval`, `clientId`, `scope`.
+## Commands
 
----
-
-## 🔑 Environment Variables
-
-The project requires the following environment variables. The `.env` file should be populated from `.env.example`:
-
-- `NODE_ENV`: Current environment status (`development` or `production`).
-- `PUBLIC_URL`: The client-facing URL of the application (e.g. `http://localhost:3000` behind Compose/Caddy), exposed to client components via `next.config.ts`.
-- `BETTER_AUTH_URL`: The backend server endpoint for Better Auth (same public origin as Caddy, e.g. `http://localhost:3000`).
-- `BETTER_AUTH_TRUSTED_ORIGINS`: Comma-separated list of origins trusted by Better Auth.
-- `BETTER_AUTH_SECRET`: Secret key used to encrypt sessions and tokens.
-- `DATABASE_URL`: Connection string for the PostgreSQL database.
-- `REDIS_URL`: Connection string for Redis cache/session manager.
-- `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`: GitHub OAuth application credentials.
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`: Google OAuth credentials.
-- `SMTP_HOST` / `SMTP_PORT` / `SENDER` / `BREVO_API_KEY`: SMTP settings for sending verification emails.
-- `SMS_TOKEN`: Authorization key to send OTPs via SMS gateway API.
-- `ENABLE_EMAIL_PASSWORD`: Server-side toggle for Better Auth email/password (`true`/`false`).
-- `NEXT_PUBLIC_ENABLE_EMAIL_PASSWORD`: Client-side toggle to show/hide email/password UI on `/login`.
+```bash
+pnpm run dev
+pnpm run build
+pnpm run test
+pnpm run lint
+pnpm exec tsc --noEmit
+```

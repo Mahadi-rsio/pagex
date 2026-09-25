@@ -10,11 +10,17 @@ export async function register() {
     const { runMigrations } = await import("./db/migrate");
     try {
         await runMigrations();
+        if (process.env.MINIO_BUCKET) {
+            const { ensureSharedBucket } = await import(
+                "./server/api/infrastructure/storage/minio"
+            );
+            await ensureSharedBucket();
+        }
     } catch (err) {
         console.error(
             "[migrate] FATAL: Migration failed —",
             (err as Error).message,
         );
-        process.exit(1);
+        throw err;
     }
 }

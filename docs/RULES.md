@@ -1,22 +1,16 @@
 # PageX — Coding Rules & Conventions
 
-> Read this before modifying any source file. These are the patterns consistently used in this codebase. Deviating from them will create inconsistencies.
+> Read this before modifying API code in the Next.js console.
 
 ---
 
-## Language & Module System
+## TypeScript and Next.js
 
-- **TypeScript** throughout. All files are `.ts`.
-- **ESM** — all imports use `.js` extension (compiled output). **Never omit `.js`** from imports.
-  ```typescript
-  // ✅ correct
-  import { db } from '../infrastructure/db/db.js'
-  
-  // ❌ wrong — will break at runtime
-  import { db } from '../infrastructure/db/db'
-  ```
-- `tsconfig.json` targets ESM modules with strict mode.
-- Compiled output goes to `dist/` — never edit `dist/` directly.
+- Use strict TypeScript. `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` are enabled.
+- Use extensionless local imports so TypeScript, Node tests, and Next.js Turbopack resolve the same source files.
+- App Router route `params` are Promises and must be awaited.
+- Keep route handlers thin and server-only. They parse input, call a service, and return a `Response`.
+- Do not add `middleware.ts`; auth CORS belongs in `src/proxy.ts`.
 
 ---
 
@@ -25,169 +19,130 @@
 | Type | Convention | Example |
 |------|-----------|---------|
 | Services | `<domain>.service.ts` | `deploy.service.ts` |
-| Controllers | `<domain>.controller.ts` | `deploy.controller.ts` |
-| Routes | `<domain>.routes.ts` | `deploy.routes.ts` |
 | Validators | `<domain>.validator.ts` | `deploy.validator.ts` |
+| Utilities | `<domain>.ts` or `<domain>-<purpose>.ts` | `http-error.ts` |
+| Native routes | `src/app/**/route.ts` | `internal/usage/ingest/route.ts` |
 
 ---
 
-## Controller Pattern
+## Native API Request Flow
 
-Controllers are **thin** — they only:
-1. Parse and validate the request body (Zod `safeParse`)
-2. Extract `tenantId` from `(req as any).id`
-3. Call a service function
-4. Return the result or map errors to HTTP codes
+Public `/api/*` requests enter through `src/app/api/[...path]/route.ts` and are processed by `src/server/api/http/dispatcher.ts`.
 
-```typescript
-export async function exampleHandler(req: Request, res: Response) {
-    const validate = exampleSchema.safeParse(req.body)
-    if (!validate.success) {
-        return res.status(400).json({ error: validate.error.format() })
-    }
+1. Match the path and HTTP method.
+2. Apply the Redis-backed public rate limit.
+3. Verify the Better Auth JWT with JOSE and JWKS.
+4. Validate request data with Zod.
+5. Call a service in `src/server/api/services/`.
+6. Map service errors to HTTP responses.
 
-    const tenantId = (req as any).id
-    if (!tenantId) return res.status(401).json({ error: 'Unauthorized' })
-
-    try {
-        const result = await someService({ ...validate.data, tenantId })
-        return res.status(201).json(result)
-    } catch (err: any) {
-        const status = err.status || 500
-        return res.status(status).json({ error: err.message || 'Internal Server Error' })
-    }
-}
-```
+To add a route, extend `matchRoute` and `executeRoute` in the dispatcher. Keep business logic out of the dispatcher.
 
 ---
 
 ## Service Pattern
 
-Services contain all business logic and DB/MinIO/Redis interactions.
+Services own business logic and PostgreSQL, Redis, and MinIO interactions.
 
-- Services **do not** import from controllers.
-- Services **may** import from `infrastructure/` and other services.
-- Attach HTTP status to thrown errors:
-  ```typescript
-  const error = new Error("Page not found")
-  ;(error as any).status = 404
-  throw error
-  ```
-
----
-
-## Drizzle ORM Conventions
+- Services must not import route handlers or the dispatcher.
+- Use `HttpError` when a service needs to control the HTTP status.
+- Check the first selected or inserted row before dereferencing it.
+- Use Drizzle operators instead of raw SQL unless raw SQL is necessary.
 
 ```typescript
-// Always destructure the first element with !
-const [record] = await db.select().from(table).where(...).limit(1)
-if (!record) throw new Error("Not found")
+const [page] = await db
+    .select()
+    .from(pages)
+    .where(eq(pages.id, pageId))
+    .limit(1)
 
-// Use returning() after insert/update to get back the row
-const [inserted] = await db.insert(table).values({...}).returning()
-
-// Always import operators from 'drizzle-orm'
-import { eq, and, desc, ne } from 'drizzle-orm'
-
-// Never use raw SQL unless absolutely necessary
+if (!page) throw new HttpError("Page not found", 404)
 ```
 
 ---
 
-## Auth Pattern
+## Authentication
 
-The `authMiddleware` sets two properties on the request:
-- `(req as any).id` — the tenant's unique ID (from JWT `payload.id`)
-- `(req as any).name` — the tenant's name (from JWT `payload.name`)
+Protected routes use `Authorization: Bearer <JWT>`. `authenticateRequest` verifies the signature and expiry through JWKS and returns the authenticated tenant's `id` and `name`.
 
-Every protected controller **must** check for `tenantId`:
-```typescript
-const tenantId = (req as any).id
-if (!tenantId) return res.status(401).json({ error: 'Unauthorized' })
-```
+The JWKS URL defaults to the request origin's `/api/auth/jwks`; `AUTH_JWKS_URL` may override it. Internal ingest is different: it compares `Authorization: Bearer <token>` against `USAGE_INGEST_TOKEN` in constant time and bypasses public rate limiting.
+
+Every protected operation must scope database access to the authenticated `tenantId`.
 
 ---
 
-## Route Registration
+## Drizzle ORM
 
-All routes are mounted in `services/api/routes/index.ts`. When adding a new router:
+- Auth schema: `src/modules/auth/schemas/auth.schema.ts`
+- API schema: `src/modules/api/schemas/api.schema.ts`
+- Aggregated runtime exports: `src/db/schema.ts`
+- Auth config/history: `drizzle.config.ts` and `drizzle/`
+- API config/history: `drizzle.api.config.ts` and `drizzle-api/`
 
-```typescript
-// 1. Create services/api/routes/my-feature.routes.ts
-// 2. Import and use in services/api/routes/index.ts:
-import myFeatureRouter from './my-feature.routes.js'
-router.use(myFeatureRouter)
-```
-
-Route path convention: `/api/<resource>/<action>`.
+After editing either schema, run `pnpm db:generate` and then `pnpm db:migrate`. Never edit generated migrations after they have been applied.
 
 ---
 
 ## No Job Queues
 
-BullMQ and background build/worker queues were removed. Deploys are synchronous through the CLI path (`/api/deploy/prepare|presign|commit`); do not introduce queue/worker infrastructure.
+BullMQ and background build workers were removed. Deploys are synchronous through `/api/deploy/prepare`, `/api/deploy/presign`, and `/api/deploy/commit`; do not introduce queue/worker infrastructure.
 
 ---
 
 ## MinIO Access
 
-Always use helpers from `services/api/infrastructure/storage/minio.ts`:
-- `blobObjectKey(hash)` — `blobs/{hash}`
-- `manifestObjectKey(deploymentId)` — `manifests/{deploymentId}.json`
-- `objectMetaForPath(path, contentType?, contentEncoding?)` — putObject metadata
-- `deleteBlobObjects(hashes)` — GC batch delete; returns successfully deleted hashes
-- `ensureSharedBucket()` — idempotent bucket create
-- `minioClient` / `SHARED_BUCKET` — raw client + env bucket (never hardcode the name)
+Use helpers from `src/server/api/infrastructure/storage/minio.ts`:
 
-**Key layout:**
-- Live serving: `blobs/{sha256}` only (path→hash resolved via the active deployment manifest)
-- Deployment manifests: `manifests/{deploymentId}.json` (immutable)
+- `getStorageConfig()` for the validated lazy client and bucket.
+- `blobObjectKey(hash)` for `blobs/{hash}`.
+- `manifestObjectKey(deploymentId)` for immutable manifests.
+- `objectMetaForPath(...)` for object metadata.
+- `deleteBlobObjects(...)` and `deleteManifestObjects(...)` for batch cleanup.
+- `ensureSharedBucket()` for idempotent bucket creation.
+
+Key layout:
+
+- Live serving: `blobs/{sha256}`
+- Deployment manifests: `manifests/{deploymentId}.manifest.json`
+
+Never hardcode bucket names or copy live objects into `tenant/{siteId}/`.
 
 ---
 
 ## Environment Variables
 
-Loaded via `dotenv`. All env access should use `process.env.VAR_NAME`.
-
 | Variable | Used in |
 |----------|---------|
-| `DB` | `infrastructure/db/db.ts` |
-| `DRIZZLE_CONNECTION` | `drizzle.config.ts` |
-| `REDIS_URL` | `infrastructure/cache/redis.ts` |
-| `IN_DOCKER_COMPOSE` | `redis.ts` (Compose sets `1`; host scripts omit) |
-| `MINIO_ENDPOINT` | `infrastructure/storage/minio.ts` |
-| `MINIO_PORT` | `infrastructure/storage/minio.ts` |
-| `MINIO_ENDPOINT_URL` | Caddy / compose |
-| `MINIO_USE_SSL` | `infrastructure/storage/minio.ts` |
-| `S3_ACCESS_KEY` | `infrastructure/storage/minio.ts` |
-| `S3_SECRET_KEY` | `infrastructure/storage/minio.ts` |
-| `MINIO_BUCKET` | `infrastructure/storage/minio.ts` |
-| `BASE_DOMAIN` | docker-compose / Caddy |
+| `DATABASE_URL` | `src/db/index.ts` and Drizzle configs |
+| `REDIS_URL` | API Redis client |
+| `IN_DOCKER_COMPOSE` | Redis hostname handling |
+| `MINIO_ENDPOINT`, `MINIO_PORT`, `MINIO_USE_SSL` | Lazy MinIO client |
+| `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Lazy MinIO client |
+| `MINIO_BUCKET` | Bucket selection and startup bootstrap |
+| `BASE_DOMAIN` | New page domains and domain checks |
+| `USAGE_INGEST_TOKEN` | Internal usage ingest authentication |
+| `AUTH_JWKS_URL` | Optional native API JWKS override |
 
 ---
 
-## Adding a New Feature Checklist
+## Adding a Feature
 
-1. **Schema** (if needed): edit `services/api/infrastructure/db/schema.ts`, run `pnpm db:generate` in `services/api`, commit migration
-2. **Validator**: create `services/api/validators/<name>.validator.ts` with Zod schema
-3. **Service**: create `services/api/services/<name>.service.ts` with business logic
-4. **Controller**: create `services/api/controllers/<name>.controller.ts` — thin, calls service
-5. **Routes**: create `services/api/routes/<name>.routes.ts`, mount in `services/api/routes/index.ts`
-6. **Build & test**: `pnpm build:api`, then test with curl
-7. **Redeploy**: `docker compose up -d --build api`
-8. **Update docs**: update `docs/API.md`, `docs/SCHEMA.md`, `docs/WORKERS.md` as needed
+1. Edit the relevant schema under `src/modules/*/schemas/` and generate migrations if needed.
+2. Add a Zod validator under `src/server/api/validators/`.
+3. Add business logic under `src/server/api/services/`.
+4. Add route matching and request handling to the native dispatcher.
+5. Add or update utility tests under `tests/`.
+6. Run `pnpm test:console`, `pnpm exec tsc --noEmit` in `services/console`, and `pnpm run build`.
+7. Update `docs/API.md`, `docs/SCHEMA.md`, or `docs/WORKERS.md` when contracts change.
 
 ---
 
-## What NOT To Do
+## Prohibited Changes
 
-- ❌ Do not import from `dist/` — always import from source (`services/api/{controllers,services,routes,validators,infrastructure}`)
-- ❌ Do not skip the `.js` extension on local imports
-- ❌ Do not put business logic in controllers
-- ❌ Do not hardcode bucket names, queue names, or domain strings — use constants
-- ❌ Do not copy blobs into `tenant/{siteId}/` — blob-direct serving only
-- ❌ Do not `await runDeploymentGC(...)` in commit/rollback — fire-and-forget only
-- ❌ Do not delete MinIO `blobs/{hash}` except via GC after cross-check
-- ❌ Do not run two simultaneous deployments for the same page — take `deploy:lock:{pageId}` (see `deployment-lock.service.ts`)
-- ❌ Do not edit `drizzle/` migration files manually after they've been applied
-- ❌ Do not add a Vector Postgres sink or DB credentials to Vector — the API owns the schema; Vector only POSTs to `/internal/usage/ingest`
+- Do not import from `dist/` or `.next/`; import source modules.
+- Do not put database, Redis, or MinIO logic in route handlers.
+- Do not await `runDeploymentGC(...)` during commit or rollback.
+- Do not delete MinIO blobs except through GC after cross-checking references.
+- Do not run simultaneous deployments for one page; use `deploy:lock:{pageId}`.
+- Do not edit applied migrations.
+- Do not give Vector PostgreSQL credentials; Vector only posts to `/internal/usage/ingest`.

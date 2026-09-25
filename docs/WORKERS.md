@@ -14,7 +14,7 @@ Historical notes: the ZIP upload worker and the sync worker (analytics) were als
 
 ## Commit path (`commitBlobTreeDeploy`)
 
-**File:** `services/api/services/deploy.service.ts`
+**File:** `services/console/src/server/api/services/deploy.service.ts`
 
 Used by the CLI commit path. Serialized per page by Redis `deploy:lock:{pageId}` (DB3).
 
@@ -40,7 +40,7 @@ No MinIO `tenant/` copy. Caddy resolves subdomain → site_id → active deploym
 
 ## Rollback (`rollbackToDeployment`)
 
-**File:** `services/api/services/deployment.service.ts`
+**File:** `services/console/src/server/api/services/deployment.service.ts`
 
 1. Load deployment (tenant-scoped); require blob tree
 2. Acquire `deploy:lock:{pageId}` (409 if a deploy is in progress)
@@ -58,7 +58,7 @@ No MinIO `tenant/` copy. Caddy resolves subdomain → site_id → active deploym
 
 ## Background GC (`runDeploymentGC`)
 
-- **File:** `services/api/services/gc.service.ts`
+- **File:** `services/console/src/server/api/services/gc.service.ts`
 - **Constant:** `DEPLOYMENT_RETENTION = 10` (inactive deployments kept)
 
 ```
@@ -107,7 +107,7 @@ ACTIVE deployment MUST have finalized manifest (enforced by CHECK constraint)
 
 ---
 
-## MinIO Helpers (`services/api/infrastructure/storage/minio.ts`)
+## MinIO Helpers (`services/console/src/server/api/infrastructure/storage/minio.ts`)
 
 | Function | Description |
 |----------|-------------|
@@ -122,7 +122,7 @@ ACTIVE deployment MUST have finalized manifest (enforced by CHECK constraint)
 
 ## Idempotency Keys
 
-**File:** `services/api/services/idempotency.service.ts`
+**File:** `services/console/src/server/api/services/idempotency.service.ts`
 
 | Function | Purpose |
 |----------|---------|

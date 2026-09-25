@@ -83,9 +83,9 @@ http:// {
 import /etc/caddy/tls/{$TLS_CFG:tls-off}.conf
 
 http://api.localhost {
-	reverse_proxy api:3000
+	reverse_proxy console:3001
 }
 
 http://localhost {
-	reverse_proxy api:3000
+	reverse_proxy console:3001
 }

@@ -6,19 +6,18 @@
 
 | Service | Container | Image/Stage | Role |
 |---------|-----------|-------------|------|
-| `api` | `api` | `./services/api/` → `runner` | Express REST API (port 3000) |
 | `blob-server` | `caddy` | `ghcr.io/mahadi-rsio/pagex/blob-server:latest` | Caddy + static_s3 (blob-direct), ports 80/443/3080/2019 |
-| `vector` | `vector` | `timberio/vector:0.46.1-alpine` | Access-log aggregation → API ingest |
-| `console` | `web` | `./services/console/` | Next.js console (port 3001, healthcheck `/api/health`) |
+| `vector` | `vector` | `timberio/vector:0.46.1-alpine` | Access-log aggregation → console ingest |
+| `console` | `web` | `./services/console/` | Next.js UI and native API (port 3001, healthcheck `/api/health`) |
 | `db` | `db` | `postgres:16-alpine` | PostgreSQL (port 5432) |
 | `redis` | `redis` | `redis:7-alpine` | API cache, rate limiting, deploy locks (port 6379) |
 
 **Not in Compose:** MinIO is external (`MINIO_ENDPOINT_URL`).
 **Removed:** the cloud-build stack (BullMQ workers and the Docker build environment). Deploys go through the CLI path only (`/api/deploy/prepare|presign|commit`).
 
-The API sets `IN_DOCKER_COMPOSE=1` so `REDIS_URL=redis://redis:6379` keeps the Compose hostname. Host scripts remap `redis` → `localhost`.
+The console sets `IN_DOCKER_COMPOSE=1` so `REDIS_URL=redis://redis:6379` keeps the Compose hostname. Host scripts remap `redis` → `localhost`.
 
-Redis and Postgres use healthchecks; the API waits on `redis: service_healthy` and runs migrations on startup.
+Redis and Postgres use healthchecks; the console waits on both and runs auth plus API migrations on startup.
 
 ---
 
@@ -26,8 +25,8 @@ Redis and Postgres use healthchecks; the API waits on `redis: service_healthy` a
 
 ```
 FROM node:20-alpine AS deps          # pnpm install
-FROM deps AS builder                 # tsc → dist/
-FROM node:20-alpine AS runner        # API (default: server.js)
+FROM deps AS builder                 # Next.js standalone build
+FROM node:20-alpine AS runner        # console UI + native API
 ```
 
 ---
@@ -35,11 +34,10 @@ FROM node:20-alpine AS runner        # API (default: server.js)
 ## Service Dependencies (startup order)
 
 ```
-db (healthy)     ──► api (runs migrations on startup)
-redis (healthy)  ──┤
-                 └► blob-server (api + console started; :80/:443 sites, :3080 console)
-console (healthy)─┘
-                 └► vector (waits on api; reads caddy_logs → POSTs ingest)
+db (healthy)     ──┐
+redis (healthy)  ──┴► console (runs migrations; serves UI + API)
+console (healthy) ───► blob-server (:80/:443 sites, :3080 console/API)
+                     └► vector (reads caddy_logs → POSTs ingest to console)
 ```
 
 ---
@@ -58,7 +56,6 @@ console (healthy)─┘
 
 | Service | Port |
 |---------|------|
-| `api` | `3000:3000` |
 | `blob-server` (console) | `3080:3080` |
 | `db` | `5432:5432` |
 | `redis` | `6379:6379` |
@@ -77,13 +74,13 @@ docker compose up -d
 
 ## pnpm Scripts
 
-Run in `services/api`:
+Run in `services/console`:
 
 | Script | Command | Usage |
 |--------|---------|-------|
-| `pnpm db:generate` | `drizzle-kit generate` | Generate migration |
-| `pnpm db:migrate` | `drizzle-kit migrate` | Apply migrations |
-| `pnpm db:push` | `drizzle-kit push` | Dev-only schema push |
+| `pnpm db:generate` | Separate auth/API Drizzle configs | Generate migrations |
+| `pnpm db:migrate` | `tsx scripts/migrate.ts` | Apply both migration histories |
+| `pnpm db:push` | Separate auth/API Drizzle configs | Dev-only schema push |
 
 ---
 
@@ -97,12 +94,12 @@ Image: `ghcr.io/mahadi-rsio/pagex/blob-server:latest` (built locally for dev via
 4. **Console reverse proxy** — `:3080` proxies to the console (port 3001)
 5. **Access logs** — emitted to `/var/log/caddy` (`caddy_logs` volume), consumed by Vector
 
-Analytics aggregation is done by **Vector + API**, not in Caddy. Blob-server caches in PostgreSQL (LRU → Postgres); Redis is only used for the API's cache / rate limiting / deploy locks.
+Analytics aggregation is done by **Vector + console API**, not in Caddy. Blob-server caches in PostgreSQL (LRU → Postgres); Redis is used for API caching, rate limiting, and deploy locks.
 
 No per-tenant Caddy config. A site is live once `sites.active=true` and the active deployment has a persisted manifest.
 
 ---
 
-## Vector (access-log aggregation → API ingest)
+## Vector (access-log aggregation → console ingest)
 
-The `vector` service reads the blob-server access logs from the shared `caddy_logs` volume, aggregates them into pre-aggregated hourly usage records, and POSTs them to the API ingest endpoint (`USAGE_API_URL`, default `http://api:3000/internal/usage/ingest`) using `USAGE_INGEST_TOKEN`. See `POST /internal/usage/ingest` in `docs/API.md`.
+The `vector` service reads the blob-server access logs from the shared `caddy_logs` volume, aggregates them into pre-aggregated hourly usage records, and POSTs them to the console ingest endpoint (`USAGE_API_URL`, default `http://console:3001/internal/usage/ingest`) using `USAGE_INGEST_TOKEN`. See `POST /internal/usage/ingest` in `docs/API.md`.
