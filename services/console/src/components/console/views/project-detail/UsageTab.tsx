@@ -13,21 +13,11 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-    apiClient,
-    type ApiUsage,
-} from "@/lib/api-client";
-import {
-    HardDrive,
-    Activity,
-    RefreshCw,
-    FileText,
-} from "lucide-react";
+import { apiClient, type ApiUsage } from "@/lib/api-client";
+import { HardDrive, Activity, RefreshCw, FileText } from "lucide-react";
 
 import { CombinedUsageBar } from "./CombinedUsageBar";
-import {
-    formatBytes,
-} from "./utils";
+import { formatBytes } from "./utils";
 
 export function UsageTab({ project }: { project: Project }) {
     const [usage, setUsage] = useState<ApiUsage | null>(null);
@@ -268,4 +258,3 @@ export function UsageTab({ project }: { project: Project }) {
         </div>
     );
 }
-

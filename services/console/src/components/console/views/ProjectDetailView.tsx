@@ -7,11 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PageSpinner from "@/components/pageloader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-    ArrowLeft,
-    ExternalLink,
-    AlertCircle,
-} from "lucide-react";
+import { ArrowLeft, ExternalLink, AlertCircle } from "lucide-react";
 
 import { statusConfig } from "./project-detail/utils";
 import { OverviewTab } from "./project-detail/OverviewTab";

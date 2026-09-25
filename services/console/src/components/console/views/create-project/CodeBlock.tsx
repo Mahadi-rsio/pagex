@@ -2,7 +2,13 @@
 
 import { CopyButton } from "./CopyButton";
 
-export function CodeBlock({ code, copyLabel }: { code: string; copyLabel?: string }) {
+export function CodeBlock({
+    code,
+    copyLabel,
+}: {
+    code: string;
+    copyLabel?: string;
+}) {
     return (
         <div className="overflow-hidden rounded-none border border-border">
             <div className="flex items-center justify-between border-b border-border bg-muted/40 px-3 py-2">

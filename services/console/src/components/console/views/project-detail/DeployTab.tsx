@@ -19,16 +19,9 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-    apiClient,
-    type ApiDeployment,
-} from "@/lib/api-client";
+import { apiClient, type ApiDeployment } from "@/lib/api-client";
 import { toast } from "sonner";
-import {
-    RefreshCw,
-    RotateCcw,
-    MoreHorizontal,
-} from "lucide-react";
+import { RefreshCw, RotateCcw, MoreHorizontal } from "lucide-react";
 
 export function DeployTab({ project }: { project: Project }) {
     const [deployments, setDeployments] = useState<ApiDeployment[]>([]);
@@ -197,4 +190,3 @@ export function DeployTab({ project }: { project: Project }) {
         </div>
     );
 }
-

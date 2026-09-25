@@ -99,9 +99,7 @@ export function SignUpForm({
                 className="mt-2 w-full rounded-none"
                 disabled={disabled}
             >
-                {isLoading ? (
-                    <Spinner size="inline" className="mr-2" />
-                ) : null}
+                {isLoading ? <Spinner size="inline" className="mr-2" /> : null}
                 Create Account
             </Button>
         </form>
