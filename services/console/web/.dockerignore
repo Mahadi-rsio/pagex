@@ -1,8 +1,0 @@
-.git
-.gitignore
-.next
-node_modules
-pnpm-debug.log
-Dockerfile
-docker-compose.yml
-README.md
