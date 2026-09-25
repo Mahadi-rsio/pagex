@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { usageRedis } from "../infrastructure/cache/redis";
+import { usageRedis } from "@/server/api/infrastructure/cache/redis";
 import {
     DEPLOY_LOCK_COMMIT_TTL_SECONDS,
     DEPLOY_LOCK_HEARTBEAT_MS,
-} from "../constants/index";
-import { HttpError } from "../utils/http-error";
+} from "@/server/api/constants/index";
+import { HttpError } from "@/server/api/utils/http-error";
 
 export const DEPLOYMENT_IN_PROGRESS_MESSAGE =
     "A deployment is already in progress for this page";

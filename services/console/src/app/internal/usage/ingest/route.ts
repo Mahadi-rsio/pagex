@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     }
 
     const { ingestUsage, parseIngestBody } = await import(
-        "@/server/api/services/usage-ingest.service"
+        "@/features/usage/usage-ingest.service"
     );
     let records: unknown[];
     try {

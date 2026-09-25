@@ -1,12 +1,12 @@
 import { eq, sql } from "drizzle-orm";
-import { db } from "../infrastructure/db/db";
+import { db } from "@/server/api/infrastructure/db/db";
 import {
     bandwidthUsageHourly,
     pages,
     serviceMetricsHourly,
     siteDailyStats,
     usageIngestDedup,
-} from "../infrastructure/db/schema";
+} from "@/server/api/infrastructure/db/schema";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 

@@ -7,7 +7,7 @@ import { and, desc, eq, gt, inArray, ne } from "drizzle-orm";
 import { lookup } from "mime-types";
 import pLimit from "p-limit";
 import sharp from "sharp";
-import { db } from "../infrastructure/db/db";
+import { db } from "@/server/api/infrastructure/db/db";
 import {
     blobTreeEntries,
     blobs,
@@ -15,13 +15,13 @@ import {
     idempotencyKeys,
     pages,
     sites,
-} from "../infrastructure/db/schema";
-import { usageRedis, redis } from "../infrastructure/cache/redis";
+} from "@/server/api/infrastructure/db/schema";
+import { usageRedis, redis } from "@/server/api/infrastructure/cache/redis";
 import {
     blobObjectKey,
     getStorageConfig,
     objectMetaForPath,
-} from "../infrastructure/storage/minio";
+} from "@/server/api/infrastructure/storage/minio";
 import {
     BLOB_IO_CONCURRENCY,
     DEPLOY_LOCK_COMMIT_TTL_SECONDS,
@@ -30,7 +30,7 @@ import {
     MAX_DEPLOY_FILE_SIZE,
     MAX_FILE_SIZE,
     PRESIGN_EXPIRY_SECONDS,
-} from "../constants/index";
+} from "@/server/api/constants/index";
 import { runDeploymentGC } from "./gc.service";
 import {
     cacheManifestInRedis,
@@ -38,9 +38,9 @@ import {
     incrementSiteVersion,
     setActiveDeploymentCache,
 } from "./manifest.service";
-import { validateManifest } from "../utils/deployment-validator";
-import { validateFile } from "../utils/file-validator";
-import { HttpError } from "../utils/http-error";
+import { validateManifest } from "@/server/api/utils/deployment-validator";
+import { validateFile } from "@/server/api/utils/file-validator";
+import { HttpError } from "@/server/api/utils/http-error";
 import {
     DEPLOYMENT_IN_PROGRESS_MESSAGE,
     STALE_DEPLOYMENT_MESSAGE,
@@ -58,7 +58,7 @@ import type {
     DeployFileInput,
     PrepareDeployInput,
     PresignDeployInput,
-} from "../validators/deploy.validator";
+} from "./deploy.validator";
 
 const brotliCompressAsync = promisify(brotliCompress);
 const gzipAsync = promisify(gzip);

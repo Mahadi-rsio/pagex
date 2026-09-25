@@ -1,15 +1,15 @@
 import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
-import { DEPLOYMENT_RETENTION } from "../constants/index";
-import { db } from "../infrastructure/db/db";
+import { DEPLOYMENT_RETENTION } from "@/server/api/constants/index";
+import { db } from "@/server/api/infrastructure/db/db";
 import {
     blobTreeEntries,
     blobs,
     deployments,
-} from "../infrastructure/db/schema";
+} from "@/server/api/infrastructure/db/schema";
 import {
     deleteBlobObjects,
     deleteManifestObjects,
-} from "../infrastructure/storage/minio";
+} from "@/server/api/infrastructure/storage/minio";
 
 /**
  * Background GC: drop inactive deployments beyond retention and delete

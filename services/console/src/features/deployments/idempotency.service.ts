@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { and, eq, lt } from "drizzle-orm";
-import { db } from "../infrastructure/db/db";
-import { idempotencyKeys } from "../infrastructure/db/schema";
-import { HttpError } from "../utils/http-error";
+import { db } from "@/server/api/infrastructure/db/db";
+import { idempotencyKeys } from "@/server/api/infrastructure/db/schema";
+import { HttpError } from "@/server/api/utils/http-error";
 
 export interface IdempotencyResult<T> {
     isNew: boolean;

@@ -12,7 +12,7 @@ import {
     cacheManifestInRedis,
     generateAndPersistManifest,
     setActiveDeploymentCache,
-} from "../src/server/api/services/manifest.service";
+} from "../src/features/deployments/manifest.service";
 
 async function main(): Promise<void> {
     const rows = await db

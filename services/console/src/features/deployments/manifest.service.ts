@@ -1,32 +1,32 @@
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { redis } from "../infrastructure/cache/redis";
-import { db } from "../infrastructure/db/db";
-import { blobTreeEntries, deployments } from "../infrastructure/db/schema";
+import { redis } from "@/server/api/infrastructure/cache/redis";
+import { db } from "@/server/api/infrastructure/db/db";
+import { blobTreeEntries, deployments } from "@/server/api/infrastructure/db/schema";
 import {
     getManifestObject,
     manifestObjectKey,
     putManifestIfAbsent,
-} from "../infrastructure/storage/minio";
-import { HttpError } from "../utils/http-error";
+} from "@/server/api/infrastructure/storage/minio";
+import { HttpError } from "@/server/api/utils/http-error";
 import {
     DEPLOYMENT_MANIFEST_VERSION,
     MANIFEST_REDIS_TTL_SECONDS,
-} from "../constants/index";
+} from "@/server/api/constants/index";
 import {
     normalizeBlobHashForStorage,
     normalizeManifestPath,
     serializeManifest,
     validateDeploymentManifest,
     type DeploymentManifest,
-} from "../utils/manifest-validation";
+} from "@/server/api/utils/manifest-validation";
 
 export type { DeploymentManifest };
 export {
     normalizeManifestPath,
     serializeManifest,
     validateDeploymentManifest,
-} from "../utils/manifest-validation";
+} from "@/server/api/utils/manifest-validation";
 
 export function manifestContentHash(body: Buffer): string {
     return createHash("sha256").update(body).digest("hex");
