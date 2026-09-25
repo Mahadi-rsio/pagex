@@ -20,8 +20,8 @@ This project uses **codebase-memory-mcp** — a local knowledge graph of the cod
 | Text / identifier literal search | `search_code` or fall back to grep |
 
 ## PageX-specific quick references
-- **API routes** (43 indexed): routes are `Route`-labeled nodes under `services/api/routes/`, controllers at `services/api/controllers/`; path convention `/api/<resource>/<action>`. Find them via `search_graph(label="Route", name_pattern=".*")` or Cypher `MATCH (r:Route) RETURN r.name, r.url_path`.
-- **Services / business logic**: `services/api/services/` own all logic (DB/MinIO/Redis); call chains end there, not in controllers.
+- **Native API routes**: public routes enter through `services/console/src/app/api/[...path]/route.ts`; matching, auth, rate limiting, and service dispatch live in `services/console/src/server/api/http/dispatcher.ts`. Internal usage ingest is at `services/console/src/app/internal/usage/ingest/route.ts`.
+- **API services / business logic**: `services/console/src/server/api/services/` own DB/MinIO/Redis logic.
 - **Console modules**: `services/console/src/modules/[module]/` (schemas/, routes/, components/); schemas re-exported from `src/db/schema.ts`.
 - **Blob-server**: Go `static_s3` Caddy plugin under `services/blob-server/` — has **no upstream docs**, prefer `get_code_snippet`/read over Context7.
 - **Shared packages**: `packages/{config,types,utils}/` — `@pagex/*`, consumed via workspace.
@@ -56,12 +56,11 @@ This project uses **codebase-memory-mcp** — a local knowledge graph of the cod
 
 # AGENTS.md — PageX
 
-Multi-tenant static site hosting platform. pnpm monorepo (pnpm@8.15.0, Node >=18) with three services and three shared packages.
+Multi-tenant static site hosting platform. pnpm monorepo (pnpm@8.15.0, Node >=20.9) with two deployed services and three shared packages.
 
 ## Layout
 
-- `services/api/` — Express 5 backend, **ESM**. `server.ts` is the entrypoint. Top-level dirs: `routes/`, `controllers/`, `services/`, `validators/`, `infrastructure/`, `utils/`. Deploys sites, manages deployments/pages, auth, MinIO blob storage. Deploys go through the CLI path only (`/api/deploy/prepare|presign|commit`); cloud builds and BullMQ workers were removed.
-- `services/console/` — Next.js 16 App Router monolith (Better Auth, Drizzle, Zustand, shadcn/ui). Has its own detailed **`services/console/AGENTS.md` — read it before touching the console**; a lot of root-level guesses will be wrong here.
+- `services/console/` — Next.js 16 App Router UI and native API (Better Auth, Drizzle, Zustand, shadcn/ui, MinIO, Redis). Has its own detailed **`services/console/AGENTS.md` — read it before touching the console**; a lot of root-level guesses will be wrong here.
 - `services/blob-server/` — Go Caddy server + custom `static_s3` plugin (`cmd/caddy`). Go tests: `pnpm test:blob-server`.
 - `packages/{config,types,utils}/` — shared libs `@pagex/*`. Not directly published; consumed via workspace.
 
@@ -89,42 +88,40 @@ Where Context7 is least helpful: the custom Go `static_s3` Caddy plugin and inte
 ## Commands (from repo root)
 
 - Install: `pnpm install` (pnpm only — there is also a stale root `package-lock.json`; ignore it)
-- Dev: `pnpm dev:api` / `pnpm dev:console` / `pnpm dev:blob-server`
+- Dev: `pnpm dev:console` / `pnpm dev:blob-server`
 - Build: `pnpm build` (all) or `pnpm build:<svc>`
-- API tests: `cd services/api && pnpm test` — **WARNING: the `test`/`test:invariants` scripts reference `services/*.test.ts` files that do not exist in the repo; they fail. There are no passing API tests.** Console has no test framework. Blob-server has Go tests.
-- Lint/format: `pnpm lint` → runs `npx biome format --write` (Biome **formats only**, it is not a real lint check). `services/api` has no `biome.json`.
+- Tests: `pnpm test:console` for API utility tests; `pnpm test:blob-server` for Go tests.
+- Lint/format: `pnpm lint` → runs `npx biome format --write` (Biome **formats only**, it is not a real lint check).
 
-## Two broken defaults to know about
+## Broken default to know about
 
-1. **`scripts/docker.sh` (and every `pnpm docker:*` script) is broken out of the box.** It hardcodes `COMPOSE_FILE=infrastructure/docker/compose/docker-compose.yml` and requires `infrastructure/configs/.env`, but neither path exists in this repo. The real compose file is root `docker-compose.yml` and the env template is root `.env.example` (copy to `.env`). To run Docker, use `docker compose --env-file .env up -d` directly rather than the helper.
-2. **API `test` scripts reference missing files** (see above). Don't run `pnpm test` expecting them to pass.
+**`scripts/docker.sh` (and every `pnpm docker:*` script) is broken out of the box.** It hardcodes `COMPOSE_FILE=infrastructure/docker/compose/docker-compose.yml` and requires `infrastructure/configs/.env`, but neither path exists in this repo. The real compose file is root `docker-compose.yml` and the env template is root `.env.example` (copy to `.env`). To run Docker, use `docker compose --env-file .env up -d` directly rather than the helper.
 
-Alternative legit dev workflow that avoids Docker: run infra (Postgres, Redis, MinIO) separately and use `pnpm dev:*`. Set `IN_DOCKER_COMPOSE` appropriately in `infrastructure/cache/redis.ts` (Compose sets `1`; host scripts omit it).
+Alternative legit dev workflow that avoids Docker: run infra (Postgres, Redis, MinIO) separately and use `pnpm dev:*`. Set `IN_DOCKER_COMPOSE` appropriately in `services/console/src/server/api/infrastructure/cache/redis.ts` (Compose sets `1`; host scripts omit it).
 
-## API conventions (see `docs/RULES.md` for full detail)
+## Native API conventions (see `docs/RULES.md` for full detail)
 
-- **ESM: all local imports MUST have the `.js` extension** (e.g. `from '../infrastructure/db/db.js'`). Omitting it breaks at runtime.
-- `tsconfig.json` is strict: `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` are on — handle possibly-undefined destructures (`const [record] = ...; if (!record) throw`).
-- Controllers are thin: validate with Zod `safeParse`, read `(req as any).id` as tenantId, call a service, map errors to HTTP codes.
-- Services own all business logic + DB/MinIO/Redis; attach `(error as any).status = <code>` to thrown errors.
-- New routers are mounted in `routes/index.ts`. Path convention `/api/<resource>/<action>`.
-- **Schema lives at `infrastructure/db/schema.ts`** (drizzle.config.ts points there). Note: `docs/RULES.md` references stale `src/...` paths — the real tree has these dirs at the top level.
-- Drizzle migrations live in `drizzle/` (generated by `drizzle-kit`). Never edit applied migrations.
+- `tsconfig.json` is strict: `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` are on — handle possibly-undefined values.
+- Native route handlers live under `src/app/`; add route matching to `src/server/api/http/dispatcher.ts` and keep handlers thin.
+- Services in `src/server/api/services/` own business logic and DB/MinIO/Redis access; thrown errors may carry an HTTP `status`.
+- Public routes use Bearer JWT verification through `jose` and Better Auth JWKS. Internal ingest uses `USAGE_INGEST_TOKEN` and bypasses public rate limiting.
+- The API schema lives at `src/modules/api/schemas/api.schema.ts` and is re-exported from `src/db/schema.ts`.
+- Auth migrations live in `drizzle/`; API migrations live in `drizzle-api/`. Never edit applied migrations.
 
 ## Drizzle workflow
 
-- API: after editing `infrastructure/db/schema.ts`, run `pnpm db:generate` then `pnpm db:migrate`.
-- Console: schemas in `src/modules/[module]/schemas/`, re-exported from `src/db/schema.ts`; `pnpm run db:generate`/`db:migrate` there.
+- API: after editing `services/console/src/modules/api/schemas/api.schema.ts`, run `pnpm db:generate` then `pnpm db:migrate` from the repository root.
+- Auth: after editing `services/console/src/modules/auth/schemas/auth.schema.ts`, use the same commands; separate configs and migration histories prevent cross-domain snapshots.
 
 ## Env requirements
 
-Strictly required to run anything against infra: `BETTER_AUTH_SECRET` (32+ hex chars, `openssl rand -hex 32`), `BASE_DOMAIN`, DB URL, `REDIS_URL`, `S3_ACCESS_KEY`/`S3_SECRET_KEY`, `MINIO_ENDPOINT_URL`, `MINIO_BUCKET`. Console uses `NEXT_PUBLIC_*` for client code (and `PUBLIC_URL` mapped via `next.config.ts`).
+Strictly required to run anything against infra: `BETTER_AUTH_SECRET` (32+ hex chars, `openssl rand -hex 32`), `BASE_DOMAIN`, `DATABASE_URL`, `REDIS_URL`, `S3_ACCESS_KEY`/`S3_SECRET_KEY`, `MINIO_ENDPOINT`, `MINIO_BUCKET`. Console uses `NEXT_PUBLIC_*` for client code (and `PUBLIC_URL` mapped via `next.config.ts`).
 
 ## Other repo notes
 
 - `.gitignore` ignores `.env`, `dist/`, `.next/`, and `.agents/`.
-- Docs live in `docs/` (SCHEMA, API, RULES, WORKERS, architecture, development, INFRASTRUCTURE, PROJECT). `docs/RULES.md` and `README.md` sometimes use the legacy name "Cloudisy" / stale `src/` paths (the API was moved to top-level dirs) — trust the code and root `AGENTS.md` over those paths.
-- Docker images publish to GHCR on version tags: `console/v*`, `api/v*`, `blob-server/v*` (see `.github/workflows/`). All services share one platform version (currently `1.4.0`).
+- Docs live in `docs/` (SCHEMA, API, RULES, WORKERS, architecture, development, INFRASTRUCTURE, PROJECT). The product name still appears as “Cloudisy” in some text; trust current code and root `AGENTS.md` over stale paths.
+- Docker images publish to GHCR on version tags: `console/v*`, `blob-server/v*` (see `.github/workflows/`). All services share one platform version (currently `1.4.0`).
 - **Production compose:** root `docker-compose.prod.yml` (project `pagex-prod`) pulls GHCR images (default tag `latest`, **no `build:` sections**); `pnpm docker:prod` (script `scripts/docker-prod.sh`) pulls + starts it. Pin with `PAGEX_VERSION=1.4.0`, override namespace with `PAGEX_REGISTRY`.
 - Root `Caddyfile` reverse-proxies the console (`:3080` → console:3001) and serves tenant sites via `static_s3` with MinIO + Postgres + Redis lookups. TLS/HTTPS blocks are toggled by `TLS_CFG` (off locally, on in prod).
 
@@ -153,7 +150,7 @@ Use the `task` tool to delegate to specialized agents. Default to running indepe
 - **Explore + Explore**: launching two `explore` agents to search different parts of the codebase simultaneously (e.g., "find API route definitions" and "find console schema definitions").
 - **Graph + Source**: one `codebase-memory` agent traces the call graph while another reads the relevant source files.
 - **Research + Verify**: a `general` agent researches the solution while you verify constraints in parallel.
-- **Multi-service**: independent tasks scoped to `services/api`, `services/console`, and `services/blob-server` can run as three parallel agents.
+- **Multi-service**: independent tasks scoped to `services/console` and `services/blob-server` can run as two parallel agents.
 
 ### Prompt best practices for subagents
 

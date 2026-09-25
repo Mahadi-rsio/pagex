@@ -1,1 +1,0 @@
-ALTER TABLE "deployments" DROP COLUMN "snapshot_prefix";

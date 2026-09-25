@@ -16,6 +16,7 @@ if (process.env.NODE_ENV !== "production") {
     globalForDb.client = client;
 }
 
+export { client as dbClient };
 export const db = drizzle(client, { schema });
 
 export async function getDb() {

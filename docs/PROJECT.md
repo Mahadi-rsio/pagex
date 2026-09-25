@@ -14,16 +14,16 @@
 
 | Layer | Technology |
 |-------|-----------|
-| Runtime | Node.js (ESM, TypeScript compiled to `dist/`) |
-| HTTP Framework | Express 5 |
+| Runtime | Node.js 20.9+ with Next.js 16 App Router |
+| HTTP Framework | Next.js route handlers |
 | Database | PostgreSQL via Drizzle ORM |
 | Deploy path | CLI only — `/api/deploy/prepare\|presign\|commit` |
 | Cache | Redis (ioredis) — API cache/rate-limit/deploy-locks; blob-server caches in PostgreSQL |
 | Object Storage | MinIO (S3-compatible) — external |
-| Auth | JOSE — JWKS from next-web (`AUTH_JWKS_URL`) |
+| Auth | Better Auth JWT + JOSE JWKS verification |
 | Image / compress | `sharp` (WebP), Node `zlib` (Brotli/Gzip) |
 | Validation | Zod + `file-type` magic bytes |
-| Rate limiting | express-rate-limit + rate-limit-redis |
+| Rate limiting | Redis Lua counter |
 | Concurrency | `p-limit` (blob I/O + GC deletes, concurrency 10) |
 
 ---
@@ -33,41 +33,24 @@
 ```
 pagex/
 ├── services/
-│   ├── api/                        # Express API (ESM, top-level dirs)
-│   │   ├── app.ts / server.ts      # server.ts is the entrypoint
-│   │   ├── constants/index.ts      # DEPLOYMENT_RETENTION=10, MANIFEST_REDIS_TTL_SECONDS, COMMIT_TIMEOUT, …
-│   │   ├── middleware/auth.middleware.ts
-│   │   ├── infrastructure/
-│   │   │   ├── db/db.ts, schema.ts # sites, pages, stats, builds, deployments, blobs, blob_tree_entries, usage_ingest_dedup
-│   │   │   ├── cache/redis.ts      # redis (rate limit, deploy locks, cache)
-│   │   │   └── storage/minio.ts    # blobObjectKey, objectMetaForPath, deleteBlobObjects
-│   │   ├── controllers/            # page, deploy, deployment, usage-ingest
-│   │   ├── services/
-│   │   │   ├── deploy.service.ts       # prepare / presign / commitBlobTreeDeploy / manifest / variants
-│   │   │   ├── deployment-lock.service.ts # per-page Redis deploy:lock:{pageId}
-│   │   │   ├── deployment.service.ts   # listDeployments, rollbackToDeployment
-│   │   │   ├── gc.service.ts           # runDeploymentGC (fire-and-forget)
-│   │   │   ├── page.service.ts
-│   │   │   └── usage-ingest.service.ts # applies Vector aggregates (idempotent dedup)
-│   │   ├── routes/                 # page, deploy, deployment, internal (/internal/usage/ingest), + /health
-│   │   ├── utils/
-│   │   │   ├── deployment-validator.ts # ≤100 files, ≤10 MB, blocked extensions
-│   │   │   ├── file-validator.ts       # magic bytes + EXT_ALIASES (svg↔xml)
-│   │   │   └── http-error.ts
-│   │   ├── validators/             # page, deploy
-│   │   ├── drizzle/                # committed migrations
-│   │   └── Dockerfile
-│   ├── blob-server/                # Go Caddy static_s3 plugin
-│   │   ├── src/                    # handler, manifest, blob_fetch (LRU→Postgres cache)
-│   │   ├── vector/                 # vector.yaml pipeline: logs → aggregate → API ingest
-│   │   └── Dockerfile
-│   ├── console/                    # Next.js console (Better Auth, Drizzle, Zustand)
-│   └── packages/                   # @pagex/{config,types,utils}
-├── cli/                            # `pagex` CLI (dist/) — init/deploy/status
-├── docker-compose.yml              # dev stack (api, blob-server, vector, console, db, redis)
+│   ├── console/                    # Next.js UI and native API
+│   │   ├── src/app/                # API/auth/health/ingest route handlers
+│   │   ├── src/server/api/
+│   │   │   ├── http/               # dispatcher, JWT auth, Redis rate limits
+│   │   │   ├── services/           # page, deploy, deployment, GC, usage
+│   │   │   ├── infrastructure/     # DB, Redis, MinIO
+│   │   │   ├── validators/ utils/
+│   │   │   └── constants/
+│   │   ├── src/modules/api/schemas/api.schema.ts
+│   │   ├── drizzle/                # auth migration history
+│   │   └── drizzle-api/            # page/deploy/usage migration history
+│   └── blob-server/                # Go Caddy static_s3 plugin
+├── packages/                       # @pagex/{config,types,utils}
+├── cli/                            # `pagex` CLI — init/deploy/status
+├── docker-compose.yml              # blob-server, vector, console, db, redis
 ├── docker-compose.prod.yml         # GHCR images, no build
 ├── Caddyfile                       # reverse proxy + static_s3
-├── docs/                           # AI docs (this folder)
+├── docs/
 └── README.md
 ```
 
@@ -77,16 +60,16 @@ pagex/
 
 | Process | File | Started by |
 |---------|------|-----------|
-| API server | `dist/server.js` | `api` |
-| Migrations | `drizzle-kit migrate` | run at API startup |
+| Console UI/API | `services/console/src/app/` | `console` |
+| Migrations | `src/db/migrate.ts` | run at console startup |
 | Blob server | `cmd/caddy` (Go) | `blob-server` |
-| Vector | `vector.yaml` | `vector` (aggregates access logs → API ingest) |
+| Vector | `vector.yaml` | `vector` (aggregates access logs → console ingest) |
 
 No workers — cloud builds / BullMQ were removed, and CLI blob deploy replaced ZIP uploads.
 
 ---
 
-## Key Constants (`services/api/constants/index.ts`)
+## Key Constants (`services/console/src/server/api/constants/index.ts`)
 
 | Constant | Value | Usage |
 |----------|-------|-------|
@@ -99,17 +82,17 @@ No workers — cloud builds / BullMQ were removed, and CLI blob deploy replaced 
 | `MANIFEST_REDIS_TTL_SECONDS` | 24 h | Redis `manifest:{deploymentId}` |
 | `COMMIT_TIMEOUT_MS` | 5 min | `/api/deploy/commit` only |
 | `BLOB_IO_CONCURRENCY` | 10 | `p-limit` for blob I/O + GC |
-| `RATE_LIMIT_*` | 100 / 15 min | Express rate limit |
+| `RATE_LIMIT_*` | 100 / 15 min | Native API rate limit |
 
 ---
 
 ## Authentication
 
-Every protected endpoint uses `authMiddleware`:
+Every protected endpoint uses native request authentication:
 - `Authorization: Bearer <JWT>`
-- JWKS: `AUTH_JWKS_URL` (Compose: `http://console:3001/api/auth/jwks`; host default `http://localhost:3080/api/auth/jwks`)
-- Sets `req.id` = tenant ID, `req.name` = tenant name
-- List/rollback filter by `tenant_id` — wrong tenant → empty list or 404, not a cross-tenant leak
+- JWKS defaults to the request origin's `/api/auth/jwks`; `AUTH_JWKS_URL` can override it
+- The auth context contains `id` = tenant ID and `name` = tenant name
+- List/rollback operations filter by `tenant_id` — wrong tenant → empty list or 404, not a cross-tenant leak
 
 ---
 
@@ -138,7 +121,7 @@ Blob objects may carry `Content-Type` and `Content-Encoding` (`br` / `gzip`) for
 | `deploy:token:{token}` | 3 | JSON | 10 min | prepareDeploy |
 | `db_cache:{domain}` | 3 | JSON | 15 min | page.service |
 
-Usage/metrics aggregation is handled by **Vector → API ingest** (Postgres); no analytics counters live in Redis. Blob-server caches in PostgreSQL (LRU → Postgres).
+Usage/metrics aggregation is handled by **Vector → console ingest** (Postgres); no analytics counters live in Redis. Blob-server caches in PostgreSQL (LRU → Postgres).
 
 Compose sets `IN_DOCKER_COMPOSE=1` so hostname `redis` is kept inside containers; host scripts remap to `localhost`.
 

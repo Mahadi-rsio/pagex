@@ -5,7 +5,7 @@
 # so `docker compose -f docker-compose.prod.yml up -d` never builds locally.
 #
 # Images are published by the publish workflows on version tags:
-#   api/v1.5.0, console/v1.5.0, blob-server/v1.5.0
+#   console/v1.5.0, blob-server/v1.5.0
 #
 # Usage (from repo root):
 #   cp .env.example .env        # first run, then fill in required values
@@ -16,27 +16,6 @@
 name: pagex-prod
 
 services:
-  # ============================================================================
-  # API Service — Express Backend
-  # ============================================================================
-  api:
-    image: ${PAGEX_REGISTRY:-ghcr.io/mahadi-rsio/pagex}/api:${PAGEX_VERSION:-latest}
-    container_name: api
-    env_file: .env
-    environment:
-      - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
-      - USAGE_INGEST_TOKEN=${USAGE_INGEST_TOKEN}
-    expose:
-      - "3000"
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - pagex
-
   # ============================================================================
   # Blob Server — Caddy with static_s3 Plugin
   # ============================================================================
@@ -67,10 +46,8 @@ services:
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
       - TLS_CFG=${TLS_CFG:-tls-off}
     depends_on:
-      api:
-        condition: service_started
       console:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - pagex
@@ -88,10 +65,10 @@ services:
       - vector_data:/var/lib/vector
     environment:
       - USAGE_INGEST_TOKEN=${USAGE_INGEST_TOKEN}
-      - USAGE_API_URL=${USAGE_API_URL:-http://api:3000/internal/usage/ingest}
+      - USAGE_API_URL=${USAGE_API_URL:-http://console:3001/internal/usage/ingest}
     depends_on:
-      api:
-        condition: service_started
+      console:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - pagex
@@ -106,7 +83,6 @@ services:
     environment:
       - DATABASE_URL=${NEXT_WEB_DATABASE_URL:-${DIRECT_DB:-postgresql://postgres:postgres@db:5432/pagex}}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - EXPRESS_URL=${NEXT_PUBLIC_API_URL:-http://api:3000}
     expose:
       - "3001"
     depends_on:

@@ -5,72 +5,24 @@ This document provides a comprehensive overview of the PageX platform architectu
 ## 🏗️ System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              PageX Platform                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
+┌──────────────────────────────── PageX Platform ────────────────────────────────┐
+│ Client Layer: Browser · CLI · API Clients                                   │
+│                         │                                                   │
+│                    Caddy (:3080)                                            │
+│             ┌───────────┴───────────┐                                       │
+│             ▼                       ▼                                       │
+│ Console (Next.js 16)          Blob Server (Caddy + Go)                     │
+│ - Better Auth UI              - Tenant site routing                        │
+│ - Native App Router API       - Manifest/blob resolution                   │
+│ - Pages, deploys, usage       - Static asset delivery                      │
+│             │                       │                                       │
+│             └───────────┬───────────┘                                       │
+│                         ▼                                                   │
+│ PostgreSQL · Redis · MinIO/S3                                                │
 │                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                         Client Layer                                  │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌────────────┐ │   │
-│  │  │   Browser    │  │   CLI        │  │   API Client │  │   Mobile   │ │   │
-│  │  │  (Users)     │  │  (Deploy)     │  │  (Integrations)│  │   Apps     │ │   │
-│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬────┘ │   │
-│  └─────────┼────────────────┼────────────────┼────────────────┼─────────┘   │
-│            │                │                │                │              │
-│            └────────────────┴────────────────┴────────────────┘              │
-│                                  │                                         │
-│                    ┌─────────────────────────────────────────────┐          │
-│                    │            Edge Layer (Caddy)                   │          │
-│                    │  ┌─────────────────────────────────────┐   │          │
-│                    │  │           Blob Server (static_s3)        │   │          │
-│                    │  │  - Multi-tenant routing                   │   │          │
-│                    │  │  - Subdomain → Site ID resolution         │   │          │
-│                    │  │  - Path → Blob hash resolution           │   │          │
-│                    │  │  - Content-addressed blob serving        │   │          │
-│                    │  │  - Automatic compression variants        │   │          │
-│                    │  │  - High-performance caching               │   │          │
-│                    │  │  - S3-compatible storage (MinIO)         │   │          │
-│                    │  └─────────────────────────────────────┘   │          │
-│                    └─────────────────────────────────────────────┘          │
-│                                          │                                         │
-│                    ┌─────────────────────────────────────────────┐          │
-│                    │          Application Layer (Express)            │          │
-│                    │  ┌─────────────────────────────────────┐   │          │
-│                    │  │              API Service                   │   │          │
-│                    │  │  - REST API endpoints                     │   │          │
-│                    │  │  - Authentication (JWT)                   │   │          │
-│                    │  │  - Site management                       │   │          │
-│                    │  │  - Deployment management                  │   │          │
-│                    │  │  - Build management                       │   │          │
-│                    │  │  - Analytics tracking                     │   │          │
-│                    │  └─────────────────────────────────────┘   │          │
-│                    │                                              │          │
-│                    │  ┌─────────────────────────────────────┐   │          │
-│                    │  │            Console Service                 │   │          │
-│                    │  │  - Next.js web interface                 │   │          │
-│                    │  │  - User authentication (Better Auth)    │   │          │
-│                    │  │  - Project management UI                 │   │          │
-│                    │  │  - Deployment management UI              │   │          │
-│                    │  │  - Analytics dashboard                    │   │          │
-│                    │  └─────────────────────────────────────┘   │          │
-│                    └─────────────────────────────────────────────┘          │
-│                                          │                                         │
-│                    ┌─────────────────────────────────────────────┐          │
-│                    │            Data Layer                              │          │
-│                    │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │          │
-│                    │  │  PostgreSQL  │  │    Redis     │  │    MinIO     │ │          │
-│                    │  │  (Primary DB)│  │    (Cache)    │  │  (Storage)   │ │          │
-│                    │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘ │          │
-│                    │         │                │                │        │          │
-│                    │         └────────────────┴────────────────┴────────┘          │
-│                    └─────────────────────────────────────────────────────┘   │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                      Background Processing                              │   │
-│  │  GC runs fire-and-forget after deploy/rollback (no build workers).      │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+│ Vector reads Caddy logs and posts aggregates to the console ingest route.   │
+│ GC runs fire-and-forget after deploy/rollback; there are no build workers.  │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 🔄 Request Flow
@@ -158,14 +110,13 @@ Client Request
      ▼
 ┌─────────────────────────────────────┐
 │  Caddy (Reverse Proxy)                 │
-│  - Routes /api/* to API service       │
-│  - Handles CORS                       │
-│  - Load balancing (future)            │
+│  - Routes console and API to Next.js  │
+│  - Serves tenant sites with static_s3 │
 └─────────────────┬───────────────────┘
                   │
                   ▼
 ┌─────────────────────────────────────┐
-│  API Service (Express)               │
+│  Console Native API (Next.js)        │
 │  1. JWT Authentication               │
 │     - Verify JWT signature            │
 │     - Check token expiry              │
@@ -182,10 +133,10 @@ Client Request
                   │
                   ▼
 ┌─────────────────────────────────────┐
-│  Controller                          │
-│  - Parse request                    │
+│  Native Route + Dispatcher            │
+│  - Match path and method             │
+│  - Parse and validate request        │
 │  - Call service methods              │
-│  - Format response                   │
 └─────────────────┬───────────────────┘
                   │
                   ▼
@@ -203,7 +154,6 @@ Client Request
 │  - PostgreSQL queries                │
 │  - Redis operations                  │
 │  - MinIO operations                  │
-│  - Queue job creation                │
 └─────────────────┬───────────────────┘
                   │
                   ▼
@@ -341,46 +291,24 @@ Client Request
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Authentication Flow                            │
 ├─────────────────────────────────────────────────────────────────┤
+│ Client → /api/auth/* → Better Auth → session cookie + JWT         │
 │                                                                     │
-│  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐        │
-│  │   Client    │     │   Console   │     │    API      │        │
-│  │ (Browser)   │     │  (Next.js)  │     │ (Express)   │        │
-│  └──────┬──────┘     └──────┬──────┘     └──────┬──────┘        │
-│         │                  │                  │                │
-│         │  1. Login Request │                  │                │
-│         │──────────────────>│                  │                │
-│         │                  │                  │                │
-│         │  2. Authenticate  │                  │                │
-│         │  (OAuth/Email)    │                  │                │
-│         │                  │                  │                │
-│         │  3. Create Session│                  │                │
-│         │  (Better Auth)    │                  │                │
-│         │                  │                  │                │
-│         │  4. Set Cookie    │                  │                │
-│         │<──────────────────│                  │                │
-│         │                  │                  │                │
-│         │  5. API Request   │                  │                │
-│         │────────────────────────────────────>│                │
-│         │                  │  6. Verify JWT    │                │
-│         │                  │     (JWKS from   │                │
-│         │                  │      console)    │                │
-│         │                  │──────────────────>│                │
-│         │                  │                  │                │
-│         │  7. Response     │<──────────────────┤                │
-│         │<─────────────────│                  │                │
-│         │                  │                  │                │
+│ Client → /api/* with Bearer JWT                                     │
+│              ↓                                                      │
+│ Console native route → Redis rate limit → JOSE/JWKS verification    │
+│              ↓                                                      │
+│ Tenant ID/name from verified claims → native API service → response  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### JWT Verification
 
-1. Client sends request with `Authorization: Bearer <token>` header
-2. API service extracts JWT from header
-3. API service fetches JWKS from console (`AUTH_JWKS_URL`)
-4. API service verifies JWT signature using JWKS
-5. API service checks token expiry
-6. API service loads user from JWT claims
-7. Request proceeds with authenticated user
+1. Client sends a request with `Authorization: Bearer <token>`.
+2. The native API extracts the JWT from the header.
+3. JOSE fetches JWKS from the request origin or `AUTH_JWKS_URL`.
+4. The API verifies the signature and expiry.
+5. The API reads tenant ID/name from verified claims.
+6. The request proceeds with the authenticated tenant context.
 
 ## 📦 Deployment Flow
 
@@ -393,7 +321,7 @@ Client Request
 │                                                                     │
 │  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐        │
 │  │   Client    │     │     API     │     │   MinIO     │        │
-│  │   (CLI)     │     │ (Express)   │     │ (Storage)   │        │
+│  │   (CLI)     │     │ (Next.js)   │     │ (Storage)   │        │
 │  └──────┬──────┘     └──────┬──────┘     └──────┬──────┘        │
 │         │                  │                  │                │
 │         │  1. PREPARE      │                  │                │
@@ -443,7 +371,7 @@ Client Request
 │                                                                     │
 │  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐        │
 │  │   Client    │     │     API     │     │ Build Worker │        │
-│  │ (Browser)   │     │ (Express)   │     │ (Container)  │        │
+│  │ (Browser)   │     │ (Next.js)   │     │ (Container)  │        │
 │  └──────┬──────┘     └──────┬──────┘     └──────┬──────┘        │
 │         │                  │                  │                │
 │         │  1. Trigger      │                  │                │
@@ -601,7 +529,7 @@ BullMQ and the cloud-build worker/DLQ have been deleted; CLI deploy
 (`/api/deploy/prepare|presign|commit`) is the only deploy path.
 
 **Implementation:**
-- **Analytics / usage:** Vector aggregates Caddy access logs per site+hour and POSTs to the API ingest endpoint; the API applies them to `site_daily_stats`, `service_metrics_hourly`, and `bandwidth_usage_hourly` with idempotent dedup (no queue).
+- **Analytics / usage:** Vector aggregates Caddy access logs per site and hour and posts them to the console ingest endpoint; the native API applies them to `site_daily_stats`, `service_metrics_hourly`, and `bandwidth_usage_hourly` with idempotent dedup (no queue).
 - **GC:** Runs fire-and-forget after deploy/rollback, in-process
 
 ### Deployment Safety (Production Hardening)
@@ -650,7 +578,7 @@ pending
 - `failIdempotencyKey()` — deletes reservation on failure
 - Request hash verification prevents silent corruption
 
-**Usage-ingest idempotency (Vector → API):**
+**Usage-ingest idempotency (Vector → console API):**
 - Vector computes a deterministic `ingest_id` per site+hour-bucket+counters; the API claims it in `usage_ingest_dedup` (`INSERT … ON CONFLICT DO NOTHING`) so retried HTTP POSTs or a Vector replay can never double-count.
 - **No Vector→Postgres sink.** The API owns the schema; Vector only POSTs pre-aggregated records to `POST /internal/usage/ingest` (bearer token `USAGE_INGEST_TOKEN`).
 
@@ -677,7 +605,7 @@ pending
 | Component | Requests/Second | Notes |
 |-----------|-----------------|-------|
 | Blob Server | 10,000+ | Depends on hardware |
-| API Server | 1,000+ | Express.js |
+| Console UI/API | 1,000+ | Next.js |
 | Database | 5,000+ | PostgreSQL |
 | Redis | 100,000+ | In-memory |
 | MinIO | 5,000+ | S3-compatible |
@@ -708,7 +636,7 @@ pending
 
 ### Authentication
 
-- **JWT:** Signed tokens with short expiry (24h)
+- **JWT:** Signed tokens with a 20-minute expiry
 - **JWKS:** Public keys fetched from console for verification
 - **CORS:** Proper CORS headers for API endpoints
 - **Rate Limiting:** Per-IP rate limiting on API endpoints
@@ -739,8 +667,7 @@ pending
 | Component | Scaling Strategy | Notes |
 |-----------|------------------|-------|
 | Blob Server | Multiple instances | Stateless, share MinIO |
-| API Server | Multiple instances | Stateless, share DB/Redis |
-| Console | Multiple instances | Stateless, share DB/Redis |
+| Console UI/API | Multiple instances | Stateless, share DB/Redis |
 | Database | Read replicas | PostgreSQL |
 | Redis | Cluster mode | Redis Cluster |
 | MinIO | Distributed mode | MinIO Distributed |
@@ -751,10 +678,8 @@ pending
 |-----------|----------|----------------|
 | Blob Server | CPU | 2+ cores |
 | Blob Server | Memory | 2GB+ |
-| API Server | CPU | 2+ cores |
-| API Server | Memory | 1GB+ |
-| Console | CPU | 1+ cores |
-| Console | Memory | 1GB+ |
+| Console UI/API | CPU | 2+ cores |
+| Console UI/API | Memory | 1GB+ |
 | Database | CPU | 4+ cores |
 | Database | Memory | 4GB+ |
 | Redis | Memory | 1GB+ |
@@ -782,8 +707,7 @@ See [Development Guide](development.md) for detailed file structure and conventi
 |------------|---------|---------|
 | Node.js | JavaScript runtime | 20.x |
 | TypeScript | Type checking | 5.x |
-| Express | Web framework | 4.x |
-| Next.js | React framework | 16.x |
+| Next.js | React framework and native API runtime | 16.x |
 | PostgreSQL | Database | 16.x |
 | Redis | Cache/Queue | 7.x |
 | MinIO | Storage | Latest |
@@ -794,11 +718,11 @@ See [Development Guide](development.md) for detailed file structure and conventi
 
 | Library | Purpose | Service |
 |---------|---------|---------|
-| Drizzle ORM | Database ORM | API, Console |
-| ioredis | Redis client | API, Console |
-| minio | S3 client | API |
-| zod | Validation | API, Console |
-| Better Auth | Authentication | Console |
+| Drizzle ORM | Database ORM | Console |
+| ioredis | Redis client | Console |
+| minio | S3 client | Console |
+| zod | Validation | Console |
+| Better Auth | Authentication and JWT issuance | Console |
 
 ## 📊 Monitoring
 
@@ -806,10 +730,10 @@ See [Development Guide](development.md) for detailed file structure and conventi
 
 | Metric | Source | Purpose |
 |--------|--------|---------|
-| Request Count | Caddy access logs → Vector → API | Traffic monitoring |
-| Bandwidth | Caddy access logs → Vector → API | Billing usage |
-| Response Time | Caddy access logs → Vector → API | Performance monitoring |
-| Cache Hit Rate | Caddy `cache_hit` flag → Vector → API | Cache efficiency |
+| Request Count | Caddy access logs → Vector → console API | Traffic monitoring |
+| Bandwidth | Caddy access logs → Vector → console API | Billing usage |
+| Response Time | Caddy access logs → Vector → console API | Performance monitoring |
+| Cache Hit Rate | Caddy `cache_hit` flag → Vector → console API | Cache efficiency |
 | Database Queries | PostgreSQL | Query performance |
 
 ### Logging
@@ -833,9 +757,9 @@ See [Development Guide](development.md) for detailed file structure and conventi
 
 ## 🎯 Future Architecture
 
-### Microservices
+### Service Boundaries
 
-- Split API service into smaller services
+- Split high-volume native API workloads from the console when scaling requires it
 - Service mesh for inter-service communication
 - API Gateway for request routing
 
@@ -867,7 +791,6 @@ See [Development Guide](development.md) for detailed file structure and conventi
 ## 📚 References
 
 - [Docker Documentation](https://docs.docker.com/)
-- [Express Documentation](https://expressjs.com/)
 - [Next.js Documentation](https://nextjs.org/docs)
 - [PostgreSQL Documentation](https://www.postgresql.org/docs/)
 - [Redis Documentation](https://redis.io/docs/)

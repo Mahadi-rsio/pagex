@@ -1,6 +1,3 @@
-// Proxy base - all API calls route through the Next.js proxy handler
-const API_BASE_URL = "/api/proxy";
-
 // Cache for the auth token to avoid repeated fetches
 let cachedToken: string | null = null;
 let cachedTokenExpiry: number | null = null; // epoch ms when the cached token expires
@@ -145,10 +142,10 @@ export interface ApiUsage {
         unique_ips: number;
     };
     status_codes?: {
-        '2xx': number;
-        '3xx': number;
-        '4xx': number;
-        '5xx': number;
+        "2xx": number;
+        "3xx": number;
+        "4xx": number;
+        "5xx": number;
     };
     peak?: {
         hour: string | null;
@@ -410,7 +407,7 @@ export class ApiClient {
         endpoint: string,
         options: RequestInit = {},
     ): Promise<Response> {
-        const url = `${API_BASE_URL}${endpoint}`;
+        const url = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
         const method = options.method ?? "GET";
 
         const doFetch = async (
@@ -594,7 +591,7 @@ export class ApiClient {
      */
     async openBuildLogStream(buildId: string): Promise<Response> {
         const token = await this.getAuthToken();
-        const url = `${API_BASE_URL}/api/builds/${encodeURIComponent(buildId)}/logs`;
+        const url = `/api/builds/${encodeURIComponent(buildId)}/logs`;
         return fetch(url, {
             method: "GET",
             credentials: "include",
@@ -734,7 +731,7 @@ export class ApiClient {
      * Check API service health
      */
     async healthCheck(): Promise<{ message: string }> {
-        const response = await this.fetchWithAuth("/health");
+        const response = await this.fetchWithAuth("/api/health");
         return this.handleResponse<{ message: string }>(response);
     }
 }

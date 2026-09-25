@@ -1,30 +1,5 @@
 services:
   # ============================================================================
-  # API Service — Express Backend
-  # ============================================================================
-  api:
-    container_name: api
-    build:
-      context: ./services/api/
-      dockerfile: Dockerfile
-    env_file: .env
-    environment:
-      - AUTH_JWKS_URL=${AUTH_JWKS_URL:-http://console:3001/api/auth/jwks}
-      - USAGE_INGEST_TOKEN=${USAGE_INGEST_TOKEN}
-    expose:
-      - "3000"
-    ports:
-      - "3000:3000"
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - pagex
-
-  # ============================================================================
   # Blob Server — Caddy with static_s3 Plugin
   # ============================================================================
   blob-server:
@@ -54,8 +29,6 @@ services:
       - ./services/blob-server/tls:/etc/caddy/tls:ro
       - caddy_logs:/var/log/caddy
     depends_on:
-      api:
-        condition: service_started
       console:
         condition: service_started
     restart: unless-stopped
@@ -75,10 +48,10 @@ services:
       - vector_data:/var/lib/vector
     environment:
       - USAGE_INGEST_TOKEN=${USAGE_INGEST_TOKEN}
-      - USAGE_API_URL=${USAGE_API_URL:-http://api:3000/internal/usage/ingest}
+      - USAGE_API_URL=${USAGE_API_URL:-http://console:3001/internal/usage/ingest}
     depends_on:
-      api:
-        condition: service_started
+      console:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - pagex
@@ -96,7 +69,6 @@ services:
     environment:
       - DATABASE_URL=${NEXT_WEB_DATABASE_URL:-${DIRECT_DB:-postgresql://postgres:postgres@db:5432/pagex}}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - EXPRESS_URL=${NEXT_PUBLIC_API_URL:-http://api:3000}
     expose:
       - "3001"
     depends_on:

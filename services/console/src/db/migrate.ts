@@ -1,15 +1,35 @@
 import path from "node:path";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { bootstrapApiMigrations } from "../server/api/infrastructure/db/bootstrap-migrations";
 import { db } from "./index";
 
-const MIGRATIONS_DIR = path.join(process.cwd(), "drizzle");
+const migrationSets = [
+    {
+        name: "auth",
+        folder: path.join(process.cwd(), "drizzle"),
+        table: "__drizzle_migrations_console",
+    },
+    {
+        name: "api",
+        folder: path.join(process.cwd(), "drizzle-api"),
+        table: "__drizzle_migrations",
+    },
+] as const;
 
 export async function runMigrations() {
-    console.log("[migrate] Running console database migrations...");
-    await migrate(db, {
-        migrationsFolder: MIGRATIONS_DIR,
-        migrationsTable: "__drizzle_migrations_console",
-        migrationsSchema: "drizzle",
-    });
+    for (const migrationSet of migrationSets) {
+        console.log(`[migrate] Running ${migrationSet.name} migrations...`);
+        if (migrationSet.name === "api") {
+            await bootstrapApiMigrations(
+                migrationSet.folder,
+                migrationSet.table,
+            );
+        }
+        await migrate(db, {
+            migrationsFolder: migrationSet.folder,
+            migrationsTable: migrationSet.table,
+            migrationsSchema: "drizzle",
+        });
+    }
     console.log("[migrate] Migrations complete.");
 }

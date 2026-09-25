@@ -6,21 +6,19 @@
   "packageManager": "pnpm@8.15.0",
   "scripts": {
     "dev": "pnpm -r --parallel --if-present dev",
-    "dev:api": "cd services/api && pnpm run dev",
     "dev:blob-server": "cd services/blob-server && pnpm run run",
     "dev:console": "cd services/console && pnpm run dev",
     "build": "pnpm -r build",
-    "build:api": "cd services/api && pnpm run build",
     "build:blob-server": "cd services/blob-server && pnpm run build",
     "build:console": "cd services/console && pnpm run build",
     "lint": "pnpm -r --if-present lint",
-    "lint:api": "cd services/api && pnpm run lint",
     "lint:console": "cd services/console && pnpm run lint",
+    "test:console": "cd services/console && pnpm run test",
     "test:blob-server": "cd services/blob-server && pnpm run test",
-    "db:generate": "cd services/api && pnpm run db:generate",
-    "db:migrate": "cd services/api && pnpm run db:migrate",
-    "db:push": "cd services/api && pnpm run db:push",
-    "db:studio": "cd services/api && pnpm run db:studio",
+    "db:generate": "cd services/console && pnpm run db:generate",
+    "db:migrate": "cd services/console && pnpm run db:migrate",
+    "db:push": "cd services/console && pnpm run db:push",
+    "db:studio": "cd services/console && pnpm run db:studio",
     "docker": "bash scripts/docker.sh",
     "docker:up": "bash scripts/docker.sh up",
     "docker:down": "bash scripts/docker.sh down",
@@ -32,7 +30,6 @@
     "docker:exec": "bash scripts/docker.sh exec",
     "docker:migrate": "bash scripts/docker.sh migrate",
     "docker:console": "bash scripts/docker.sh console",
-    "docker:api": "bash scripts/docker.sh api",
     "docker:config": "bash scripts/docker.sh config",
     "docker:prod": "bash scripts/docker-prod.sh up",
     "docker:prod:pull": "bash scripts/docker-prod.sh pull",
@@ -48,7 +45,7 @@
     "typescript": "^5.3.0"
   },
   "engines": {
-    "node": ">=18.0.0",
+    "node": ">=20.9.0",
     "pnpm": ">=8.0.0"
   },
   "keywords": [

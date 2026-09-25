@@ -24,6 +24,7 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 # Migrations run at startup via drizzle-orm migrate() (see src/instrumentation.ts)
 COPY --from=builder /app/drizzle ./drizzle
+COPY --from=builder /app/drizzle-api ./drizzle-api
 COPY --chmod=755 docker-entrypoint.sh /app/
 
 EXPOSE 3001

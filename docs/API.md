@@ -1,8 +1,8 @@
 # PageX — Complete API Reference
 
-> All endpoints are prefixed with the server root (default: `http://localhost:3000`).
+> All endpoints are served by the console (default: `http://localhost:3080`).
 > All protected endpoints require: `Authorization: Bearer <JWT>`
-> The JWT is issued by the console Better Auth. The payload must contain `id` (tenant ID) and `name` (tenant name). Express verifies via `AUTH_JWKS_URL` (Compose: `http://console:3001/api/auth/jwks`).
+> The JWT is issued by Better Auth. The payload must contain `id` (tenant ID) and `name` (tenant name); the native API verifies its signature through the console JWKS endpoint.
 
 ---
 
@@ -21,7 +21,7 @@ No auth required.
 ## Internal — Usage Ingest
 
 ### `POST /internal/usage/ingest`
-**Internal-only** endpoint used by the Vector service to push pre-aggregated hourly usage records. Mounted at `/internal` in `app.ts` **before** the global JSON body parser and the public rate limiter; it reads the raw body itself via `express.text({ limit: '50mb', type: () => true })`.
+**Internal-only** endpoint used by the Vector service to push pre-aggregated hourly usage records. The native route reads raw JSON/NDJSON and bypasses the public rate limiter.
 
 **Auth:** Bearer token compared constant-time against `USAGE_INGEST_TOKEN` (NOT the public JWT `authMiddleware`).
 - `401` if the token is missing or wrong.
@@ -55,7 +55,7 @@ Each record fields:
 | `401` | Missing/wrong bearer token |
 | `500` | `"Failed to ingest usage"` or `USAGE_INGEST_TOKEN` not configured |
 
-Source: `services/api/routes/internal.routes.ts`, `services/api/controllers/usage-ingest.controller.ts`, `services/api/services/usage-ingest.service.ts`.
+Source: `services/console/src/app/internal/usage/ingest/route.ts`, `services/console/src/server/api/services/usage-ingest.service.ts`.
 
 ---
 
