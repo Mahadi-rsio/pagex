@@ -42,6 +42,7 @@ temp/
 # Cache
 .cache/
 .pnpm-debug.log*
+*.tsbuildinfo
 
 # Docker
 .docker/
@@ -73,6 +74,9 @@ infrastructure/certs/
 *.test.ts
 *.spec.ts
 !services/api/tests/*.test.ts
+
+# Scratch / ad-hoc scripts with credentials
+/test.js
 
 # Go build artifacts
 *.exe
