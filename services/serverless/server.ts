@@ -1,4 +1,5 @@
 import { log } from 'node:console'
+import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { serve } from '@hono/node-server'
@@ -9,7 +10,11 @@ import { bootstrapMigrations } from './infrastructure/db/bootstrap-migrations.js
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const MIGRATIONS_DIR = path.join(__dirname, '..', 'drizzle')
+// Source (tsx): drizzle/ is a sibling of server.ts. Compiled (dist/): a sibling of dist/.
+let MIGRATIONS_DIR = path.join(__dirname, 'drizzle')
+if (!fs.existsSync(path.join(MIGRATIONS_DIR, 'meta', '_journal.json'))) {
+    MIGRATIONS_DIR = path.resolve(__dirname, '..', 'drizzle')
+}
 
 async function runMigrations() {
     log('[migrate] Running database migrations...')

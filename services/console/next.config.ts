@@ -12,7 +12,8 @@ const isMonorepo =
 const monorepoRoot = isMonorepo ? possibleMonorepoRoot : undefined;
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  // Vercel deploys its own serverless output; standalone is for Docker/Node hosts.
+  output: process.env.VERCEL ? undefined : "standalone",
   ...(monorepoRoot
     ? {
         outputFileTracingRoot: monorepoRoot,

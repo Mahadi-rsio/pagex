@@ -19,8 +19,13 @@ import { fileURLToPath } from 'node:url'
 import { dbClient } from './db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-// Walk up from infrastructure/db → api root → drizzle/ (3 levels: dist/infrastructure/db → dist/infrastructure → dist → api root)
-const MIGRATIONS_DIR = path.resolve(__dirname, '..', '..', '..', 'drizzle')
+// Under tsx (source): infrastructure/db → ../../ → service root; drizzle/ is a sibling.
+// Under compiled dist/: dist/infrastructure/db → ../../../ → service root; drizzle/ is a sibling.
+const SOURCE_DIR = path.resolve(__dirname, '..', '..')
+let MIGRATIONS_DIR = path.join(SOURCE_DIR, 'drizzle')
+if (!fs.existsSync(path.join(MIGRATIONS_DIR, 'meta', '_journal.json'))) {
+    MIGRATIONS_DIR = path.resolve(__dirname, '..', '..', '..', 'drizzle')
+}
 
 interface JournalEntry {
   idx: number
