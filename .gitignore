@@ -2,11 +2,21 @@
 node_modules/
 .pnpm-store/
 
+# Dependencies
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+
 # Build outputs
 dist/
 .next/
 out/
 build/
+.turbo/
+.open-next/
+.vercel/
+
+# Local knowledge graph / tooling cache (never commit)
 .codebase-memory/
 .codebase-memory/*
 .agents/
@@ -26,6 +36,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+!*.env.example
 
 # Logs
 *.log
@@ -42,7 +53,6 @@ temp/
 # Cache
 .cache/
 .pnpm-debug.log*
-*.tsbuildinfo
 
 # Docker
 .docker/
@@ -55,7 +65,6 @@ local.env
 services/*/node_modules/
 services/*/dist/
 services/*/.next/
-.open-next/
 services/*/.open-next/
 services/*/out/
 
@@ -67,9 +76,6 @@ packages/*/dist/
 infrastructure/configs/.env
 infrastructure/certs/
 
-# Docker Compose
-.docker/
-
 # Test files
 *.test.ts
 *.spec.ts
@@ -77,6 +83,9 @@ infrastructure/certs/
 
 # Scratch / ad-hoc scripts with credentials
 /test.js
+
+# Stale root lockfile (pnpm workspace — keep only per-package lockfiles)
+/package-lock.json
 
 # Go build artifacts
 *.exe
