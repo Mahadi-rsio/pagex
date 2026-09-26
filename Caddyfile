@@ -10,11 +10,11 @@
 
 	handle /_next/static/* {
 		header Cache-Control "public, max-age=31536000, immutable"
-		reverse_proxy console:3001
+		reverse_proxy {$CONSOLE_UPSTREAM}
 	}
 
 	handle /* {
-		reverse_proxy console:3001
+		reverse_proxy {$CONSOLE_UPSTREAM}
 	}
 }
 
@@ -39,7 +39,7 @@ http:// {
 			secret_key      {$S3_SECRET_KEY}
 			use_path_style  true
 			base_domain     {$BASE_DOMAIN:localhost}
-			db_dsn          "postgres://{$POSTGRES_USER:postgres}:{$POSTGRES_PASSWORD:postgres}@db:5432/{$POSTGRES_DB:pagex}?sslmode=disable"
+			db_dsn          "{$DATABASE_URL}"
 			redirect_to_s3   {$REDIRECT_TO_S3:false}
 			presign_redirect {$PRESIGN_REDIRECT:false}
 			presign_lifetime {$PRESIGN_LIFETIME:15m}
@@ -59,7 +59,7 @@ http:// {
 			secret_key      {$S3_SECRET_KEY}
 			use_path_style  true
 			base_domain     {$BASE_DOMAIN:localhost}
-			db_dsn          "postgres://{$POSTGRES_USER:postgres}:{$POSTGRES_PASSWORD:postgres}@db:5432/{$POSTGRES_DB:pagex}?sslmode=disable"
+			db_dsn          "{$DATABASE_URL}"
 			redirect_to_s3   false
 			cache_ttl       {$CACHE_TTL:2m}
 			cache_size      {$CACHE_SIZE:1000}
@@ -83,9 +83,9 @@ http:// {
 import /etc/caddy/tls/{$TLS_CFG:tls-off}.conf
 
 http://api.localhost {
-	reverse_proxy console:3001
+	reverse_proxy {$CONSOLE_UPSTREAM}
 }
 
 http://localhost {
-	reverse_proxy console:3001
+	reverse_proxy {$CONSOLE_UPSTREAM}
 }

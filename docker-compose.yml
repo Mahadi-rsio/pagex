@@ -1,3 +1,17 @@
+# ============================================================================
+# PageX — local Docker Compose
+#
+# Docker runs the blob-server (Caddy + static_s3) and the Vector access-log
+# pipeline only. The console runs on Vercel (serverless) and the datastore is
+# managed: Neon (Postgres) + Upstash (Redis). Nothing here runs the console.
+#
+# Usage (from repo root):
+#   cp .env.example .env     # first run, then fill in required values
+#   docker compose up -d
+# ============================================================================
+
+name: pagex
+
 services:
   # ============================================================================
   # Blob Server — Caddy with static_s3 Plugin
@@ -8,7 +22,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "3080:3080"
       - "2019:2019"
     environment:
       - S3_ACCESS_KEY=${S3_ACCESS_KEY}
@@ -16,6 +29,11 @@ services:
       - MINIO_ENDPOINT_URL=${MINIO_ENDPOINT_URL}
       - MINIO_BUCKET=${MINIO_BUCKET:-sites}
       - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
+      # Neon Postgres connection string. The static_s3 plugin only performs
+      # read-only site lookups, so the pooled endpoint is fine.
+      - DATABASE_URL=${DATABASE_URL}
+      # Console origin the console host blocks reverse-proxy to.
+      - CONSOLE_UPSTREAM=${CONSOLE_UPSTREAM:-http://localhost:3000}
       - REDIRECT_TO_S3=${REDIRECT_TO_S3:-false}
       - PRESIGN_REDIRECT=${PRESIGN_REDIRECT:-false}
       - PRESIGN_LIFETIME=${PRESIGN_LIFETIME:-15m}
@@ -28,15 +46,12 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./services/blob-server/tls:/etc/caddy/tls:ro
       - caddy_logs:/var/log/caddy
-    depends_on:
-      console:
-        condition: service_started
     restart: unless-stopped
     networks:
       - pagex
 
   # ============================================================================
-  # Vector — access-log aggregation → API ingest
+  # Vector — access-log aggregation → console usage ingest
   # ============================================================================
   vector:
     container_name: vector
@@ -48,87 +63,14 @@ services:
       - vector_data:/var/lib/vector
     environment:
       - USAGE_INGEST_TOKEN=${USAGE_INGEST_TOKEN}
-      - USAGE_API_URL=${USAGE_API_URL:-http://console:3001/internal/usage/ingest}
+      - USAGE_API_URL=${USAGE_API_URL:-http://localhost:3000/internal/usage/ingest}
     depends_on:
-      console:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - pagex
-
-  # ============================================================================
-  # Console — Next.js Standalone (port 3001)
-  # ============================================================================
-  console:
-    container_name: web
-    build:
-      context: ./services/console/
-      dockerfile: Dockerfile
-    
-    env_file: .env
-    environment:
-      - DATABASE_URL=${NEXT_WEB_DATABASE_URL:-${DIRECT_DB:-postgresql://postgres:postgres@db:5432/pagex}}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-    expose:
-      - "3001"
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - pagex
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-
-  # ============================================================================
-  # PostgreSQL Database
-  # ============================================================================
-  db:
-    image: postgres:16-alpine
-    container_name: db
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-pagex}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-pagex}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 5s
-    restart: unless-stopped
-    networks:
-      - pagex
-
-  # ============================================================================
-  # Redis — Cache, rate limiting, and deploy locks
-  # ============================================================================
-  redis:
-    container_name: redis
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
+      - blob-server
     restart: unless-stopped
     networks:
       - pagex
 
 volumes:
-  pgdata:
   caddy_logs:
   vector_data:
 

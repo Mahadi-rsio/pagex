@@ -93,11 +93,18 @@ Where Context7 is least helpful: the custom Go `static_s3` Caddy plugin and inte
 - Tests: `pnpm test:console` for API utility tests; `pnpm test:blob-server` for Go tests.
 - Lint/format: `pnpm lint` → runs `npx biome format --write` (Biome **formats only**, it is not a real lint check).
 
-## Broken default to know about
+## Docker scope
 
-**`scripts/docker.sh` (and every `pnpm docker:*` script) is broken out of the box.** It hardcodes `COMPOSE_FILE=infrastructure/docker/compose/docker-compose.yml` and requires `infrastructure/configs/.env`, but neither path exists in this repo. The real compose file is root `docker-compose.yml` and the env template is root `.env.example` (copy to `.env`). To run Docker, use `docker compose --env-file .env up -d` directly rather than the helper.
+Docker runs **only** the blob-server (Caddy + `static_s3`) and the Vector access-log pipeline. There is no console, Postgres, or Redis container:
 
-Alternative legit dev workflow that avoids Docker: run infra (Postgres, Redis, MinIO) separately and use `pnpm dev:*`. Set `IN_DOCKER_COMPOSE` appropriately in `services/console/src/server/api/infrastructure/cache/redis.ts` (Compose sets `1`; host scripts omit it).
+- The console is a Next.js app hosted on **Vercel** (serverless).
+- Postgres is **Neon** — a single `DATABASE_URL` (no `DB`/`DIRECT_DB`/`NEXT_WEB_DATABASE_URL` variants).
+- Redis is **Upstash** — `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`, reached over REST rather than the wire protocol. Upstash has one logical database, so cache keys, deploy tokens, and page locks share a namespaced key space.
+- `.github/workflows/blob-server-publish.yml` is the only publish workflow; there is no console image.
+- `CONSOLE_UPSTREAM` is the console origin the Caddy console host blocks reverse-proxy to.
+- On Vercel, migrations and bucket provisioning are skipped on cold starts unless `RUN_STARTUP_TASKS=1` is set for that deploy.
+
+Docker is only for the blob-server. To run the console locally, point `.env` at the same Neon/Upstash projects and use `pnpm dev:console` — there is no local Postgres or Redis to start.
 
 ## Native API conventions (see `docs/RULES.md` for full detail)
 
@@ -115,15 +122,15 @@ Alternative legit dev workflow that avoids Docker: run infra (Postgres, Redis, M
 
 ## Env requirements
 
-Strictly required to run anything against infra: `BETTER_AUTH_SECRET` (32+ hex chars, `openssl rand -hex 32`), `BASE_DOMAIN`, `DATABASE_URL`, `REDIS_URL`, `S3_ACCESS_KEY`/`S3_SECRET_KEY`, `MINIO_ENDPOINT`, `MINIO_BUCKET`. Console uses `NEXT_PUBLIC_*` for client code (and `PUBLIC_URL` mapped via `next.config.ts`).
+Strictly required to run anything against infra: `BETTER_AUTH_SECRET` (32+ hex chars, `openssl rand -hex 32`), `BASE_DOMAIN`, `DATABASE_URL` (Neon, `-pooler` host), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `S3_ACCESS_KEY`/`S3_SECRET_KEY`, `MINIO_ENDPOINT`, `MINIO_BUCKET`. Console uses `NEXT_PUBLIC_*` for client code (and `PUBLIC_URL` mapped via `next.config.ts`).
 
 ## Other repo notes
 
 - `.gitignore` ignores `.env`, `dist/`, `.next/`, and `.agents/`.
 - Docs live in `docs/` (SCHEMA, API, RULES, WORKERS, architecture, development, INFRASTRUCTURE, PROJECT). The product name still appears as “Cloudisy” in some text; trust current code and root `AGENTS.md` over stale paths.
-- Docker images publish to GHCR on version tags: `console/v*`, `blob-server/v*` (see `.github/workflows/`). All services share one platform version (currently `1.4.0`).
+- Docker images publish to GHCR on `blob-server/v*` tags only (see `.github/workflows/blob-server-publish.yml`). Current platform version is `1.4.0`.
 - **Production compose:** root `docker-compose.prod.yml` (project `pagex-prod`) pulls GHCR images (default tag `latest`, **no `build:` sections**); `pnpm docker:prod` (script `scripts/docker-prod.sh`) pulls + starts it. Pin with `PAGEX_VERSION=1.4.0`, override namespace with `PAGEX_REGISTRY`.
-- Root `Caddyfile` reverse-proxies the console (`:3080` → console:3001) and serves tenant sites via `static_s3` with MinIO + Postgres + Redis lookups. TLS/HTTPS blocks are toggled by `TLS_CFG` (off locally, on in prod).
+- Root `Caddyfile` reverse-proxies the console host to `{$CONSOLE_UPSTREAM}` (the Vercel origin) and serves tenant sites via `static_s3` with S3 + Neon lookups. TLS/HTTPS blocks are toggled by `TLS_CFG` (off locally, on in prod).
 
 ## Subagent usage & parallel execution
 

@@ -9,7 +9,7 @@ import {
 } from "@/server/api/infrastructure/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
-import { redis } from "@/server/api/infrastructure/cache/redis";
+import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import { TOP_LEVEL_DOMAIN } from "@/server/api/constants/index";
 import { clearSiteFilesMap } from "@/features/deployments/deploy.service";
 import { clearDeploymentRuntimeCache } from "@/features/deployments/manifest.service";
@@ -117,25 +117,32 @@ async function readLiveSiteStats(siteId: string) {
 
     for (const day of dates) {
         const key = `stats:${siteId}:${day}`;
-        const vals = await redis.hgetall(key);
+        const vals = await redis.hgetall<Record<string, string | number>>(
+            redisKey(key),
+        );
         if (!vals || Object.keys(vals).length === 0) continue;
-        requests += parseInt(vals.requests || "0", 10) || 0;
-        bandwidth += parseInt(vals.bandwidth || "0", 10) || 0;
-        bots += parseInt(vals.bots || "0", 10) || 0;
-        humans += parseInt(vals.humans || "0", 10) || 0;
+        const field = (name: string) => String(vals[name] ?? "0") || "0";
+        requests += parseInt(field("requests"), 10) || 0;
+        bandwidth += parseInt(field("bandwidth"), 10) || 0;
+        bots += parseInt(field("bots"), 10) || 0;
+        humans += parseInt(field("humans"), 10) || 0;
         for (const code of Object.keys(statusCodes) as Array<
             keyof typeof statusCodes
         >) {
-            statusCodes[code] +=
-                parseInt(vals[`requests_${code}`] || "0", 10) || 0;
+            statusCodes[code] += parseInt(field(`requests_${code}`), 10) || 0;
         }
     }
 
     // Unique visitors: HyperLogLog at uniq:{site_id}:{date}
-    const uniqCounts = await redis.pfcount(
-        ...dates.map((day) => `uniq:${siteId}:${day}`),
-    );
-    uniqueIps = Number(uniqCounts) || 0;
+    const uniqKeys = dates.map((day) => redisKey(`uniq:${siteId}:${day}`));
+    if (uniqKeys.length > 0) {
+        const [firstUniqKey, ...restUniqKeys] = uniqKeys as [
+            string,
+            ...string[],
+        ];
+        uniqueIps =
+            Number(await redis.pfcount(firstUniqKey, ...restUniqKeys)) || 0;
+    }
 
     // Peak-hour slots: plain counters at peak:{site_id}:{date:HH}
     const peakKeys: string[] = [];
@@ -147,9 +154,11 @@ async function readLiveSiteStats(siteId: string) {
         }
     }
     if (peakKeys.length > 0) {
-        const counts = await redis.mget(...peakKeys);
+        const counts = await redis.mget<string[]>(
+            peakKeys.map((key) => redisKey(key)),
+        );
         peakKeys.forEach((key, i) => {
-            const count = parseInt(counts[i] || "0", 10) || 0;
+            const count = parseInt(String(counts[i] ?? "0"), 10) || 0;
             if (count > 0) {
                 const hour = key.split(":").pop()!;
                 hourCounts[hour] = (hourCounts[hour] || 0) + count;
@@ -383,15 +392,15 @@ export async function deletePage(pageId: string, tenantId: string) {
         .where(eq(sites.id, page.site_id))
         .limit(1);
 
-    await redis.del(`site:${site?.subdomain ?? page.project_name}`);
+    await redis.del(redisKey(`site:${site?.subdomain ?? page.project_name}`));
     await clearSiteFilesMap(page.site_id);
     await clearDeploymentRuntimeCache(page.site_id);
-    await redis.del(`site_version:${page.site_id}`);
+    await redis.del(redisKey(`site_version:${page.site_id}`));
 
     // 3. Clear usage caches
-    await redis.del(`db_cache:${page.domain}`);
-    await redis.del(`requests:${page.domain}`);
-    await redis.del(`bandwidth:${page.domain}`);
+    await redis.del(redisKey(`db_cache:${page.domain}`));
+    await redis.del(redisKey(`requests:${page.domain}`));
+    await redis.del(redisKey(`bandwidth:${page.domain}`));
 
     console.log(
         `🗑️  Deleted project "${page.project_name}" (site_id: ${page.site_id})`,

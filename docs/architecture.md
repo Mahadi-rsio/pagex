@@ -719,7 +719,7 @@ See [Development Guide](development.md) for detailed file structure and conventi
 | Library | Purpose | Service |
 |---------|---------|---------|
 | Drizzle ORM | Database ORM | Console |
-| ioredis | Redis client | Console |
+| @upstash/redis | Upstash Redis client (REST) | Console |
 | minio | S3 client | Console |
 | zod | Validation | Console |
 | Better Auth | Authentication and JWT issuance | Console |

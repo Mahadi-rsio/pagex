@@ -16,7 +16,7 @@ import {
     pages,
     sites,
 } from "@/server/api/infrastructure/db/schema";
-import { usageRedis, redis } from "@/server/api/infrastructure/cache/redis";
+import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import {
     blobObjectKey,
     getStorageConfig,
@@ -143,7 +143,7 @@ async function loadDeployToken(
     token: string,
     tenantId: string,
 ): Promise<DeployTokenPayload> {
-    const raw = await usageRedis.get(deployTokenKey(token));
+    const raw = await redis.get<string>(redisKey(deployTokenKey(token)));
     if (!raw) throw new HttpError("Deployment token expired or invalid", 400);
 
     let payload: DeployTokenPayload;
@@ -554,7 +554,7 @@ async function storeExpandedVariants(
  * from pre-manifest deployments are removed when a page is destroyed.
  */
 export async function clearSiteFilesMap(siteId: string): Promise<void> {
-    await redis.del(`site_files:${siteId}`);
+    await redis.del(redisKey(`site_files:${siteId}`));
 }
 
 async function currentMaxVersion(pageId: string): Promise<number> {
@@ -574,7 +574,7 @@ async function nextVersion(pageId: string): Promise<number> {
 
 export async function invalidateSiteCache(subdomain: string): Promise<void> {
     // Caddy reads site:{subdomain} from the default Redis DB
-    await redis.del(`site:${subdomain}`);
+    await redis.del(redisKey(`site:${subdomain}`));
 }
 
 export interface BlobManifestFile {
@@ -985,8 +985,8 @@ export async function prepareDeploy(
         // CASE 2 — operation is still in progress, OR completed but deployment record
         // no longer exists. Re-check whether there is a live Redis token the caller
         // can use to proceed (upload + commit).
-        const existingToken = await usageRedis.get(
-            deployTokenKey(idempotencyKey),
+        const existingToken = await redis.get<string>(
+            redisKey(deployTokenKey(idempotencyKey)),
         );
         if (existingToken) {
             return {
@@ -1037,11 +1037,10 @@ export async function prepareDeploy(
     }
 
     try {
-        await usageRedis.set(
-            deployTokenKey(idempotencyKey),
+        await redis.set(
+            redisKey(deployTokenKey(idempotencyKey)),
             JSON.stringify(payload),
-            "EX",
-            DEPLOY_TOKEN_TTL_SECONDS,
+            { ex: DEPLOY_TOKEN_TTL_SECONDS },
         );
     } catch (err) {
         await pageDeploymentLock.release(page.id, idempotencyKey);
@@ -1164,7 +1163,7 @@ export async function commitDeploy(input: CommitDeployInput, tenantId: string) {
                 resourceId: deployment.id,
             });
 
-            await usageRedis.del(deployTokenKey(input.deploymentToken));
+            await redis.del(redisKey(deployTokenKey(input.deploymentToken)));
 
             return {
                 success: true,

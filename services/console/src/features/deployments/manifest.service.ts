@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { redis } from "@/server/api/infrastructure/cache/redis";
+import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import { db } from "@/server/api/infrastructure/db/db";
-import { blobTreeEntries, deployments } from "@/server/api/infrastructure/db/schema";
+import {
+    blobTreeEntries,
+    deployments,
+} from "@/server/api/infrastructure/db/schema";
 import {
     getManifestObject,
     manifestObjectKey,
@@ -87,10 +90,9 @@ export async function cacheManifestInRedis(
     manifest: DeploymentManifest,
 ): Promise<void> {
     await redis.set(
-        manifestRedisKey(deploymentId),
+        redisKey(manifestRedisKey(deploymentId)),
         JSON.stringify(manifest),
-        "EX",
-        MANIFEST_REDIS_TTL_SECONDS,
+        { ex: MANIFEST_REDIS_TTL_SECONDS },
     );
 }
 
@@ -98,21 +100,21 @@ export async function setActiveDeploymentCache(
     siteId: string,
     deploymentId: string,
 ): Promise<void> {
-    await redis.set(activeDeploymentRedisKey(siteId), deploymentId);
+    await redis.set(redisKey(activeDeploymentRedisKey(siteId)), deploymentId);
 }
 
 export async function incrementSiteVersion(siteId: string): Promise<void> {
-    await redis.incr(`site_version:${siteId}`);
+    await redis.incr(redisKey(`site_version:${siteId}`));
 }
 
 export async function clearDeploymentRuntimeCache(
     siteId: string,
     deploymentId?: string,
 ): Promise<void> {
-    const pipeline = redis.pipeline();
-    pipeline.del(activeDeploymentRedisKey(siteId));
+    const pipeline = redis.multi();
+    pipeline.del(redisKey(activeDeploymentRedisKey(siteId)));
     if (deploymentId) {
-        pipeline.del(manifestRedisKey(deploymentId));
+        pipeline.del(redisKey(manifestRedisKey(deploymentId)));
     }
     await pipeline.exec();
 }

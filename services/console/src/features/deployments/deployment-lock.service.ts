@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { usageRedis } from "@/server/api/infrastructure/cache/redis";
+import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import {
     DEPLOY_LOCK_COMMIT_TTL_SECONDS,
     DEPLOY_LOCK_HEARTBEAT_MS,
@@ -15,7 +15,7 @@ export const DEPLOYMENT_LOCK_LOST_MESSAGE =
 export const STALE_DEPLOYMENT_MESSAGE =
     "A newer deployment already exists; this deploy is stale and will not be activated";
 
-/** Redis key for the per-page exclusive deployment lock (DB3). */
+/** Redis key for the per-page exclusive deployment lock. */
 export function deploymentLockKey(pageId: string): string {
     return `deploy:lock:${pageId}`;
 }
@@ -165,10 +165,13 @@ export function createPageDeploymentLock(
     return { acquire, release, isHeldBy, assertHeld, withLock };
 }
 
-const usageRedisEval: RedisEval = (script, numKeys, ...args) =>
-    usageRedis.eval(script, numKeys, ...args);
+const lockRedisEval: RedisEval = (script, numKeys, ...args) => {
+    const keys = args.slice(0, numKeys).map(String);
+    const scriptArgs = args.slice(numKeys);
+    return redis.eval(script, keys.map(redisKey), scriptArgs);
+};
 
-export const pageDeploymentLock = createPageDeploymentLock(usageRedisEval);
+export const pageDeploymentLock = createPageDeploymentLock(lockRedisEval);
 
 export function newLockHolder(prefix: string): string {
     return `${prefix}:${randomUUID()}`;

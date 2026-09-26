@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# PageX Docker Compose helper
-# Always loads infrastructure/configs/.env (Docker network hostnames).
+# PageX Docker Compose helper.
+# Runs the blob-server (Caddy) + Vector pipeline only. The console is hosted on
+# Vercel; Postgres is Neon and Redis is Upstash, so there is no db/redis here.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE_FILE="${COMPOSE_FILE:-$ROOT/infrastructure/docker/compose/docker-compose.yml}"
-ENV_FILE="${ENV_FILE:-$ROOT/infrastructure/configs/.env}"
+COMPOSE_FILE="${COMPOSE_FILE:-$ROOT/docker-compose.yml}"
+ENV_FILE="${ENV_FILE:-$ROOT/.env}"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Missing env file: $ENV_FILE" >&2
-  echo "Copy the example or create infrastructure/configs/.env first." >&2
+  echo "Copy .env.example to .env and fill in the required values first." >&2
   exit 1
 fi
 
@@ -35,23 +36,19 @@ Commands:
   ps                     List containers
   logs [services...]     Follow logs (default: all)
   exec <service> [cmd]   Exec into a service (default cmd: sh)
-  migrate                No-op (API + console migrate on startup)
-  console                Start console stack (db/redis/console/blob-server)
-  api                    Start API stack deps + api
   pull [services...]     Pull images
   config                 Validate and print compose config
   help                   Show this help
 
 Environment overrides:
-  ENV_FILE       Path to env file (default: infrastructure/configs/.env)
-  COMPOSE_FILE   Path to compose file
+  ENV_FILE       Path to env file (default: ./.env)
+  COMPOSE_FILE   Path to compose file (default: ./docker-compose.yml)
 
 Examples:
   scripts/docker.sh up
-  scripts/docker.sh up api console db redis
-  scripts/docker.sh logs console
-  scripts/docker.sh rebuild console
-  scripts/docker.sh migrate
+  scripts/docker.sh up blob-server
+  scripts/docker.sh logs blob-server
+  scripts/docker.sh rebuild blob-server
 EOF
 }
 
@@ -103,17 +100,7 @@ case "$cmd" in
       compose exec "$service" "$@"
     fi
     ;;
-  migrate)
-    # Migrations run automatically on API/console startup (drizzle-orm migrate()).
-    echo "No separate migrator services — start api/console against a healthy db."
-    compose up -d db
-    ;;
-  console)
-    compose up -d db redis console blob-server
-    ;;
-  api)
-    compose up -d db redis api
-    ;;
+
   pull)
     compose pull "$@"
     ;;

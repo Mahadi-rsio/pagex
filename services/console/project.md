@@ -8,7 +8,7 @@ PageX's console is a Next.js 16 monolith with PostgreSQL, Redis, MinIO, Drizzle 
 - TypeScript in strict mode
 - Tailwind CSS v4 and shadcn/ui
 - PostgreSQL with Drizzle ORM
-- Redis with ioredis
+- Redis with Upstash (`@upstash/redis`, REST protocol)
 - MinIO with the S3 client
 - Better Auth with JWT/JWKS
 - Zod validation
@@ -57,7 +57,7 @@ Public `/api/*` requests enter through `src/app/api/[...path]/route.ts`. The dis
 ## Production Model
 
 - `next build` produces the Node.js standalone application by default.
-- Root Caddy listens on `:3080` and reverse-proxies the console UI and API to `console:3001`.
+- Root Caddy reverse-proxies the console host to `{$CONSOLE_UPSTREAM}` (the Vercel origin).
 - Tenant sites are served by the blob server's `static_s3` Caddy plugin.
 - `src/instrumentation.ts` runs auth migrations, API migrations, and conditional bucket initialization in the Node.js runtime.
 - The API migration bootstrap records existing pushed API schemas in the original Drizzle migration history before applying new migrations.
@@ -81,12 +81,12 @@ pnpm run db:migrate
 ## Environment
 
 - Client-visible values use `NEXT_PUBLIC_*`; `PUBLIC_URL` is explicitly mapped in `next.config.ts`.
-- `BETTER_AUTH_SECRET`, `DATABASE_URL`, and `REDIS_URL` configure the Node runtime.
+- `BETTER_AUTH_SECRET`, `DATABASE_URL` (Neon), and `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` configure the Node runtime.
 - `MINIO_ENDPOINT`, `MINIO_PORT`, `MINIO_USE_SSL`, `MINIO_BUCKET`, `S3_ACCESS_KEY`, and `S3_SECRET_KEY` configure lazy storage access.
 - `BASE_DOMAIN` is used for page domain allocation and validation.
 - `USAGE_INGEST_TOKEN` authenticates internal usage ingestion.
 - `AUTH_JWKS_URL` can override request-relative JWKS discovery.
-- `IN_DOCKER_COMPOSE=1` selects Docker service hostnames for Redis and PostgreSQL-related integrations.
+- `RUN_STARTUP_TASKS=1` opts a Vercel deploy into running migrations and bucket provisioning; cold starts skip both otherwise.
 
 ## Commands
 

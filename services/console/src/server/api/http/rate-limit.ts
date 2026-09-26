@@ -40,15 +40,14 @@ function buildHeaders(count: number, ttl: number): Headers {
 export async function checkPublicRateLimit(
     request: Request,
 ): Promise<RateLimitResult> {
-    const { redis } = await import("../infrastructure/cache/redis");
+    const { redis, redisKey } = await import("../infrastructure/cache/redis");
 
     try {
         const identifier = clientIdentifier(request);
-        const result = await redis.eval(
+        const result = await redis.eval<[string], [number, number]>(
             RATE_LIMIT_SCRIPT,
-            1,
-            `rate-limit:${identifier}`,
-            String(RATE_LIMIT_WINDOW_MS),
+            [redisKey(`rate-limit:${identifier}`)],
+            [String(RATE_LIMIT_WINDOW_MS)],
         );
 
         if (!Array.isArray(result) || result.length < 2) {

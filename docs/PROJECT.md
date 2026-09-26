@@ -18,7 +18,7 @@
 | HTTP Framework | Next.js route handlers |
 | Database | PostgreSQL via Drizzle ORM |
 | Deploy path | CLI only — `/api/deploy/prepare\|presign\|commit` |
-| Cache | Redis (ioredis) — API cache/rate-limit/deploy-locks; blob-server caches in PostgreSQL |
+| Cache | Upstash Redis (`@upstash/redis`, REST) — API cache/rate-limit/deploy-locks; blob-server caches in PostgreSQL |
 | Object Storage | MinIO (S3-compatible) — external |
 | Auth | Better Auth JWT + JOSE JWKS verification |
 | Image / compress | `sharp` (WebP), Node `zlib` (Brotli/Gzip) |
@@ -47,7 +47,7 @@ pagex/
 │   └── blob-server/                # Go Caddy static_s3 plugin
 ├── packages/                       # @pagex/{config,types,utils}
 ├── cli/                            # `pagex` CLI — init/deploy/status
-├── docker-compose.yml              # blob-server, vector, console, db, redis
+├── docker-compose.yml              # blob-server + vector only
 ├── docker-compose.prod.yml         # GHCR images, no build
 ├── Caddyfile                       # reverse proxy + static_s3
 ├── docs/
@@ -123,7 +123,7 @@ Blob objects may carry `Content-Type` and `Content-Encoding` (`br` / `gzip`) for
 
 Usage/metrics aggregation is handled by **Vector → console ingest** (Postgres); no analytics counters live in Redis. Blob-server caches in PostgreSQL (LRU → Postgres).
 
-Compose sets `IN_DOCKER_COMPOSE=1` so hostname `redis` is kept inside containers; host scripts remap to `localhost`.
+Redis is Upstash (REST) and Postgres is Neon, so neither needs a Compose hostname or a local remap.
 
 ---
 

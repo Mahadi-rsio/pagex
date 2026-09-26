@@ -1,47 +1,57 @@
-import { Redis } from "ioredis";
+import { Redis } from "@upstash/redis";
 
-function resolveRedisUrl(): string {
-    const raw = process.env.REDIS_URL || "redis://localhost:6379";
-    if (process.env.IN_DOCKER_COMPOSE === "1") return raw;
+/**
+ * Upstash Redis exposes a single logical database, so the previous split between
+ * `db0` (cache) and `db3` (deploy tokens / page locks) is expressed with a
+ * platform-wide key prefix instead. The two namespaces were disjoint, so
+ * prefixing is collision-free.
+ */
+const KEY_PREFIX = process.env.REDIS_KEY_PREFIX ?? "px";
 
-    try {
-        const url = new URL(raw);
-        if (url.hostname === "redis") {
-            url.hostname = "localhost";
-            return url.toString();
-        }
-    } catch {}
-
-    return raw;
+function requiredEnv(name: string): string {
+    const value = process.env[name];
+    if (!value) throw new Error(`${name} environment variable is required`);
+    return value;
 }
 
-function attachErrorHandler(client: Redis, label: string): Redis {
-    client.on("error", (error) => {
-        console.error(`[redis:${label}]`, error.message);
+let cached: Redis | null = null;
+
+function createRedis(): Redis {
+    return new Redis({
+        url: requiredEnv("UPSTASH_REDIS_REST_URL"),
+        token: requiredEnv("UPSTASH_REDIS_REST_TOKEN"),
+        // Values are stored as JSON strings, so deserialise on read to keep the
+        // shapes the feature services expect (objects, numbers, null).
+        automaticDeserialization: true,
     });
-    return client;
 }
 
-const globalForApiRedis = globalThis as unknown as {
-    apiRedis?: Redis;
-    usageRedis?: Redis;
-};
+export function getRedis(): Redis {
+    cached ??= createRedis();
+    return cached;
+}
 
-const redisUrl = resolveRedisUrl();
-const redisOptions = {
-    maxRetriesPerRequest: 1,
-    lazyConnect: true,
-} as const;
+/**
+ * The shared Upstash client. Keys are namespaced through `redisKey` on every
+ * call, which keeps deploy tokens and page locks isolated from cache entries
+ * without depending on Redis logical databases.
+ */
+export const redis = new Proxy({} as Redis, {
+    get(_target, prop) {
+        const client = getRedis() as unknown as Record<
+            string | symbol,
+            unknown
+        >;
+        const value = client[prop];
+        return typeof value === "function" ? value.bind(client) : value;
+    },
+});
 
-export const redis =
-    globalForApiRedis.apiRedis ??
-    attachErrorHandler(new Redis(redisUrl, redisOptions), "db0");
+/** Apply the platform-wide key prefix to a logical key name. */
+export function redisKey(key: string): string {
+    return `${KEY_PREFIX}:${key}`;
+}
 
-export const usageRedis =
-    globalForApiRedis.usageRedis ??
-    attachErrorHandler(new Redis(redisUrl, { ...redisOptions, db: 3 }), "db3");
-
-if (process.env.NODE_ENV !== "production") {
-    globalForApiRedis.apiRedis = redis;
-    globalForApiRedis.usageRedis = usageRedis;
+export async function checkRedisConnection() {
+    await getRedis().ping();
 }

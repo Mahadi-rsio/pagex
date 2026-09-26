@@ -4,7 +4,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import { headers } from "next/headers";
 import { getDb } from "@/db";
-import { ensureRedis, redis } from "@/lib/redis";
+import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import * as schema from "@/modules/auth/schemas/auth.schema";
 
 import {
@@ -28,29 +28,28 @@ return value
 
 const redisSecondaryStorage = {
     get: async (key: string) => {
-        await ensureRedis();
-        return await redis.get(key);
+        return await redis.get<string>(redisKey(key));
     },
     getAndDelete: async (key: string) => {
-        await ensureRedis();
-        return await redis.getdel(key);
+        return await redis.getdel<string>(redisKey(key));
     },
     increment: async (key: string, ttl: number) => {
-        await ensureRedis();
-        const value = await redis.eval(INCREMENT_SCRIPT, 1, key, String(ttl));
+        const value = await redis.eval<[string], number>(
+            INCREMENT_SCRIPT,
+            [redisKey(key)],
+            [String(ttl)],
+        );
         return Number(value);
     },
     set: async (key: string, value: string, ttl?: number) => {
-        await ensureRedis();
         if (ttl) {
-            await redis.set(key, value, "EX", ttl);
+            await redis.set(redisKey(key), value, { ex: ttl });
         } else {
-            await redis.set(key, value);
+            await redis.set(redisKey(key), value);
         }
     },
     delete: async (key: string) => {
-        await ensureRedis();
-        await redis.del(key);
+        await redis.del(redisKey(key));
     },
 };
 

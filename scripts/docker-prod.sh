@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # PageX production Docker Compose helper.
-# Pulls pre-built GHCR images — never builds locally.
+# Pulls the pre-built blob-server image from GHCR — never builds locally.
+# The console runs on Vercel; Postgres is Neon and Redis is Upstash.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -41,7 +42,7 @@ Environment overrides:
 Examples:
   scripts/docker-prod.sh up
   PAGEX_VERSION=1.5.0 scripts/docker-prod.sh up
-  scripts/docker-prod.sh logs console
+  scripts/docker-prod.sh logs blob-server
 EOF
 }
 

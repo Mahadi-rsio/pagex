@@ -114,8 +114,8 @@ Never hardcode bucket names or copy live objects into `tenant/{siteId}/`.
 | Variable | Used in |
 |----------|---------|
 | `DATABASE_URL` | `src/db/index.ts` and Drizzle configs |
-| `REDIS_URL` | API Redis client |
-| `IN_DOCKER_COMPOSE` | Redis hostname handling |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis client (`src/server/api/infrastructure/cache/redis.ts`) |
+| `REDIS_KEY_PREFIX` | Optional key namespace (default `px`) |
 | `MINIO_ENDPOINT`, `MINIO_PORT`, `MINIO_USE_SSL` | Lazy MinIO client |
 | `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Lazy MinIO client |
 | `MINIO_BUCKET` | Bucket selection and startup bootstrap |

@@ -19,8 +19,8 @@ Set at least:
 
 - `BETTER_AUTH_SECRET`
 - `BASE_DOMAIN`
-- `DATABASE_URL`
-- `REDIS_URL`
+- `DATABASE_URL` (Neon)
+- `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`
 - `MINIO_ENDPOINT`, `MINIO_PORT`, `MINIO_USE_SSL`, `MINIO_BUCKET`
 - `S3_ACCESS_KEY`, `S3_SECRET_KEY`
 - `USAGE_INGEST_TOKEN`
@@ -28,7 +28,7 @@ Set at least:
 
 ## Run Locally
 
-Run infrastructure separately, set `IN_DOCKER_COMPOSE=0`, then:
+Postgres and Redis are managed (Neon + Upstash), so there is no local datastore to start. Point `.env` at your projects, then:
 
 ```bash
 pnpm dev:console
@@ -39,7 +39,7 @@ The console serves both the UI and native API. Next.js handles `/api/*`, `/healt
 
 ## Run with Docker
 
-The repository Compose file is `docker-compose.yml`; the production file pulls GHCR images and has no build stages.
+Docker runs only the blob-server and Vector. The repository Compose file is `docker-compose.yml`; the production file (`docker-compose.prod.yml`) pulls the GHCR blob-server image and has no build stages. The console is hosted on Vercel, not in Docker.
 
 ```bash
 docker compose --env-file .env up -d

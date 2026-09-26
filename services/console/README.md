@@ -6,14 +6,14 @@ The PageX console is a Next.js 16 monolith that serves the browser UI, Better Au
 
 | Piece | Role |
 |-------|------|
-| Caddy `:3080` | Reverse-proxies the console to `console:3001` and serves tenant sites with `static_s3` |
-| Console `:3001` | Next.js UI, Better Auth, and native API |
-| PostgreSQL | Auth and API data through separate Drizzle migration histories |
-| Redis | Sessions, caches, rate limits, deploy tokens, and locks |
+| Vercel | Hosts the console — Next.js UI, Better Auth, and native API (serverless) |
+| Caddy | Reverse-proxies the console host to `{$CONSOLE_UPSTREAM}` and serves tenant sites with `static_s3` |
+| Neon | Managed Postgres for auth and API data, via a single `DATABASE_URL`, with separate Drizzle migration histories |
+| Upstash | Managed Redis (REST) for sessions, caches, rate limits, deploy tokens, and locks |
 | MinIO | Blob-direct deployment storage and immutable manifests |
 | Vector | Aggregates Caddy access logs and posts usage to the console |
 
-Public `/api/*` requests enter through `src/app/api/[...path]/route.ts`. The native dispatcher performs JWT/JWKS authentication, rate limiting, Zod validation, and service dispatch. `/internal/usage/ingest` uses `USAGE_INGEST_TOKEN` instead.
+Public `/api/*` requests are native App Router route files under `src/app/api/`. Each wraps its handler in the `withApiAuth` guard from `src/server/api/http/guard.ts`, which applies rate limiting and authentication (CLI Bearer JWT verified against Better Auth JWKS, or a browser session cookie) exactly once, before the feature service runs. `/internal/usage/ingest` uses `USAGE_INGEST_TOKEN` instead.
 
 ## Local Development
 

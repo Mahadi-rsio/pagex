@@ -95,7 +95,8 @@ Wait for containers to be healthy, then:
 
 ### Local development (no Docker)
 
-Run PostgreSQL, Redis, and MinIO separately, then:
+The console is a normal Node app; point it at the same Neon and Upstash
+projects you use in production and run it directly:
 
 ```bash
 pnpm install
@@ -103,7 +104,7 @@ pnpm dev:console         # Next.js UI and native API
 pnpm dev:blob-server     # Go Caddy `go run ./cmd/caddy`
 ```
 
-Set `IN_DOCKER_COMPOSE=0` in `.env` when running outside Docker so Redis/MinIO hostnames resolve to `localhost`.
+No hostnames or ports to remap — there is no local Postgres or Redis to run.
 
 ---
 
@@ -115,8 +116,8 @@ Strictly required to run anything against infra (see `.env.example` for the full
 |---|---|
 | `BETTER_AUTH_SECRET` | Better Auth secret (32+ hex chars — `openssl rand -hex 32`) |
 | `BASE_DOMAIN` | Base domain for site subdomains (`localhost` for local dev) |
-| `DATABASE_URL` / `DIRECT_DB` / `NEXT_WEB_DATABASE_URL` | PostgreSQL connection URLs |
-| `REDIS_URL` | Redis connection string |
+| `DATABASE_URL` | Neon Postgres connection string (use the `-pooler` host) |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST credentials |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | MinIO/S3 credentials |
 | `MINIO_ENDPOINT_URL` | MinIO/S3 endpoint (must include scheme) + `MINIO_BUCKET` |
 | `USAGE_INGEST_TOKEN` | Shared secret for the Vector → console ingest endpoint |

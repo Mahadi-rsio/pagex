@@ -15,9 +15,9 @@
 **Not in Compose:** MinIO is external (`MINIO_ENDPOINT_URL`).
 **Removed:** the cloud-build stack (BullMQ workers and the Docker build environment). Deploys go through the CLI path only (`/api/deploy/prepare|presign|commit`).
 
-The console sets `IN_DOCKER_COMPOSE=1` so `REDIS_URL=redis://redis:6379` keeps the Compose hostname. Host scripts remap `redis` → `localhost`.
+Postgres is **Neon** and Redis is **Upstash** — neither runs in Compose. The console reaches Neon with a single `DATABASE_URL` and talks to Upstash over REST using `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`. Upstash exposes one logical database, so cache keys, deploy tokens, and page deploy locks share a namespaced key space instead of separate DB numbers.
 
-Redis and Postgres use healthchecks; the console waits on both and runs auth plus API migrations on startup.
+Migrations and bucket provisioning run from `src/instrumentation.ts`. On Vercel this is skipped on serverless cold starts unless `RUN_STARTUP_TASKS=1` is set for that deploy.
 
 ---
 
@@ -102,4 +102,4 @@ No per-tenant Caddy config. A site is live once `sites.active=true` and the acti
 
 ## Vector (access-log aggregation → console ingest)
 
-The `vector` service reads the blob-server access logs from the shared `caddy_logs` volume, aggregates them into pre-aggregated hourly usage records, and POSTs them to the console ingest endpoint (`USAGE_API_URL`, default `http://console:3001/internal/usage/ingest`) using `USAGE_INGEST_TOKEN`. See `POST /internal/usage/ingest` in `docs/API.md`.
+The `vector` service reads the blob-server access logs from the shared `caddy_logs` volume, aggregates them into pre-aggregated hourly usage records, and POSTs them to the console ingest endpoint (`USAGE_API_URL`, e.g. `https://your-app.vercel.app/internal/usage/ingest`) using `USAGE_INGEST_TOKEN`. See `POST /internal/usage/ingest` in `docs/API.md`.
