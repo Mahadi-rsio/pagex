@@ -41,7 +41,7 @@ Environment overrides:
 
 Examples:
   scripts/docker-prod.sh up
-  PAGEX_VERSION=1.5.0 scripts/docker-prod.sh up
+  PAGEX_VERSION=1.6.0 scripts/docker-prod.sh up
   scripts/docker-prod.sh logs blob-server
 EOF
 }

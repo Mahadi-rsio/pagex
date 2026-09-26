@@ -116,7 +116,7 @@ The production stack publishes only the blob-server image (`blob-server/v*`); th
 
 ```bash
 pnpm docker:prod
-PAGEX_VERSION=1.5.0 pnpm docker:prod
+PAGEX_VERSION=1.6.0 pnpm docker:prod
 PAGEX_REGISTRY=<registry> pnpm docker:prod
 ```
 

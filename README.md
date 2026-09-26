@@ -143,7 +143,7 @@ pnpm db:generate / db:migrate    # auth and API Drizzle migrations
 
 ```bash
 pnpm docker:prod                              # pull latest + up
-PAGEX_VERSION=1.5.0 pnpm docker:prod          # pin a release
+PAGEX_VERSION=1.6.0 pnpm docker:prod          # pin a release
 PAGEX_REGISTRY=<registry> pnpm docker:prod    # override namespace
 ```
 

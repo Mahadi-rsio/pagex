@@ -128,8 +128,8 @@ Strictly required to run anything against infra: `BETTER_AUTH_SECRET` (32+ hex c
 
 - `.gitignore` ignores `.env`, `dist/`, `.next/`, and `.agents/`.
 - Docs live in `docs/` (SCHEMA, API, RULES, WORKERS, architecture, development, INFRASTRUCTURE, PROJECT). The product name still appears as “Cloudisy” in some text; trust current code and root `AGENTS.md` over stale paths.
-- Docker images publish to GHCR on `blob-server/v*` tags only (see `.github/workflows/blob-server-publish.yml`). Current platform version is `1.5.0`.
-- **Production compose:** root `docker-compose.prod.yml` (project `pagex-prod`) pulls GHCR images (default tag `latest`, **no `build:` sections**); `pnpm docker:prod` (script `scripts/docker-prod.sh`) pulls + starts it. Pin with `PAGEX_VERSION=1.5.0`, override namespace with `PAGEX_REGISTRY`.
+- Docker images publish to GHCR on `blob-server/v*` tags only (see `.github/workflows/blob-server-publish.yml`). Current platform version is `1.6.0`.
+- **Production compose:** root `docker-compose.prod.yml` (project `pagex-prod`) pulls GHCR images (default tag `latest`, **no `build:` sections**); `pnpm docker:prod` (script `scripts/docker-prod.sh`) pulls + starts it. Pin with `PAGEX_VERSION=1.6.0`, override namespace with `PAGEX_REGISTRY`.
 - Root `Caddyfile` reverse-proxies the console host to `{$CONSOLE_UPSTREAM}` (the Vercel origin) and serves tenant sites via `static_s3` with S3 + Neon lookups. TLS/HTTPS blocks are toggled by `TLS_CFG` (off locally, on in prod).
 
 ## Subagent usage & parallel execution
