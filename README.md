@@ -18,7 +18,7 @@ pagex/
 │   └── blob-server/                # Go Caddy server + static_s3 plugin
 ├── packages/                       # @pagex/{config,types,utils} workspace packages
 ├── cli/                            # `pagex` CLI — init / deploy / status
-├── docker-compose.yml              # dev stack (blob-server, vector, console, db, redis)
+├── docker-compose.yml              # dev stack (blob-server, vector only)
 ├── docker-compose.prod.yml         # production (GHCR images, no build sections)
 ├── Caddyfile                       # reverse proxy + static_s3 site serving + console :3080
 ├── .env.example                    # env template (copy to .env)
@@ -30,7 +30,7 @@ pagex/
 
 ## Architecture & Data Flow
 
-PageX combines a Next.js control panel and native management API, a custom Caddy blob-serving plugin written in Go, and shared infrastructure (PostgreSQL, Redis, MinIO/S3). Vector aggregates access logs into usage/metrics, which the console API persists.
+PageX combines a Next.js control panel and native management API (hosted on Vercel), a custom Caddy blob-serving plugin written in Go, and managed infrastructure (Neon Postgres, Upstash Redis, MinIO/S3). Vector aggregates access logs into usage/metrics, which the console API persists.
 
 ```
 ┌──────────────────────────────┐
@@ -47,8 +47,8 @@ PageX combines a Next.js control panel and native management API, a custom Caddy
         │    POST /internal/usage/ingest
         │              │
 ┌───────▼──────────────▼──────┐
-│ Shared Infrastructure        │
-│ PostgreSQL, Redis, MinIO/S3  │
+│ Managed Infrastructure       │
+│ Neon, Upstash, MinIO/S3      │
 └──────────────────────────────┘
 ```
 
@@ -77,34 +77,33 @@ See [`docs/`](docs/) for full detail.
 
 - **Node.js 20.9+** and **pnpm** (8+) — monorepo package manager
 - **Go 1.20+** — blob-server (Caddy plugin)
-- **Docker & Docker Compose** — full local stack
-- **MinIO/S3** — external object storage (or a compose service)
+- **Docker & Docker Compose** — only for the blob-server + Vector log pipeline
+- **External services** — Neon Postgres, Upstash Redis, and MinIO/S3 (no local containers)
 
-### Quick start (Docker)
+### Quick start (local dev)
+
+The console is a normal Node app; point `.env` at the same Neon, Upstash, and
+S3 services you use in production and run it directly:
 
 ```bash
 cp .env.example .env       # fill in required values (see below)
-docker compose up -d       # blob-server, vector, console, db, redis
+pnpm install
+pnpm dev:console           # Next.js UI and native API → http://localhost:3000
+pnpm dev:blob-server       # Go Caddy `go run ./cmd/caddy` (serves tenant sites)
 ```
 
-Wait for containers to be healthy, then:
+There is no local Postgres or Redis to run; migrations and bucket provisioning
+happen on console startup (gated by `RUN_STARTUP_TASKS` on Vercel).
 
-- **Console UI and API:** http://localhost:3000
-- **PostgreSQL:** localhost:5432 (db `pagex`)
-- **Redis:** localhost:6379
+### Docker (blob-server + log pipeline)
 
-### Local development (no Docker)
-
-The console is a normal Node app; point it at the same Neon and Upstash
-projects you use in production and run it directly:
+`docker-compose.yml` runs **only** the blob-server (Caddy + `static_s3`) and
+Vector — use it when you need the site-serving and log-aggregation path locally:
 
 ```bash
-pnpm install
-pnpm dev:console         # Next.js UI and native API
-pnpm dev:blob-server     # Go Caddy `go run ./cmd/caddy`
+cp .env.example .env
+docker compose up -d       # blob-server, vector
 ```
-
-No hostnames or ports to remap — there is no local Postgres or Redis to run.
 
 ---
 
@@ -140,7 +139,7 @@ pnpm db:generate / db:migrate    # auth and API Drizzle migrations
 
 ### Production
 
-`docker-compose.prod.yml` has **no `build:` sections** — it pulls versioned images from GHCR (`ghcr.io/mahadi-rsio/pagex/{console,blob-server}`). Images are published by the `.github/workflows/*-publish.yml` workflows on service version tags (`console/v1.5.0`, `blob-server/v1.5.0`).
+`docker-compose.prod.yml` has **no `build:` sections** — it pulls the versioned blob-server image from GHCR (`ghcr.io/mahadi-rsio/pagex/blob-server`) and the upstream Vector image. The console is deployed separately to Vercel. Only the blob-server image is published, by `.github/workflows/blob-server-publish.yml` on `blob-server/v*` tags.
 
 ```bash
 pnpm docker:prod                              # pull latest + up

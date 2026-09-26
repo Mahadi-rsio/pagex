@@ -52,24 +52,22 @@ pnpm run db:studio
 
 `src/instrumentation.ts` applies both histories on Node.js server startup. The API bootstrap is compatible with databases originally created with `drizzle-kit push`.
 
-## Docker
+## Deployment
 
-From the repository root:
+The console is deployed to **Vercel** — it is not a Docker/Compose service. Docker runs only the blob-server (Caddy + `static_s3`) and the Vector log pipeline:
 
 ```bash
-docker compose --env-file .env up -d --build console
+# repository root
+docker compose --env-file .env up -d      # blob-server, vector
 docker compose --env-file .env ps
-docker compose --env-file .env logs -f web
 ```
 
-Useful endpoints (console dev server):
+Useful console dev endpoints (the Next.js server):
 
 - Console: `http://localhost:3000`
 - Health: `http://localhost:3000/api/health`
 - Native API: `http://localhost:3000/api/*`
 - Usage ingest: `http://localhost:3000/internal/usage/ingest`
-
-Stop the stack with `docker compose --env-file .env down`.
 
 ## Images
 

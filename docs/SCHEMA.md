@@ -245,28 +245,31 @@ applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 | `drizzle/0012_normal_vulcan.sql` | `usage_ingest_dedup` idempotency ledger table |
 
 ```bash
-npm run gen       # drizzle-kit generate
-npm run migrate   # drizzle-kit migrate (also on compose up)
+pnpm db:generate   # drizzle-kit generate (auth + API configs)
+pnpm db:migrate    # apply both migration histories
 ```
 
 ---
 
 ## Redis Key Reference
 
-| Key pattern | DB | Type | TTL | Written by | Read by |
-|------------|----|------|-----|-----------|---------|
-| `site:{subdomain}` | 0 | String (UUID) | 5 m | Caddy / API invalidation | Caddy |
-| `active_deployment:{site_id}` | 0 | String (deployment UUID) | — | deploy / rollback | Caddy |
-| `site_version:{site_id}` | 0 | Integer | — | deploy / rollback (`INCR`) | Caddy |
-| `manifest:{deployment_id}` | 0 | JSON manifest | 24 h | deploy / rollback | Caddy (L1 → Redis → MinIO) |
-| `deploy:token:{token}` | 3 | JSON | 10 min | prepareDeploy | presign / commit |
-| `deploy:lock:{pageId}` | 3 | String (holder id) | 10 min prepare / ~6 min commit | prepare / commit / rollback | prepare / commit / rollback |
-| `db_cache:{domain}` | 3 | JSON | 15 min | page.service | page.service |
+| Key pattern | Type | TTL | Written by | Read by |
+|------------|------|-----|-----------|---------|
+| `site:{subdomain}` | String (UUID) | 5 m | Caddy / API invalidation | Caddy |
+| `active_deployment:{site_id}` | String (deployment UUID) | — | deploy / rollback | Caddy |
+| `site_version:{site_id}` | Integer | — | deploy / rollback (`INCR`) | Caddy |
+| `manifest:{deployment_id}` | JSON manifest | 24 h | deploy / rollback | Caddy (L1 → Redis → MinIO) |
+| `deploy:token:{token}` | JSON | 10 min | prepareDeploy | presign / commit |
+| `deploy:lock:{pageId}` | String (holder id) | 10 min prepare / ~6 min commit | prepare / commit / rollback | prepare / commit / rollback |
+| `db_cache:{domain}` | JSON | 15 min | page.service | page.service |
+
+All keys are namespaced with a `px:` prefix (override with `REDIS_KEY_PREFIX`). Upstash exposes a
+single logical database, so the former `db0`/`db3` split is expressed purely by key prefix.
 
 **Billing unit is decimal GB (1 GB = 1,000,000,000 bytes).** Only bandwidth is metered;
 request counts are unlimited and never quota-checked.
 
-**BullMQ was removed** — there are no queue keys. `deploy:lock:{pageId}` (DB3) is the only lock mechanism.
+**BullMQ was removed** — there are no queue keys. `deploy:lock:{pageId}` is the only lock mechanism.
 
 ---
 

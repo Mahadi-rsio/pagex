@@ -59,7 +59,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:3000/api/deployments/<deploymentId>/rollback
 
-docker logs web
+docker logs caddy
 ```
 
 Drizzle commands run from the repository root and target the console's separate auth and API migration histories:

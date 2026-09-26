@@ -112,14 +112,11 @@ The console API utility tests use Node's built-in test runner with `tsx`. Blob-s
 
 ## Production Images
 
-The production stack publishes only:
-
-- `console/v*`
-- `blob-server/v*`
+The production stack publishes only the blob-server image (`blob-server/v*`); the console is deployed to Vercel.
 
 ```bash
 pnpm docker:prod
-PAGEX_VERSION=1.4.0 pnpm docker:prod
+PAGEX_VERSION=1.5.0 pnpm docker:prod
 PAGEX_REGISTRY=<registry> pnpm docker:prod
 ```
 

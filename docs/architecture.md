@@ -708,8 +708,8 @@ See [Development Guide](development.md) for detailed file structure and conventi
 | Node.js | JavaScript runtime | 20.x |
 | TypeScript | Type checking | 5.x |
 | Next.js | React framework and native API runtime | 16.x |
-| PostgreSQL | Database | 16.x |
-| Redis | Cache/Queue | 7.x |
+| Neon PostgreSQL | Managed database | 16.x+ |
+| Upstash Redis | Managed cache (REST) | Redis-compatible |
 | MinIO | Storage | Latest |
 | Caddy | Web server | 2.x |
 | Go | Programming language | 1.20+ |
