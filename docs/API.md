@@ -1,6 +1,6 @@
 # PageX — Complete API Reference
 
-> All endpoints are served by the console (default: `http://localhost:3080`).
+> All endpoints are served by the console (default: `http://localhost:3000`).
 > All protected endpoints require: `Authorization: Bearer <JWT>`
 > The JWT is issued by Better Auth. The payload must contain `id` (tenant ID) and `name` (tenant name); the native API verifies its signature through the console JWKS endpoint.
 

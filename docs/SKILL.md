@@ -54,10 +54,10 @@ The console's `usage-ingest.service.ts` applies aggregates transactionally with 
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:3080/api/deployments/page/<pageUuid>
+  http://localhost:3000/api/deployments/page/<pageUuid>
 
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  http://localhost:3080/api/deployments/<deploymentId>/rollback
+  http://localhost:3000/api/deployments/<deploymentId>/rollback
 
 docker logs web
 ```

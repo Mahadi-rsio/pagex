@@ -79,7 +79,7 @@ working directory is loaded automatically.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PAGEX_API_URL` | `http://localhost:3000` | PageX API base URL |
-| `PAGEX_AUTH_URL` | `http://localhost:3080` | Auth/console base URL |
+| `PAGEX_AUTH_URL` | `http://localhost:3000` | Auth/console base URL |
 | `PAGEX_CLIENT_ID` | `pagex` | OAuth device-flow client ID |
 
 ## Supported frameworks

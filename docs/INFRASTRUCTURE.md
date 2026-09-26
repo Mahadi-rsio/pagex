@@ -8,7 +8,7 @@
 |---------|-----------|-------------|------|
 | `blob-server` | `caddy` | `ghcr.io/mahadi-rsio/pagex/blob-server:latest` | Caddy + static_s3 (blob-direct), ports 80/443/3080/2019 |
 | `vector` | `vector` | `timberio/vector:0.46.1-alpine` | Access-log aggregation → console ingest |
-| `console` | `web` | `./services/console/` | Next.js UI and native API (port 3001, healthcheck `/api/health`) |
+| `console` | `web` | `./services/console/` | Next.js UI and native API (port 3000, healthcheck `/api/health`) |
 | `db` | `db` | `postgres:16-alpine` | PostgreSQL (port 5432) |
 | `redis` | `redis` | `redis:7-alpine` | API cache, rate limiting, deploy locks (port 6379) |
 
@@ -91,7 +91,7 @@ Image: `ghcr.io/mahadi-rsio/pagex/blob-server:latest` (built locally for dev via
 1. **Routing** — `subdomain → site_id` → active deployment → manifest
 2. **Path map** — deployment manifest lookup: `files` map of path → blob SHA256 (MinIO `manifests/{deploymentID}.json`)
 3. **File serving** — stream / redirect from MinIO `blobs/{sha256}` (with Content-Encoding when set)
-4. **Console reverse proxy** — `:3080` proxies to the console (port 3001)
+4. **Console reverse proxy** — `:3080` proxies to the console (`CONSOLE_UPSTREAM`; port 3000 in local dev, the Vercel origin in production)
 5. **Access logs** — emitted to `/var/log/caddy` (`caddy_logs` volume), consumed by Vector
 
 Analytics aggregation is done by **Vector + console API**, not in Caddy. Blob-server caches in PostgreSQL (LRU → Postgres); Redis is used for API caching, rate limiting, and deploy locks.

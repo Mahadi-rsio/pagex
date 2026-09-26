@@ -35,7 +35,7 @@ PageX combines a Next.js control panel and native management API, a custom Caddy
 ```
 ┌──────────────────────────────┐
 │ Console (Next.js)            │
-│ UI, Better Auth, native API  │ :3080
+│ UI, Better Auth, native API  │ :3000
 └───────┬──────────────┬───────┘
         │              │
         │              │ access logs (caddy_logs)
@@ -89,7 +89,7 @@ docker compose up -d       # blob-server, vector, console, db, redis
 
 Wait for containers to be healthy, then:
 
-- **Console UI and API:** http://localhost:3080
+- **Console UI and API:** http://localhost:3000
 - **PostgreSQL:** localhost:5432 (db `pagex`)
 - **Redis:** localhost:6379
 
@@ -160,7 +160,7 @@ pagex init --name my-site                  # create a project + site
 pagex deploy                               # build + upload + activate
 ```
 
-Defaults: `PAGEX_API_URL=http://localhost:3080`, `PAGEX_AUTH_URL=http://localhost:3080`; session stored at `~/.pagex.session.json`.
+Defaults: `PAGEX_API_URL=http://localhost:3000`, `PAGEX_AUTH_URL=http://localhost:3000`; session stored at `~/.pagex.session.json`.
 
 ---
 

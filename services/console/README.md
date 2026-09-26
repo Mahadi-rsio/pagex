@@ -62,12 +62,12 @@ docker compose --env-file .env ps
 docker compose --env-file .env logs -f web
 ```
 
-Useful endpoints:
+Useful endpoints (console dev server):
 
-- Console: `http://localhost:3080`
-- Health: `http://localhost:3080/api/health`
-- Native API: `http://localhost:3080/api/*`
-- Usage ingest: `http://localhost:3080/internal/usage/ingest`
+- Console: `http://localhost:3000`
+- Health: `http://localhost:3000/api/health`
+- Native API: `http://localhost:3000/api/*`
+- Usage ingest: `http://localhost:3000/internal/usage/ingest`
 
 Stop the stack with `docker compose --env-file .env down`.
 

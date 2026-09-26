@@ -9,10 +9,10 @@ const HOME = process.env["HOME"] ?? process.env["USERPROFILE"] ?? ".";
 
 export const config = {
     /** Base URL for the PageX API. Override with PAGEX_API_URL env var. */
-    API_BASE_URL: process.env["PAGEX_API_URL"] ?? "http://localhost:3080",
+    API_BASE_URL: process.env["PAGEX_API_URL"] ?? "http://localhost:3000",
 
     /** Base URL for the auth/console server. Override with PAGEX_AUTH_URL env var. */
-    AUTH_BASE_URL: process.env["PAGEX_AUTH_URL"] ?? "http://localhost:3080",
+    AUTH_BASE_URL: process.env["PAGEX_AUTH_URL"] ?? "http://localhost:3000",
 
     /** OAuth client ID used in the device-flow auth. */
     CLIENT_ID: process.env["PAGEX_CLIENT_ID"] ?? "pagex",
