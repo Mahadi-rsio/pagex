@@ -44,23 +44,35 @@ function getClient(): postgres.Sql {
     return (globalForDb.client ??= createClient());
 }
 
-/** Lazily-initialised postgres-js client, also used as a tagged template. */
-export const dbClient = new Proxy({} as postgres.Sql, {
-    get(_target, prop) {
-        const client = getClient() as unknown as Record<
-            string | symbol,
-            unknown
-        >;
-        const value = client[prop];
-        return typeof value === "function" ? value.bind(client) : value;
+/**
+ * Lazily-initialised postgres-js client, also used as a tagged template.
+ *
+ * A Proxy over a non-callable target cannot be invoked, so the target here is a
+ * callable function (the `apply` trap forwards to the real client). Property
+ * access (`dbClient.foo`) is forwarded through the `get` trap. This keeps the
+ * connection lazy while preserving both usage patterns.
+ */
+export const dbClient = new Proxy(
+    function dbClientPlaceholder() {
+        throw new Error("dbClient must be accessed via a property or tag");
+    } as unknown as postgres.Sql,
+    {
+        get(_target, prop) {
+            const client = getClient() as unknown as Record<
+                string | symbol,
+                unknown
+            >;
+            const value = client[prop];
+            return typeof value === "function" ? value.bind(client) : value;
+        },
+        apply(_target, thisArg, argArray) {
+            const client = getClient() as unknown as (
+                ...args: unknown[]
+            ) => unknown;
+            return Reflect.apply(client, thisArg, argArray);
+        },
     },
-    apply(_target, thisArg, argArray) {
-        const client = getClient() as unknown as (
-            ...args: unknown[]
-        ) => unknown;
-        return Reflect.apply(client, thisArg, argArray);
-    },
-});
+);
 
 let database: Database | null = null;
 

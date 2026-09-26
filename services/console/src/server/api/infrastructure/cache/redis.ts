@@ -20,9 +20,11 @@ function createRedis(): Redis {
     return new Redis({
         url: requiredEnv("UPSTASH_REDIS_REST_URL"),
         token: requiredEnv("UPSTASH_REDIS_REST_TOKEN"),
-        // Values are stored as JSON strings, so deserialise on read to keep the
-        // shapes the feature services expect (objects, numbers, null).
-        automaticDeserialization: true,
+        // Match ioredis' raw-string semantics: callers do their own
+        // JSON.stringify/parse, and Better Auth's secondary storage contract
+        // expects the stored string verbatim. Upstash's default auto-parse
+        // would hand back objects and break both.
+        automaticDeserialization: false,
     });
 }
 
