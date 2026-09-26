@@ -79,7 +79,7 @@ infrastructure/certs/
 # Test files
 *.test.ts
 *.spec.ts
-!services/api/tests/*.test.ts
+!services/console/tests/*.test.ts
 
 # Scratch / ad-hoc scripts with credentials
 /test.js

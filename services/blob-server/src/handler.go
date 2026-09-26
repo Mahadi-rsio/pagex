@@ -188,14 +188,17 @@ func (p *StaticPlugin) addLogFields(r *http.Request, siteID, deploymentID string
 	extra.Set(zap.Bool("from_manifest", fromManifest))
 }
 
-// resolveSiteID looks up the site UUID for a given subdomain, using a
-// process-local LRU as L1 and PostgreSQL as the fallback. There is no Redis L2;
-// the LRU TTL (siteIDL1TTL) bounds how long a deleted/deactivated site keeps
-// being served.
-func (p *StaticPlugin) resolveSiteID(ctx context.Context, subdomain string) (string, error) {
-	l1Key := subdomain + ":__site__"
+func siteIDL1Key(subdomain string) string {
+	return subdomain + ":__site__"
+}
 
-	// 1. Process-local L1 (warm hot path = zero PostgreSQL calls)
+// resolveSiteID looks up the site UUID for a subdomain. Lookup order is
+// process-local LRU → Redis → PostgreSQL. PostgreSQL is authoritative; a Redis
+// miss or failure falls through to Postgres, which then backfills Redis.
+func (p *StaticPlugin) resolveSiteID(ctx context.Context, subdomain string) (string, error) {
+	l1Key := siteIDL1Key(subdomain)
+
+	// 1. Process-local L1 (warm hot path = zero external calls)
 	if p.cacheTTL > 0 && p.cache != nil {
 		if item, ok := p.cache.Get(l1Key); ok {
 			if !item.Exists {
@@ -207,26 +210,44 @@ func (p *StaticPlugin) resolveSiteID(ctx context.Context, subdomain string) (str
 		}
 	}
 
-	// 2. PostgreSQL lookup
-	if p.db == nil {
+	// 2. Redis (durable distributed lookup). A Redis failure is non-fatal: log
+	//    it and fall through to PostgreSQL. A malformed value is likewise
+	//    ignored so the authoritative lookup repairs it.
+	if p.routing != nil {
+		siteID, ok, err := p.routing.Get(ctx, subdomainRoutingKey(subdomain))
+		switch {
+		case err != nil:
+			p.warnRouting("subdomain", subdomain, err)
+		case ok && siteID != "" && isUUID(siteID):
+			p.cacheSiteID(subdomain, siteID)
+			return siteID, nil
+		case ok && siteID != "":
+			p.warnMalformedRouting("subdomain", subdomain, siteID)
+		}
+	}
+
+	// 3. PostgreSQL (control-plane source of truth)
+	if p.store == nil {
 		return "", fmt.Errorf("static_s3: multi-tenant mode requires db_dsn")
 	}
 
-	var siteID string
-	row := p.db.QueryRowContext(ctx,
-		"SELECT id FROM sites WHERE subdomain = $1 AND active = true LIMIT 1",
-		subdomain,
-	)
-	err := row.Scan(&siteID)
+	siteID, found, err := p.store.SiteIDBySubdomain(ctx, subdomain)
 	if err != nil {
-		if errors.Is(err, errNoRows) {
-			p.cacheSiteIDNegative(subdomain)
-			return "", nil
-		}
 		return "", fmt.Errorf("static_s3: db query error: %w", err)
+	}
+	if !found {
+		p.cacheSiteIDNegative(subdomain)
+		return "", nil
 	}
 
 	p.cacheSiteID(subdomain, siteID)
+
+	// Backfill the durable layer so the next miss (any process) avoids Postgres.
+	if p.routing != nil {
+		if err := p.routing.Set(ctx, subdomainRoutingKey(subdomain), siteID, 0); err != nil {
+			p.warnRouting("subdomain", subdomain, err)
+		}
+	}
 
 	return siteID, nil
 }
@@ -235,7 +256,7 @@ func (p *StaticPlugin) cacheSiteID(subdomain, siteID string) {
 	if p.cacheTTL <= 0 || p.cache == nil {
 		return
 	}
-	key := subdomain + ":__site__"
+	key := siteIDL1Key(subdomain)
 	p.cache.Set(key, &CacheItem{Key: key, Content: []byte(siteID), Exists: true}, siteIDL1TTL)
 }
 
@@ -243,8 +264,31 @@ func (p *StaticPlugin) cacheSiteIDNegative(subdomain string) {
 	if p.cacheTTL <= 0 || p.cache == nil {
 		return
 	}
-	key := subdomain + ":__site__"
+	key := siteIDL1Key(subdomain)
 	p.cache.Set(key, &CacheItem{Key: key, Exists: false}, siteIDL1TTL)
+}
+
+// warnRouting logs a Redis routing failure. Serving continues via PostgreSQL.
+func (p *StaticPlugin) warnRouting(kind, key string, err error) {
+	if p.logger != nil {
+		p.logger.Warn("static_s3: redis routing lookup failed; falling back to postgres",
+			zap.String("kind", kind),
+			zap.String("key", key),
+			zap.Error(err),
+		)
+	}
+}
+
+// warnMalformedRouting logs a Redis routing value that is not a UUID. It is
+// ignored and PostgreSQL (which backfills the correct value) is consulted.
+func (p *StaticPlugin) warnMalformedRouting(kind, key, value string) {
+	if p.logger != nil {
+		p.logger.Warn("static_s3: ignoring malformed redis routing value; falling back to postgres",
+			zap.String("kind", kind),
+			zap.String("key", key),
+			zap.String("value", value),
+		)
+	}
 }
 
 // resolveBlob maps a request URL path to a blob hash via the active deployment
@@ -553,9 +597,6 @@ func splitHostPort(hostport string) (host, port string, err error) {
 	}
 	return host, "", fmt.Errorf("no port")
 }
-
-// errNoRows is a package-level alias so handler.go does not import database/sql.
-var errNoRows = errSQLNoRows()
 
 // serveObject fetches the file from S3 (or cache) and writes it to the response writer, or redirects the client.
 func (p *StaticPlugin) serveObject(w http.ResponseWriter, r *http.Request, key string, isFallback bool) error {

@@ -112,16 +112,16 @@ Blob objects may carry `Content-Type` and `Content-Encoding` (`br` / `gzip`) for
 
 ## Redis Key Reference
 
-| Key pattern | Redis DB | Type | TTL | Written by |
-|------------|----------|------|-----|-----------|
-| `site:{subdomain}` | 0 | String (UUID) | short | Caddy / invalidated by API |
-| `active_deployment:{site_id}` | 0 | String (deployment ID) | short | deploy / rollback |
-| `manifest:{deploymentId}` | 0 | JSON (`files` map path→SHA256) | 24 h | generateAndPersistManifest |
-| `site_version:{site_id}` | 0 | Integer (INCR on deploy/rollback) | — | API (cache-bust Caddy L1) |
-| `deploy:token:{token}` | 3 | JSON | 10 min | prepareDeploy |
-| `db_cache:{domain}` | 3 | JSON | 15 min | page.service |
+| Key pattern | Type | TTL | Written by |
+|------------|------|-----|-----------|
+| `site:subdomain:{subdomain}` | String (site UUID) | none (immutable) | console project create |
+| `site:{site_id}:active` | String (deployment UUID) | 1 h safety fallback | deploy / rollback (after Postgres commit) |
+| `manifest:{deploymentId}` | JSON (`files` map path→SHA256) | 24 h | generateAndPersistManifest |
+| `site_version:{site_id}` | Integer (INCR on deploy/rollback) | — | API |
+| `deploy:token:{token}` | JSON | 10 min | prepareDeploy |
+| `db_cache:{domain}` | JSON | 15 min | page.service |
 
-Usage/metrics aggregation is handled by **Vector → console ingest** (Postgres); no analytics counters live in Redis. Blob-server caches in PostgreSQL (LRU → Postgres).
+Usage/metrics aggregation is handled by **Vector → console ingest** (Postgres); no analytics counters live in Redis. Blob-server resolves tenant routing as **LRU → Redis → PostgreSQL**, backfilling Redis and the LRU on a miss; PostgreSQL stays authoritative. Redis keys are namespaced by `REDIS_KEY_PREFIX` (default `px`).
 
 Redis is Upstash (REST) and Postgres is Neon, so neither needs a Compose hostname or a local remap.
 

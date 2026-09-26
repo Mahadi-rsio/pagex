@@ -54,7 +54,12 @@ Schemas live in `src/modules/[module]/schemas/` and are re-exported from `src/db
 
 ## Caddy routing
 
-Root `Caddyfile` proxies the console host to `{$CONSOLE_UPSTREAM}` and serves tenant sites through `static_s3` (S3 + Neon lookups).
+Root `Caddyfile` proxies the console host to `{$CONSOLE_UPSTREAM}` and serves tenant sites through `static_s3` (S3 + Neon lookups). Tenant routing is layered: the blob-server resolves **LRU → Redis → PostgreSQL** using two Upstash keys written by the console (see `src/server/api/infrastructure/cache/routing.ts`):
+
+- `site:subdomain:<subdomain>` → `site_id` (no TTL; immutable for the project's life; deleted only on permanent project deletion)
+- `site:<site_id>:active` → active `deployment_id` (1 h safety TTL; repointed on deploy/rollback)
+
+Writers must run **after** the matching PostgreSQL mutation commits and must never throw (they log and fall back to Postgres). Deploys/rollbacks must never rewrite the subdomain mapping. The blob-server validates every Redis value is a UUID and treats a malformed value as a cache miss, so PostgreSQL repairs the key on the next read (instead of a Postgres cast error surfacing as a 500). Key names are mirrored in `services/blob-server/src/routing.go`.
 
 ## Environment variables
 

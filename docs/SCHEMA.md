@@ -21,7 +21,7 @@ INDEX: idx_sites_subdomain ON (subdomain)
 ---
 
 ### `pages`
-Tenant project metadata. `site_id` keys the Redis `active_deployment:{site_id}` / `site_version:{site_id}` values.
+Tenant project metadata. `site_id` keys the Redis `site:{site_id}:active` / `site_version:{site_id}` values.
 
 ```sql
 id               UUID     PRIMARY KEY
@@ -255,10 +255,10 @@ pnpm db:migrate    # apply both migration histories
 
 | Key pattern | Type | TTL | Written by | Read by |
 |------------|------|-----|-----------|---------|
-| `site:{subdomain}` | String (UUID) | 5 m | Caddy / API invalidation | Caddy |
-| `active_deployment:{site_id}` | String (deployment UUID) | — | deploy / rollback | Caddy |
-| `site_version:{site_id}` | Integer | — | deploy / rollback (`INCR`) | Caddy |
-| `manifest:{deployment_id}` | JSON manifest | 24 h | deploy / rollback | Caddy (L1 → Redis → MinIO) |
+| `site:subdomain:{subdomain}` | String (site UUID) | none (immutable) | project create | Caddy (L2); deleted on project delete |
+| `site:{site_id}:active` | String (deployment UUID) | 1 h safety fallback | deploy / rollback (after commit) | Caddy (L2) |
+| `site_version:{site_id}` | Integer | — | deploy / rollback (`INCR`) | console cache-bust |
+| `manifest:{deployment_id}` | JSON manifest | 24 h | deploy / rollback | console cache |
 | `deploy:token:{token}` | JSON | 10 min | prepareDeploy | presign / commit |
 | `deploy:lock:{pageId}` | String (holder id) | 10 min prepare / ~6 min commit | prepare / commit / rollback | prepare / commit / rollback |
 | `db_cache:{domain}` | JSON | 15 min | page.service | page.service |

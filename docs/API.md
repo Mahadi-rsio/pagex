@@ -128,7 +128,7 @@ Get live + DB-persisted request and bandwidth usage for a domain.
 Client-side file deploy: **prepare → presign → commit**. Files are validated via magic bytes, stored as SHA256 blobs (`blobs/{hash}`), and assembled into the live prefix from `blob_tree_entries`.
 
 ### `POST /api/deploy/prepare`
-Validate the file manifest, check which blobs already exist, issue a 10-minute deployment token (Redis DB3: `deploy:token:{token}`), and take the per-page deployment lock (`deploy:lock:{pageId}`, same TTL). A second prepare/commit/rollback for the same page returns **409** until the lock is released or expires.
+Validate the file manifest, check which blobs already exist, issue a 10-minute deployment token (Redis `deploy:token:{token}`), and take the per-page deployment lock (`deploy:lock:{pageId}`, same TTL). A second prepare/commit/rollback for the same page returns **409** until the lock is released or expires.
 
 **Request body:**
 ```json
@@ -205,7 +205,7 @@ Upload each object to the presigned URL with the raw file body (object key: `blo
 ---
 
 ### `POST /api/deploy/commit`
-Refreshes the per-page deployment lock (same holder as the prepare token), load blobs, expand Brotli/Gzip/WebP variants, write `blob_tree_entries`, generate + persist the deployment manifest (MinIO `manifests/{deploymentId}.json` + Redis `manifest:{deploymentId}`, validated before activation), refuse activation if a newer deployment version already exists, activate deployment, set `active_deployment:{site_id}`, `INCR site_version:{site_id}`, invalidate `site:{subdomain}`, fire-and-forget GC, consume the token, and release the lock. Request timeout: **5 minutes**.
+Refreshes the per-page deployment lock (same holder as the prepare token), load blobs, expand Brotli/Gzip/WebP variants, write `blob_tree_entries`, generate + persist the deployment manifest (MinIO `manifests/{deploymentId}.json` + Redis `manifest:{deploymentId}`, validated before activation), refuse activation if a newer deployment version already exists, activate deployment, set Redis `site:{site_id}:active` (1h safety TTL), `INCR site_version:{site_id}`, fire-and-forget GC, consume the token, and release the lock. The immutable `site:subdomain:{subdomain}` mapping is never touched by deploys. Request timeout: **5 minutes**.
 
 No MinIO `tenant/` materialization — Caddy resolves subdomain → site_id → active deployment → manifest → `blobs/{hash}`.
 
@@ -318,8 +318,8 @@ Roll back to a previous deployment using its `blob_tree_entries` (blob-direct; n
 1. Load target deployment’s blob tree (tenant-scoped)
 2. `generateAndPersistManifest(deploymentId)` — validates/reuses the immutable manifest (throws on failure → no activation)
 3. Set `is_active = true` on target; deactivate others
-4. `setActiveDeploymentCache` + `cacheManifestInRedis` + `INCR site_version:{site_id}`
-5. Invalidate Redis `site:{subdomain}`
+4. `setActiveDeploymentCache` (SET `site:{site_id}:active`, 1 h) + `cacheManifestInRedis` + `INCR site_version:{site_id}`
+5. The immutable `site:subdomain:{subdomain}` mapping is untouched by deploys/rollbacks
 6. Fire-and-forget `runDeploymentGC` (retention: 10 inactive)
 
 **Response `200`:**

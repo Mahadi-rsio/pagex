@@ -16,7 +16,7 @@ Historical notes: the ZIP upload worker and the sync worker (analytics) were als
 
 **File:** `services/console/src/server/api/services/deploy.service.ts`
 
-Used by the CLI commit path. Serialized per page by Redis `deploy:lock:{pageId}` (DB3).
+Used by the CLI commit path. Serialized per page by Redis `deploy:lock:{pageId}`.
 
 1. Acquire/refresh `deploy:lock:{pageId}` (SET NX, re-entrant for the same holder). Concurrent holders get HTTP 409.
 2. If the caller provided `baseVersion`, abort when a newer `deployments.version` already exists (stale deploy).
@@ -27,10 +27,10 @@ Used by the CLI commit path. Serialized per page by Redis `deploy:lock:{pageId}`
 7. **ATOMIC ACTIVATION** (PostgreSQL transaction):
    - Mark new deployment `is_active: true, status: 'active'`
    - Mark previous active `is_active: false, status: 'superseded'`
-8. **Redis updates ONLY after successful DB commit**:
-   - `setActiveDeploymentCache` (Redis `active_deployment:{site_id}`)
+8. **Redis updates ONLY after successful DB commit** (best-effort; a Redis outage never fails the deploy):
+   - `setActiveDeploymentCache` — SET `site:{site_id}:active` (1 h safety TTL)
    - `cacheManifestInRedis` + `incrementSiteVersion` (`INCR site_version:{site_id}`)
-   - `invalidateSiteCache(subdomain)` — DEL `site:{subdomain}`
+   - The immutable `site:subdomain:{subdomain}` mapping is **not** touched by deploys
 9. **Fire-and-forget** `runDeploymentGC(pageId, siteId)` — never await
 10. Release the lock (CLI prepare holds it from token issue until commit `finally`)
 
@@ -48,9 +48,9 @@ No MinIO `tenant/` copy. Caddy resolves subdomain → site_id → active deploym
 4. Assert lock still held, then **ATOMIC ACTIVATION** (PostgreSQL transaction):
    - Mark rollback target `is_active: true, status: 'active'`
    - Mark previous active `is_active: false, status: 'superseded'`
-5. **Redis updates ONLY after successful DB commit**:
-   - `setActiveDeploymentCache` + `cacheManifestInRedis` + `incrementSiteVersion`
-   - Invalidate `site:{subdomain}`
+5. **Redis updates ONLY after successful DB commit** (best-effort):
+   - `setActiveDeploymentCache` (SET `site:{site_id}:active`, 1 h) + `cacheManifestInRedis` + `incrementSiteVersion`
+   - The immutable `site:subdomain:{subdomain}` mapping is **not** touched
 6. Fire-and-forget `runDeploymentGC`
 7. Release the lock
 

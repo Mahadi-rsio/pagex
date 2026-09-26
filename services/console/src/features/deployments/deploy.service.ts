@@ -554,7 +554,14 @@ async function storeExpandedVariants(
  * from pre-manifest deployments are removed when a page is destroyed.
  */
 export async function clearSiteFilesMap(siteId: string): Promise<void> {
-    await redis.del(redisKey(`site_files:${siteId}`));
+    try {
+        await redis.del(redisKey(`site_files:${siteId}`));
+    } catch (err) {
+        console.error(
+            `[routing] legacy site_files cleanup failed for ${siteId}`,
+            err,
+        );
+    }
 }
 
 async function currentMaxVersion(pageId: string): Promise<number> {
@@ -570,11 +577,6 @@ async function currentMaxVersion(pageId: string): Promise<number> {
 
 async function nextVersion(pageId: string): Promise<number> {
     return (await currentMaxVersion(pageId)) + 1;
-}
-
-export async function invalidateSiteCache(subdomain: string): Promise<void> {
-    // Caddy reads site:{subdomain} from the default Redis DB
-    await redis.del(redisKey(`site:${subdomain}`));
 }
 
 export interface BlobManifestFile {
@@ -726,11 +728,13 @@ export async function commitBlobTreeDeploy(opts: {
             return updated;
         });
 
-        // Redis updates ONLY after successful DB commit
+        // Redis updates ONLY after successful DB commit.
+        //
+        // Only the active-deployment pointer is touched: a project's subdomain
+        // → site_id mapping is immutable and must survive every deploy.
         await setActiveDeploymentCache(opts.siteId, activatedDeployment.id);
         await cacheManifestInRedis(activatedDeployment.id, manifest);
         await incrementSiteVersion(opts.siteId);
-        await invalidateSiteCache(opts.subdomain);
 
         // fire and forget — never await
         runDeploymentGC(opts.pageId, opts.siteId).catch((err) =>

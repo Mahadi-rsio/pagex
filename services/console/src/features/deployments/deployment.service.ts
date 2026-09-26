@@ -3,11 +3,9 @@ import {
     blobTreeEntries,
     blobs,
     deployments,
-    pages,
 } from "@/server/api/infrastructure/db/schema";
 import { and, eq, ne, desc } from "drizzle-orm";
 import { HttpError } from "@/server/api/utils/http-error";
-import { invalidateSiteCache } from "./deploy.service";
 import {
     cacheManifestInRedis,
     generateAndPersistManifest,
@@ -123,19 +121,13 @@ export async function rollbackToDeployment(
                 return updated;
             });
 
-            // Redis updates ONLY after successful DB commit
+            // Redis updates ONLY after successful DB commit.
+            //
+            // Only the active-deployment pointer moves on rollback; the
+            // project's subdomain → site_id mapping is immutable.
             await setActiveDeploymentCache(dep.site_id, activatedDeployment.id);
             await cacheManifestInRedis(activatedDeployment.id, manifest);
             await incrementSiteVersion(dep.site_id);
-
-            const [page] = await db
-                .select()
-                .from(pages)
-                .where(eq(pages.id, dep.page_id))
-                .limit(1);
-            if (page) {
-                await invalidateSiteCache(page.project_name);
-            }
 
             // fire and forget — never await
             runDeploymentGC(dep.page_id, dep.site_id).catch((err) =>

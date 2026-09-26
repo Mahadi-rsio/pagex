@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
+import {
+    activeDeploymentMappingKey,
+    routingWriter,
+} from "@/server/api/infrastructure/cache/routing";
 import { db } from "@/server/api/infrastructure/db/db";
 import {
     blobTreeEntries,
@@ -77,46 +81,76 @@ export async function buildManifestFromBlobTree(
     return check.manifest;
 }
 
-export function activeDeploymentRedisKey(siteId: string): string {
-    return `active_deployment:${siteId}`;
-}
-
 export function manifestRedisKey(deploymentId: string): string {
     return `manifest:${deploymentId}`;
 }
 
+/**
+ * Cache a manifest in Redis. Best-effort: the manifest object in MinIO and the
+ * deployment row in PostgreSQL are authoritative, and a Redis outage must not
+ * fail an already-committed deploy/rollback.
+ */
 export async function cacheManifestInRedis(
     deploymentId: string,
     manifest: DeploymentManifest,
 ): Promise<void> {
-    await redis.set(
-        redisKey(manifestRedisKey(deploymentId)),
-        JSON.stringify(manifest),
-        { ex: MANIFEST_REDIS_TTL_SECONDS },
-    );
+    try {
+        await redis.set(
+            redisKey(manifestRedisKey(deploymentId)),
+            JSON.stringify(manifest),
+            { ex: MANIFEST_REDIS_TTL_SECONDS },
+        );
+    } catch (err) {
+        console.error(
+            `[routing] manifest cache write failed for ${deploymentId}; MinIO/Postgres remain authoritative`,
+            err,
+        );
+    }
 }
 
 export async function setActiveDeploymentCache(
     siteId: string,
     deploymentId: string,
 ): Promise<void> {
-    await redis.set(redisKey(activeDeploymentRedisKey(siteId)), deploymentId);
+    // Writes `site:<site_id>:active` with the 1h safety TTL and swallows Redis
+    // failures, so a Redis outage after a successful DB commit cannot surface
+    // as a failed deploy.
+    await routingWriter.setActiveDeploymentMapping(siteId, deploymentId);
 }
 
+/** Best-effort cache-busting counter; never fails a committed deploy. */
 export async function incrementSiteVersion(siteId: string): Promise<void> {
-    await redis.incr(redisKey(`site_version:${siteId}`));
+    try {
+        await redis.incr(redisKey(`site_version:${siteId}`));
+    } catch (err) {
+        console.error(
+            `[routing] site_version bump failed for ${siteId}; PostgreSQL remains authoritative`,
+            err,
+        );
+    }
 }
 
+/**
+ * Drop a site's runtime routing keys (active deployment pointer + cached
+ * manifest). Best-effort: called after the PostgreSQL mutation has committed.
+ */
 export async function clearDeploymentRuntimeCache(
     siteId: string,
     deploymentId?: string,
 ): Promise<void> {
-    const pipeline = redis.multi();
-    pipeline.del(redisKey(activeDeploymentRedisKey(siteId)));
-    if (deploymentId) {
-        pipeline.del(redisKey(manifestRedisKey(deploymentId)));
+    try {
+        const pipeline = redis.multi();
+        pipeline.del(redisKey(activeDeploymentMappingKey(siteId)));
+        if (deploymentId) {
+            pipeline.del(redisKey(manifestRedisKey(deploymentId)));
+        }
+        await pipeline.exec();
+    } catch (err) {
+        console.error(
+            `[routing] runtime cache clear failed for ${siteId}; PostgreSQL remains authoritative`,
+            err,
+        );
     }
-    await pipeline.exec();
 }
 
 /**

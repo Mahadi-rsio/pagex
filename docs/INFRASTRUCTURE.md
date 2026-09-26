@@ -88,7 +88,7 @@ Image: `ghcr.io/mahadi-rsio/pagex/blob-server:latest` (built locally for dev via
 4. **Console reverse proxy** — `:3080` proxies to the console (`CONSOLE_UPSTREAM`; port 3000 in local dev, the Vercel origin in production)
 5. **Access logs** — emitted to `/var/log/caddy` (`caddy_logs` volume), consumed by Vector
 
-Analytics aggregation is done by **Vector + console API**, not in Caddy. Blob-server caches in PostgreSQL (LRU → Postgres); Redis is used for API caching, rate limiting, and deploy locks.
+Analytics aggregation is done by **Vector + console API**, not in Caddy. Blob-server resolves tenant routing as **LRU → Redis → PostgreSQL** (Redis is the durable distributed lookup layer; PostgreSQL is authoritative) and backfills Redis on a miss. Redis is also used for API caching, rate limiting, and deploy locks.
 
 No per-tenant Caddy config. A site is live once `sites.active=true` and the active deployment has a persisted manifest.
 

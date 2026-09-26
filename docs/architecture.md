@@ -41,60 +41,55 @@ Client Request
                   │
                   ▼
 ┌─────────────────────────────────────┐
-│  Redis Cache                         │
-│  2. GET "site:mysite"                │
-│     → site_id (cached for 5 min)     │
+│  Caddy L1 LRU (in-process)           │
+│  2. subdomain → site_id              │
+│     hit → step 5 (no network I/O)    │
 └─────────────────┬───────────────────┘
-                  │
-                  ▼ (cache miss)
-┌─────────────────────────────────────┐
-│  PostgreSQL                          │
-│  3. SELECT id FROM sites             │
-│     WHERE subdomain = 'mysite'        │
-│     AND active = true                │
-└─────────────────┬───────────────────┘
-                  │
+                  │ (miss)
                   ▼
 ┌─────────────────────────────────────┐
-│  Redis Cache                         │
-│  4. SET "site:mysite" site_id (TTL 5m)│
+│  Redis (Upstash) — durable L2        │
+│  3. GET "site:subdomain:{subdomain}" │
+│     → site_id (no TTL; immutable)    │
 └─────────────────┬───────────────────┘
-                  │
+                  │ (miss)
                   ▼
 ┌─────────────────────────────────────┐
-│  Redis Cache                         │
-│  5. GET "site_version:{site_id}"     │
-│     → version (e.g., "5")            │
+│  PostgreSQL (Neon) — L3 source       │
+│  of truth                            │
+│  4. SELECT id FROM sites WHERE       │
+│     subdomain = $1 AND active = true │
+│     → backfill Redis + L1 LRU        │
 └─────────────────┬───────────────────┘
                   │
                   ▼
 ┌─────────────────────────────────────┐
 │  Caddy (Blob Server)                 │
-│  6. Resolve active deployment        │
-│     (L1 → Redis "active_deployment:  │
-│     {site_id}" → PostgreSQL,         │
-│     requires manifest_key)           │
+│  5. Resolve active deployment:       │
+│     L1 → Redis "site:{site_id}:      │
+│     active" (1h TTL) → PostgreSQL,   │
+│     requires manifest_key; backfill  │
 └─────────────────┬───────────────────┘
                   │
                   ▼
 ┌─────────────────────────────────────┐
-│  Manifest (MinIO/Redis)              │
-│  7. Load manifest:{deployment_id}    │
-│     (L1 → coalesced → Redis → MinIO) │
+│  Manifest (MinIO)                    │
+│  6. Load manifest:{deployment_id}    │
+│     (L1 → coalesced → MinIO)         │
 │     files["{path}"] → blob_hash      │
 └─────────────────┬───────────────────┘
                   │
                   ▼
 ┌─────────────────────────────────────┐
 │  MinIO (S3-compatible)                │
-│  8. GET "blobs/{blob_hash}"           │
+│  7. GET "blobs/{blob_hash}"           │
 │     → Stream file content             │
 └─────────────────┬───────────────────┘
                   │
                   ▼
 ┌─────────────────────────────────────┐
 │  Caddy Response                       │
-│  9. Stream to client with:            │
+│  8. Stream to client with:            │
 │     - Proper Content-Type             │
 │     - Cache-Control headers           │
 │     - Vary: Accept / Accept-Encoding  │
@@ -569,7 +564,7 @@ pending
 **Atomic Activation (PostgreSQL transaction):**
 1. Mark new deployment `is_active: true, status: 'active'`
 2. Mark previous active `is_active: false, status: 'superseded'`
-3. **Redis updates ONLY after successful DB commit** — `setActiveDeploymentCache`, `cacheManifestInRedis`, `incrementSiteVersion`, `invalidateSiteCache`
+3. **Redis updates ONLY after successful DB commit** (best-effort) — `setActiveDeploymentCache` (SET `site:{site_id}:active`, 1 h), `cacheManifestInRedis`, `incrementSiteVersion`. The immutable `site:subdomain:{subdomain}` mapping is never touched.
 
 **Idempotency Keys:**
 - Scoped by `(tenant_id, page_id, idempotency_key)`
@@ -593,10 +588,11 @@ pending
 - **Simplicity:** Automatic invalidation on deployments
 
 **Implementation:**
-- **LRU Cache:** In-memory cache with TTL (Caddy plugin)
-- **Redis Cache:** Site and path mappings (5 min TTL)
+- **L1 LRU:** In-process `subdomain → site_id` and `site_id → active deployment` lookups (Caddy plugin)
+- **Redis (L2):** Durable `site:subdomain:{subdomain}` (no TTL; immutable) and `site:{site_id}:active` (1h safety TTL) mappings, written by the console only after PostgreSQL commits
+- **PostgreSQL (L3):** Authoritative source; a Redis miss is backfilled into Redis and the LRU
 - **Browser Cache:** Proper Cache-Control headers
-- **Invalidation:** Version bump on deploy makes old cache entries unreachable
+- **Invalidation:** A new active deployment changes the deployment ID in every cache key, so old entries become unreachable
 
 ## 📊 Performance Characteristics
 

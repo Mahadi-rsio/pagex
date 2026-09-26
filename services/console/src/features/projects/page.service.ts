@@ -10,6 +10,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
+import { routingWriter } from "@/server/api/infrastructure/cache/routing";
 import { TOP_LEVEL_DOMAIN } from "@/server/api/constants/index";
 import { clearSiteFilesMap } from "@/features/deployments/deploy.service";
 import { clearDeploymentRuntimeCache } from "@/features/deployments/manifest.service";
@@ -73,7 +74,13 @@ export async function createPage(
 
     if (!page) throw new Error("Failed to create page record");
 
-    // 3. The caddy static_s3 plugin resolves subdomain → site_id → active
+    // 3. Publish the immutable subdomain → site_id mapping to Redis. This is
+    //    the blob-server's durable distributed lookup layer. Best-effort: the
+    //    PostgreSQL rows above are authoritative, and the blob-server backfills
+    //    Redis from Postgres on a miss.
+    await routingWriter.setSubdomainMapping(subdomain, site.id);
+
+    // 4. The caddy static_s3 plugin resolves subdomain → site_id → active
     //    deployment manifest → blobs/{sha256}. No per-tenant Caddy config or
     //    tenant/ prefix needed.
 
@@ -392,15 +399,27 @@ export async function deletePage(pageId: string, tenantId: string) {
         .where(eq(sites.id, page.site_id))
         .limit(1);
 
-    await redis.del(redisKey(`site:${site?.subdomain ?? page.project_name}`));
+    // Remove the immutable subdomain → site_id mapping now that the project is
+    // permanently gone. Deployments/rollbacks never touch this key.
+    await routingWriter.deleteSubdomainMapping(
+        site?.subdomain ?? page.project_name,
+    );
     await clearSiteFilesMap(page.site_id);
     await clearDeploymentRuntimeCache(page.site_id);
-    await redis.del(redisKey(`site_version:${page.site_id}`));
 
-    // 3. Clear usage caches
-    await redis.del(redisKey(`db_cache:${page.domain}`));
-    await redis.del(redisKey(`requests:${page.domain}`));
-    await redis.del(redisKey(`bandwidth:${page.domain}`));
+    // Remaining Redis cleanup is best-effort: the PostgreSQL deletion above has
+    // already committed, so a Redis outage must not fail the request.
+    try {
+        await redis.del(redisKey(`site_version:${page.site_id}`));
+        await redis.del(redisKey(`db_cache:${page.domain}`));
+        await redis.del(redisKey(`requests:${page.domain}`));
+        await redis.del(redisKey(`bandwidth:${page.domain}`));
+    } catch (err) {
+        console.error(
+            `[routing] secondary cache cleanup failed for site ${page.site_id}; PostgreSQL remains authoritative`,
+            err,
+        );
+    }
 
     console.log(
         `🗑️  Deleted project "${page.project_name}" (site_id: ${page.site_id})`,

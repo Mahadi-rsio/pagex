@@ -41,6 +41,12 @@ services:
       # Neon Postgres connection string. The static_s3 plugin only performs
       # read-only site lookups, so the pooled endpoint is fine.
       - DATABASE_URL=${DATABASE_URL:?DATABASE_URL (Neon) is required}
+      # Upstash Redis (REST) durable routing lookup: subdomain → site_id and
+      # site_id → active deployment. Must match the console's
+      # UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN / REDIS_KEY_PREFIX.
+      - UPSTASH_REDIS_REST_URL=${UPSTASH_REDIS_REST_URL:?UPSTASH_REDIS_REST_URL is required}
+      - UPSTASH_REDIS_REST_TOKEN=${UPSTASH_REDIS_REST_TOKEN:?UPSTASH_REDIS_REST_TOKEN is required}
+      - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-px}
       # Vercel deployment origin the console host blocks reverse-proxy to.
       - CONSOLE_UPSTREAM=${CONSOLE_UPSTREAM:?CONSOLE_UPSTREAM (Vercel URL) is required}
       - REDIRECT_TO_S3=${REDIRECT_TO_S3:-false}

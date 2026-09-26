@@ -25,9 +25,9 @@ const (
 	// a long TTL is safe and keeps hot-path requests entirely off MinIO.
 	manifestL1TTL = 1 * time.Hour
 	// activeDeploymentL1TTL bounds the process-local siteID→active deployment
-	// mapping. Without Redis there is no push-based invalidation, so a deploy
-	// or rollback propagates within this window. Keep it short (deploys become
-	// visible quickly) at the cost of a PostgreSQL lookup every TTL.
+	// mapping. Redis holds the durable pointer (repointed on deploy/rollback),
+	// so this TTL is only how long a process may serve a stale deployment
+	// before re-reading Redis. Keep it short so deploys become visible quickly.
 	activeDeploymentL1TTL = 60 * time.Second
 	// siteIDL1TTL bounds the process-local subdomain→siteID mapping. A
 	// deactivated/deleted site stops being served within this window.
@@ -198,9 +198,12 @@ func (p *StaticPlugin) cacheActiveDeploymentNegative(siteID string) {
 	}, activeDeploymentL1TTL)
 }
 
+// resolveActiveDeploymentID resolves siteID → active deployment ID. Lookup
+// order is process-local LRU → Redis → PostgreSQL. Deploys/rollbacks repoint
+// the Redis key; Postgres stays authoritative and backfills Redis on a miss.
 func (p *StaticPlugin) resolveActiveDeploymentID(ctx context.Context, siteID string) (string, error) {
 	// L1: process-local LRU (siteID → active deployment ID). A hit means zero
-	// PostgreSQL work on the hot path.
+	// external work on the hot path.
 	l1Key := activeDeploymentL1Key(siteID)
 	if p.cacheTTL > 0 && p.cache != nil {
 		if item, ok := p.cache.Get(l1Key); ok {
@@ -213,26 +216,43 @@ func (p *StaticPlugin) resolveActiveDeploymentID(ctx context.Context, siteID str
 		}
 	}
 
-	// L2: PostgreSQL fallback (control-plane source of truth).
-	if p.db == nil {
+	// L2: Redis (durable distributed lookup). A Redis failure is non-fatal. A
+	// malformed value is ignored so PostgreSQL repairs the mapping.
+	if p.routing != nil {
+		deploymentID, ok, err := p.routing.Get(ctx, activeDeploymentRoutingKey(siteID))
+		switch {
+		case err != nil:
+			p.warnRouting("active_deployment", siteID, err)
+		case ok && deploymentID != "" && isUUID(deploymentID):
+			p.cacheActiveDeployment(siteID, deploymentID)
+			return deploymentID, nil
+		case ok && deploymentID != "":
+			p.warnMalformedRouting("active_deployment", siteID, deploymentID)
+		}
+	}
+
+	// L3: PostgreSQL fallback (control-plane source of truth).
+	if p.store == nil {
 		return "", fmt.Errorf("static_s3: active deployment lookup requires db_dsn")
 	}
 
-	var deploymentID string
-	row := p.db.QueryRowContext(ctx, `
-		SELECT id FROM deployments
-		WHERE site_id = $1 AND is_active = true AND manifest_key IS NOT NULL
-		LIMIT 1
-	`, siteID)
-	if err := row.Scan(&deploymentID); err != nil {
-		if errors.Is(err, errNoRows) {
-			p.cacheActiveDeploymentNegative(siteID)
-			return "", nil
-		}
+	deploymentID, found, err := p.store.ActiveDeploymentBySite(ctx, siteID)
+	if err != nil {
 		return "", fmt.Errorf("static_s3: active deployment query error: %w", err)
+	}
+	if !found {
+		p.cacheActiveDeploymentNegative(siteID)
+		return "", nil
 	}
 
 	p.cacheActiveDeployment(siteID, deploymentID)
+
+	// Backfill Redis with the 1h safety TTL.
+	if p.routing != nil {
+		if err := p.routing.Set(ctx, activeDeploymentRoutingKey(siteID), deploymentID, activeDeploymentRedisTTLSeconds); err != nil {
+			p.warnRouting("active_deployment", siteID, err)
+		}
+	}
 
 	return deploymentID, nil
 }

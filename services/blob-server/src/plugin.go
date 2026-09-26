@@ -17,6 +17,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/dustin/go-humanize"
 	_ "github.com/lib/pq"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -50,6 +51,13 @@ type StaticPlugin struct {
 	BaseDomain string `json:"base_domain,omitempty"`
 	DBDSN      string `json:"db_dsn,omitempty"`
 
+	// Redis (Upstash REST) durable routing lookup. Optional: when unset, the
+	// plugin resolves subdomain/active-deployment lookups from PostgreSQL and
+	// caches them in the process-local LRU.
+	RedisURL       string `json:"redis_url,omitempty"`
+	RedisToken     string `json:"redis_token,omitempty"`
+	RedisKeyPrefix string `json:"redis_key_prefix,omitempty"`
+
 	s3Client        *s3.Client
 	s3PresignClient *s3.PresignClient
 	cache           *LRUCache
@@ -59,6 +67,9 @@ type StaticPlugin struct {
 	maxCacheSize    int64
 	presignLifetime time.Duration
 	db              *sql.DB
+	store           resolutionStore
+	routing         routingKV
+	logger          *zap.Logger
 }
 
 func (StaticPlugin) CaddyModule() caddy.ModuleInfo {
@@ -69,6 +80,8 @@ func (StaticPlugin) CaddyModule() caddy.ModuleInfo {
 }
 
 func (p *StaticPlugin) Provision(ctx caddy.Context) error {
+	p.logger = ctx.Logger()
+
 	// Fallbacks / Environment Variables
 	if p.AccessKey == "" {
 		p.AccessKey = os.Getenv("S3_ACCESS_KEY")
@@ -97,6 +110,25 @@ func (p *StaticPlugin) Provision(ctx caddy.Context) error {
 		p.DBDSN = os.Getenv("DATABASE_URL")
 	}
 
+	// Redis (Upstash REST) routing fallbacks. Optional; absence just means the
+	// plugin resolves from PostgreSQL and warms the process-local LRU.
+	if p.RedisURL == "" {
+		p.RedisURL = os.Getenv("UPSTASH_REDIS_REST_URL")
+	}
+	if p.RedisToken == "" {
+		p.RedisToken = os.Getenv("UPSTASH_REDIS_REST_TOKEN")
+	}
+	if p.RedisKeyPrefix == "" {
+		p.RedisKeyPrefix = os.Getenv("REDIS_KEY_PREFIX")
+	}
+	if p.RedisURL != "" && p.RedisToken != "" {
+		p.routing = newUpstashClient(p.RedisURL, p.RedisToken, p.RedisKeyPrefix)
+		if p.logger != nil {
+			p.logger.Info("static_s3: redis routing lookup enabled",
+				zap.String("key_prefix", p.RedisKeyPrefix))
+		}
+	}
+
 	// Open PostgreSQL connection if multi-tenant mode is configured
 	if p.BaseDomain != "" && p.DBDSN != "" {
 		db, err := sql.Open("postgres", p.DBDSN)
@@ -109,6 +141,7 @@ func (p *StaticPlugin) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("static_s3: postgres ping failed: %w", err)
 		}
 		p.db = db
+		p.store = postgresStore{db: db}
 	}
 
 	// SPA Fallback: hardcoded to "index.html" in multi-tenant mode.
@@ -304,6 +337,21 @@ func (p *StaticPlugin) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 				p.DBDSN = d.Val()
+			case "redis_url":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				p.RedisURL = d.Val()
+			case "redis_token":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				p.RedisToken = d.Val()
+			case "redis_key_prefix":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				p.RedisKeyPrefix = d.Val()
 			default:
 				return d.Errf("unknown subdirective: %s", d.Val())
 			}

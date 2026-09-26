@@ -32,6 +32,12 @@ services:
       # Neon Postgres connection string. The static_s3 plugin only performs
       # read-only site lookups, so the pooled endpoint is fine.
       - DATABASE_URL=${DATABASE_URL}
+      # Upstash Redis (REST) durable routing lookup: subdomain → site_id and
+      # site_id → active deployment. Optional locally; when unset the plugin
+      # falls back to Neon and warms the process-local LRU.
+      - UPSTASH_REDIS_REST_URL=${UPSTASH_REDIS_REST_URL:-}
+      - UPSTASH_REDIS_REST_TOKEN=${UPSTASH_REDIS_REST_TOKEN:-}
+      - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-px}
       # Console origin the console host blocks reverse-proxy to.
       - CONSOLE_UPSTREAM=${CONSOLE_UPSTREAM:-http://localhost:3000}
       - REDIRECT_TO_S3=${REDIRECT_TO_S3:-false}
