@@ -21,7 +21,7 @@
 | Cache | Upstash Redis (`@upstash/redis`, REST) — API cache/rate-limit/deploy-locks; blob-server caches in PostgreSQL |
 | Object Storage | MinIO (S3-compatible) — external |
 | Auth | Better Auth JWT + JOSE JWKS verification |
-| Image / compress | `sharp` (WebP), Node `zlib` (Brotli/Gzip) |
+| Compress | Node `zlib` (Brotli/Gzip). No generated image variants — `sharp`/WebP was removed |
 | Validation | Zod + `file-type` magic bytes |
 | Rate limiting | Redis Lua counter |
 | Concurrency | `p-limit` (blob I/O + GC deletes, concurrency 10) |
@@ -64,8 +64,11 @@ pagex/
 | Migrations | `src/db/migrate.ts` | run at console startup |
 | Blob server | `cmd/caddy` (Go) | `blob-server` |
 | Vector | `vector.yaml` | `vector` (aggregates access logs → console ingest) |
+| Worker | `services/worker` (Go) | `worker` (drains the Cloudflare cleanup queue) |
 
-No workers — cloud builds / BullMQ were removed, and CLI blob deploy replaced ZIP uploads.
+No build workers — cloud builds / BullMQ were removed, and CLI blob deploy replaced ZIP uploads.
+The only long-lived worker is `services/worker`, which drains the Cloudflare Queue for
+cleanup (`deployment_gc`, `page_delete`). It is never in the deploy request path.
 
 ---
 
@@ -129,4 +132,4 @@ Redis is Upstash (REST) and Postgres is Neon, so neither needs a Compose hostnam
 
 ## Deploy / GC flow (one-liner)
 
-`commitBlobTreeDeploy` / rollback → `generateAndPersistManifest` → activate → `INCR site_version:{site_id}` + invalidate `site:` → **fire-and-forget** `runDeploymentGC(pageId, siteId)` (never await).
+`commitBlobTreeDeploy` / rollback → `generateAndPersistManifest` → activate → `INCR site_version:{site_id}` + invalidate `site:` → **enqueue** `deployment_gc` to the Cloudflare queue (awaited, best-effort; drained by `services/worker`).

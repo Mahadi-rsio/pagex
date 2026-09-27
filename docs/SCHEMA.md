@@ -39,7 +39,25 @@ bandwidth_usage  BIGINT   NOT NULL DEFAULT 0
 bandwidth_limit  BIGINT   NOT NULL DEFAULT 2147483648  -- 2 GB
 
 createdAt        TIMESTAMP NOT NULL DEFAULT now()
+deletedAt        TIMESTAMP          -- soft delete; NULL = live
 ```
+
+**Soft delete.** Deleting a project does not remove the row. `DELETE
+/api/pages/[id]` sets `deletedAt = now()` and deactivates the `sites` row, which
+makes the project invisible to every user-facing read immediately; the
+`page_delete` queue job then reclaims storage asynchronously.
+
+- Every user-facing query filters `deleted_at IS NULL` via `withLivePage`
+  (`src/server/api/utils/page-visibility.ts`). Do not add a new page read without
+  it.
+- **Usage ingest is deliberately unfiltered.** Vector batches access logs, so a
+  request served just before a delete arrives in a later batch; `resolveTenantId`
+  looks up the site regardless of `deletedAt` so late usage is still attributed
+  instead of silently dropped.
+- A deploy commit re-reads `deletedAt` inside the activation transaction and
+  aborts 409 if the project was deleted mid-flight.
+
+Partial index `pages_deleted_at_idx` on `(deleted_at)`.
 
 ---
 
@@ -172,7 +190,7 @@ INDEX: idx_deployments_status ON (status)
 **Retention / GC** (`DEPLOYMENT_RETENTION = 10`):
 - Keep the active deployment + up to **10** most recent inactive deployments
 - Steady state ≤ **11** rows per page
-- Background `runDeploymentGC` (after commit/rollback) deletes older inactive rows, their `blob_tree_entries`, and orphaned `blobs` rows **after** successful MinIO deletes
+- The worker's `deployment_gc` handler (enqueued after commit/rollback) deletes older inactive rows, their `blob_tree_entries`, and orphaned `blobs` rows **after** successful object deletes
 - Active deployment is never a GC target (`is_active = false` filter)
 
 ---
@@ -269,7 +287,7 @@ single logical database, so the former `db0`/`db3` split is expressed purely by 
 **Billing unit is decimal GB (1 GB = 1,000,000,000 bytes).** Only bandwidth is metered;
 request counts are unlimited and never quota-checked.
 
-**BullMQ was removed** — there are no queue keys. `deploy:lock:{pageId}` is the only lock mechanism.
+**BullMQ was removed** — there are no queue keys. `deploy:lock:{pageId}` is the only lock mechanism. Background cleanup uses a Cloudflare Queue, not Redis.
 
 ---
 

@@ -6,7 +6,6 @@ import { brotliCompress, gzip } from "node:zlib";
 import { and, desc, eq, gt, inArray, ne } from "drizzle-orm";
 import { lookup } from "mime-types";
 import pLimit from "p-limit";
-import sharp from "sharp";
 import { db } from "@/server/api/infrastructure/db/db";
 import {
     blobTreeEntries,
@@ -31,7 +30,7 @@ import {
     MAX_FILE_SIZE,
     PRESIGN_EXPIRY_SECONDS,
 } from "@/server/api/constants/index";
-import { runDeploymentGC } from "./gc.service";
+import { enqueueDeploymentGC } from "@/features/background/jobs";
 import {
     cacheManifestInRedis,
     generateAndPersistManifest,
@@ -41,6 +40,7 @@ import {
 import { validateManifest } from "@/server/api/utils/deployment-validator";
 import { validateFile } from "@/server/api/utils/file-validator";
 import { HttpError } from "@/server/api/utils/http-error";
+import { withLivePage } from "@/server/api/utils/page-visibility";
 import {
     DEPLOYMENT_IN_PROGRESS_MESSAGE,
     STALE_DEPLOYMENT_MESSAGE,
@@ -84,9 +84,6 @@ const SKIP_COMPRESS_EXTS = new Set([
     ".zip",
 ]);
 
-/** Raster images converted to WebP (original kept). */
-const WEBP_SOURCE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif"]);
-
 const UUID_RE =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -109,17 +106,19 @@ function deployTokenKey(token: string): string {
 }
 
 async function resolvePage(pageIdOrName: string, tenantId: string) {
+    // `withLivePage` excludes soft-deleted projects, so a project whose delete is
+    // still being purged in the background cannot accept a new deployment.
     const [page] = UUID_RE.test(pageIdOrName)
         ? await db
               .select()
               .from(pages)
-              .where(eq(pages.id, pageIdOrName))
+              .where(withLivePage(eq(pages.id, pageIdOrName)))
               .limit(1)
         : await db
               .select()
               .from(pages)
               .where(
-                  and(
+                  withLivePage(
                       eq(pages.project_name, pageIdOrName),
                       eq(pages.tenant_id, tenantId),
                   ),
@@ -231,12 +230,7 @@ interface VariantExpandStats {
     originalSize: number;
     /** Best of .br/.gz size when compression succeeded; otherwise null */
     bestCompressedSize: number | null;
-    /** Original image size when WebP was produced; otherwise null */
-    imageOriginalSize: number | null;
-    /** WebP size when conversion succeeded; otherwise null */
-    imageWebpSize: number | null;
     compressedVariants: number;
-    webpVariants: number;
 }
 
 export interface DeployOptimizationSummary {
@@ -249,18 +243,9 @@ export interface DeployOptimizationSummary {
     sizeReduced: number;
     sizeReducedHuman: string;
     sizeReducedPercent: number;
-    /** Images successfully converted to WebP */
-    imagesOptimized: number;
-    imageOriginalSize: number;
-    imageOptimizedSize: number;
-    /** Bytes saved by WebP vs original images */
-    imageSizeReduced: number;
-    imageSizeReducedHuman: string;
-    imageSizeReducedPercent: number;
-    /** Total tree entries after variants (originals + .br/.gz/.webp) */
+    /** Total tree entries after variants (originals + .br/.gz) */
     deployedFiles: number;
     compressedVariants: number;
-    webpVariants: number;
 }
 
 function formatBytes(bytes: number): string {
@@ -284,32 +269,17 @@ function buildOptimizationSummary(
     let sizeReduced = 0;
     let compressibleOriginal = 0;
     let filesCompressed = 0;
-    let imagesOptimized = 0;
-    let imageOriginalSize = 0;
-    let imageOptimizedSize = 0;
     let compressedVariants = 0;
-    let webpVariants = 0;
 
     for (const s of stats) {
         compressedVariants += s.compressedVariants;
-        webpVariants += s.webpVariants;
 
         if (s.bestCompressedSize !== null) {
             filesCompressed++;
             compressibleOriginal += s.originalSize;
             sizeReduced += Math.max(0, s.originalSize - s.bestCompressedSize);
         }
-        if (s.imageOriginalSize !== null && s.imageWebpSize !== null) {
-            imagesOptimized++;
-            imageOriginalSize += s.imageOriginalSize;
-            imageOptimizedSize += s.imageWebpSize;
-        }
     }
-
-    const imageSizeReduced = Math.max(
-        0,
-        imageOriginalSize - imageOptimizedSize,
-    );
 
     return {
         totalFiles: sources.length,
@@ -319,26 +289,16 @@ function buildOptimizationSummary(
         sizeReduced,
         sizeReducedHuman: formatBytes(sizeReduced),
         sizeReducedPercent: percentSaved(compressibleOriginal, sizeReduced),
-        imagesOptimized,
-        imageOriginalSize,
-        imageOptimizedSize,
-        imageSizeReduced,
-        imageSizeReducedHuman: formatBytes(imageSizeReduced),
-        imageSizeReducedPercent: percentSaved(
-            imageOriginalSize,
-            imageSizeReduced,
-        ),
         deployedFiles: fileManifestLength,
         compressedVariants,
-        webpVariants,
     };
 }
 
 type DeployLogFn = (message: string) => void | Promise<void>;
 
 /**
- * Expand one source file into original + optional Brotli/Gzip/WebP variants.
- * Compression/conversion failures are logged and skipped — never thrown.
+ * Expand one source file into original + optional Brotli/Gzip variants.
+ * Compression failures are logged and skipped — never thrown.
  */
 async function expandFileVariants(
     relativePath: string,
@@ -362,10 +322,7 @@ async function expandFileVariants(
     const stats: VariantExpandStats = {
         originalSize: body.length,
         bestCompressedSize: null,
-        imageOriginalSize: null,
-        imageWebpSize: null,
         compressedVariants: 0,
-        webpVariants: 0,
     };
 
     const shouldCompress =
@@ -415,29 +372,6 @@ async function expandFileVariants(
         }
     }
 
-    if (WEBP_SOURCE_EXTS.has(ext)) {
-        try {
-            const webpBody = await sharp(body).webp().toBuffer();
-            variants.push({
-                path: `${relativePath}.webp`,
-                hash: createHash("sha256").update(webpBody).digest("hex"),
-                size: webpBody.length,
-                body: webpBody,
-                contentType: "image/webp",
-            });
-            stats.imageOriginalSize = body.length;
-            stats.imageWebpSize = webpBody.length;
-            stats.webpVariants++;
-        } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : String(err);
-            console.warn(
-                `WebP conversion failed for ${relativePath}:`,
-                message,
-            );
-            await log?.(`Skipped .webp for ${relativePath}: ${message}`);
-        }
-    }
-
     return { variants, stats };
 }
 
@@ -462,7 +396,7 @@ async function storeExpandedVariants(
     let filesDeployed = 0;
     let filesReused = 0;
 
-    // Expand variants in parallel (CPU-bound compression / WebP)
+    // Expand variants in parallel (CPU-bound compression)
     const expanded = await Promise.all(
         sources.map((source) =>
             limit(async () => {
@@ -541,8 +475,7 @@ async function storeExpandedVariants(
 
     await log?.(
         `Summary: ${summary.totalFiles} files, ${summary.totalSizeHuman} total — ` +
-            `text saved ${summary.sizeReducedHuman} (${summary.sizeReducedPercent}%), ` +
-            `${summary.imagesOptimized} images optimized (−${summary.imageSizeReducedHuman})`,
+            `text saved ${summary.sizeReducedHuman} (${summary.sizeReducedPercent}%)`,
     );
 
     return { fileManifest, filesDeployed, filesReused, summary };
@@ -689,6 +622,28 @@ export async function commitBlobTreeDeploy(opts: {
         // a unique-constraint violation. The transaction guarantees atomicity: if
         // anything fails the old deployment stays active.
         const activatedDeployment = await db.transaction(async (tx) => {
+            // Re-check the delete fence INSIDE the transaction.
+            //
+            // `assertHeld` above only covers the Redis sentinel, so a delete
+            // that commits after that check but before this transaction would
+            // otherwise activate a deployment for a project that was just
+            // deleted. Re-reading `pages.deleted_at` under the same transaction
+            // that flips `is_active` makes the two operations mutually
+            // exclusive: whichever commits first wins.
+            const [fence] = await tx
+                .select({ deletedAt: pages.deletedAt })
+                .from(pages)
+                .where(eq(pages.id, opts.pageId))
+                .limit(1);
+
+            if (!fence) throw new HttpError("Page not found", 404);
+            if (fence.deletedAt) {
+                throw new HttpError(
+                    "Page was deleted while this deployment was in flight",
+                    409,
+                );
+            }
+
             // Step 1 — find and deactivate the current active deployment.
             const [currentActive] = await tx
                 .select({ id: deployments.id })
@@ -736,10 +691,16 @@ export async function commitBlobTreeDeploy(opts: {
         await cacheManifestInRedis(activatedDeployment.id, manifest);
         await incrementSiteVersion(opts.siteId);
 
-        // fire and forget — never await
-        runDeploymentGC(opts.pageId, opts.siteId).catch((err) =>
-            console.error("GC failed silently", err),
-        );
+        // Background cleanup only. The deployment is already live in PostgreSQL
+        // and Redis at this point: GC is enqueued AFTER activation and its result
+        // is deliberately ignored, so a queue outage cannot fail a committed
+        // deploy. Awaited (not fire-and-forget) so the serverless invocation is
+        // still alive when the publish request is in flight.
+        await enqueueDeploymentGC({
+            pageId: opts.pageId,
+            siteId: opts.siteId,
+            deploymentId: activatedDeployment.id,
+        });
 
         return activatedDeployment;
     };
@@ -1129,7 +1090,7 @@ export async function commitDeploy(input: CommitDeployInput, tenantId: string) {
         lockHolder,
         DEPLOY_LOCK_COMMIT_TTL_SECONDS,
         async () => {
-            // Load original blob bodies in parallel, then expand with Brotli/Gzip/WebP variants
+            // Load original blob bodies in parallel, then expand with Brotli/Gzip variants
             const limit = pLimit(BLOB_IO_CONCURRENCY);
             const sources = await Promise.all(
                 payload.fileManifest.map((file) =>

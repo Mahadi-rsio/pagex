@@ -21,8 +21,12 @@ import {
     type CommitResponse,
 } from "../api/deployApi.js";
 
-/** Extensions produced server-side at commit — never include in the CLI manifest. */
-const SERVER_VARIANT_RE = /\.(br|gz|webp)$/i;
+/**
+ * Extensions produced server-side at commit — never include in the CLI manifest.
+ * `.webp` is deliberately absent: the server no longer generates WebP variants,
+ * so a `.webp` in the build output is a real source file and must be deployed.
+ */
+const SERVER_VARIANT_RE = /\.(br|gz)$/i;
 
 interface LocalFile extends ManifestEntry {
     absolutePath: string;
@@ -127,19 +131,9 @@ function printCommitSummary(result: CommitResponse, domain?: string): void {
         logger.info(`  Text saved ${saved}${pct}`);
     }
 
-    if (summary.imagesOptimized > 0) {
-        const imgSaved = human(
-            summary.imageSizeReducedHuman,
-            summary.imageSizeReduced,
-        );
-        logger.info(
-            `  ${summary.imagesOptimized} image${summary.imagesOptimized === 1 ? "" : "s"} optimized (−${imgSaved})`,
-        );
-    }
-
     const liveCount = summary.deployedFiles ?? deployment?.file_count;
     if (typeof liveCount === "number") {
-        logger.info(`  ${liveCount} files live (incl. .br/.gz/.webp)`);
+        logger.info(`  ${liveCount} files live (incl. .br/.gz)`);
     }
 
     logger.info(`  Blobs: ${filesDeployed} new, ${filesReused} reused`);
@@ -213,7 +207,7 @@ async function uploadRequiredBlobs(
 
 /**
  * Deploy build output via prepare → presign → PUT → commit.
- * CLI uploads original files only; compression and WebP run server-side at commit.
+ * CLI uploads original files only; compression runs server-side at commit.
  */
 export async function deploy(projectPath: string, pageId: string, domain?: string) {
     const buildPath = config.BUILD_DIRS
@@ -281,7 +275,7 @@ export async function deploy(projectPath: string, pageId: string, domain?: strin
     // 4. Presign + PUT originals only (within token TTL)
     await uploadRequiredBlobs(prep.uploadRequired, files, prep.deploymentToken);
 
-    // 5. Commit (server optimizes: Brotli/Gzip/WebP)
+    // 5. Commit (server optimizes: Brotli/Gzip)
     const commitSpinner = logger
         .spinner("Committing deployment (optimizing assets server-side)…")
         .start();

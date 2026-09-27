@@ -205,7 +205,7 @@ Upload each object to the presigned URL with the raw file body (object key: `blo
 ---
 
 ### `POST /api/deploy/commit`
-Refreshes the per-page deployment lock (same holder as the prepare token), load blobs, expand Brotli/Gzip/WebP variants, write `blob_tree_entries`, generate + persist the deployment manifest (MinIO `manifests/{deploymentId}.json` + Redis `manifest:{deploymentId}`, validated before activation), refuse activation if a newer deployment version already exists, activate deployment, set Redis `site:{site_id}:active` (1h safety TTL), `INCR site_version:{site_id}`, fire-and-forget GC, consume the token, and release the lock. The immutable `site:subdomain:{subdomain}` mapping is never touched by deploys. Request timeout: **5 minutes**.
+Refreshes the per-page deployment lock (same holder as the prepare token), loads blobs, expands Brotli/Gzip variants, writes `blob_tree_entries`, generates + persists the deployment manifest (MinIO `manifests/{deploymentId}.manifest.json` + Redis `manifest:{deploymentId}`, validated before activation), refuses activation if a newer deployment version already exists or if the page was deleted, activates the deployment, sets Redis `site:{site_id}:active` (1h safety TTL), `INCR site_version:{site_id}`, enqueues `deployment_gc`, consumes the token, and releases the lock. The immutable `site:subdomain:{subdomain}` mapping is never touched by deploys. Request timeout: **5 minutes**.
 
 No MinIO `tenant/` materialization — Caddy resolves subdomain → site_id → active deployment → manifest → `blobs/{hash}`.
 
@@ -240,20 +240,15 @@ No MinIO `tenant/` materialization — Caddy resolves subdomain → site_id → 
     "sizeReduced": 400000,
     "sizeReducedHuman": "390.63 KB",
     "sizeReducedPercent": 45.5,
-    "imagesOptimized": 1,
-    "imageOriginalSize": 500000,
-    "imageOptimizedSize": 120000,
-    "imageSizeReduced": 380000,
-    "imageSizeReducedHuman": "371.09 KB",
-    "imageSizeReducedPercent": 76.0,
-    "deployedFiles": 8,
-    "compressedVariants": 4,
-    "webpVariants": 1
+    "deployedFiles": 5,
+    "compressedVariants": 2
   }
 }
 ```
 
-Compression/WebP savings are computed at commit (after blobs are available). `sizeReduced` uses the best of Brotli/Gzip per text file; `imageSizeReduced` is original − WebP.
+Compression savings are computed at commit (after blobs are available). `sizeReduced` uses the best of Brotli/Gzip per text file; `sizeReducedPercent` is relative to the compressible files only, so a repo of already-compressed assets does not report a misleading 0%. `deployedFiles` counts every tree entry after variant expansion (originals + `.br`/`.gz`).
+
+The commit is **fully synchronous** — the deployment is live in PostgreSQL and Redis when the response returns. Cleanup of the superseded deployment is enqueued to the Cloudflare queue *after* activation and its result is deliberately ignored, so queue downtime cannot fail a committed deploy. The response has no `webpVariants`/`imageSizeReduced` fields: generated image variants were removed.
 
 **Response `409`:** concurrent deployment in progress, lock lost before activation, or this deploy is stale (a newer version was committed after prepare).
 
@@ -320,7 +315,7 @@ Roll back to a previous deployment using its `blob_tree_entries` (blob-direct; n
 3. Set `is_active = true` on target; deactivate others
 4. `setActiveDeploymentCache` (SET `site:{site_id}:active`, 1 h) + `cacheManifestInRedis` + `INCR site_version:{site_id}`
 5. The immutable `site:subdomain:{subdomain}` mapping is untouched by deploys/rollbacks
-6. Fire-and-forget `runDeploymentGC` (retention: 10 inactive)
+6. Enqueue `deployment_gc` to the Cloudflare cleanup queue (retention: 10 inactive; drained by `services/worker`)
 
 **Response `200`:**
 ```json

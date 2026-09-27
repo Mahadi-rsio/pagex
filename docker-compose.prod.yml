@@ -81,6 +81,55 @@ services:
     networks:
       - pagex
 
+  # ============================================================================
+  # Worker — background cleanup consumer (Cloudflare Queues, HTTP Pull)
+  # ============================================================================
+  # Consumes `deployment_gc` and `page_delete` only, so it is never in the
+  # deploy request path. A stopped worker delays cleanup; it cannot fail a
+  # deployment or a project deletion.
+  worker:
+    image: ghcr.io/mahadi-rsio/pagex/worker:${PAGEX_VERSION:-latest}
+    container_name: pagex-worker
+    environment:
+      # Cloudflare Queues (HTTP Pull)
+      - CF_ACCOUNT_ID=${CF_ACCOUNT_ID:?CF_ACCOUNT_ID is required}
+      - CF_QUEUE_ID=${CF_QUEUE_ID:?CF_QUEUE_ID is required}
+      - CF_QUEUE_DLQ_ID=${CF_QUEUE_DLQ_ID:-}
+      - CF_QUEUE_API_TOKEN=${CF_QUEUE_API_TOKEN:?CF_QUEUE_API_TOKEN is required}
+      - CF_QUEUE_NAME=${CF_QUEUE_NAME:-pagex-background}
+      - CF_QUEUE_DLQ_NAME=${CF_QUEUE_DLQ_NAME:-pagex-background-dlq}
+      - CF_QUEUE_MAX_RETRIES=${CF_QUEUE_MAX_RETRIES:-3}
+      - CF_QUEUE_RETENTION=${CF_QUEUE_RETENTION:-96h}
+      # Consumer tuning. These names are read by the worker as WORKER_*.
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-10}
+      - WORKER_BATCH_SIZE=${WORKER_BATCH_SIZE:-10}
+      - WORKER_VISIBILITY_TIMEOUT=${WORKER_VISIBILITY_TIMEOUT:-30s}
+      - WORKER_POLL_INTERVAL=${WORKER_POLL_INTERVAL:-2s}
+      - WORKER_MAX_ATTEMPTS=${WORKER_MAX_ATTEMPTS:-3}
+      - WORKER_REQUEST_TIMEOUT=${WORKER_REQUEST_TIMEOUT:-30s}
+      - WORKER_DATABASE_MAX_CONNS=${WORKER_DATABASE_MAX_CONNS:-10}
+      - WORKER_DELETE_BATCH_SIZE=${WORKER_DELETE_BATCH_SIZE:-100}
+      - WORKER_REDIS_CLEANUP=${WORKER_REDIS_CLEANUP:-true}
+      - DEPLOYMENT_RETENTION=${DEPLOYMENT_RETENTION:-10}
+      # Storage: Postgres (Neon) + MinIO/R2, shared with the console. These use
+      # the SAME variable names as the console so one .env drives every service.
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
+      - MINIO_ENDPOINT_URL=${MINIO_ENDPOINT_URL:?MINIO_ENDPOINT_URL is required}
+      - MINIO_BUCKET=${MINIO_BUCKET:?MINIO_BUCKET is required}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:?S3_SECRET_KEY is required}
+      - S3_REGION=${S3_REGION:-auto}
+      - MINIO_USE_PATH_STYLE=${MINIO_USE_PATH_STYLE:-true}
+      - BASE_DOMAIN=${BASE_DOMAIN:?BASE_DOMAIN is required}
+      # Redis cache invalidation is best-effort; unset disables it.
+      - UPSTASH_REDIS_REST_URL=${UPSTASH_REDIS_REST_URL:-}
+      - UPSTASH_REDIS_REST_TOKEN=${UPSTASH_REDIS_REST_TOKEN:-}
+      - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-px}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    restart: unless-stopped
+    networks:
+      - pagex
+
 volumes:
   caddy_logs:
   vector_data:

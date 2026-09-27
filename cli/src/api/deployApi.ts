@@ -100,16 +100,9 @@ export interface CommitSummary {
     sizeReduced: number;
     sizeReducedHuman: string;
     sizeReducedPercent: number;
-    imagesOptimized: number;
-    imageOriginalSize: number;
-    imageOptimizedSize: number;
-    imageSizeReduced: number;
-    imageSizeReducedHuman: string;
-    imageSizeReducedPercent: number;
-    /** Tree size including compression / WebP variants. */
+    /** Tree size including compression variants. */
     deployedFiles: number;
     compressedVariants: number;
-    webpVariants: number;
 }
 
 export interface DeploymentInfo {
@@ -136,7 +129,7 @@ export interface CommitResponse {
 
 /**
  * Finalize deployment after blobs are uploaded.
- * Server runs Brotli/Gzip/WebP optimization at this step.
+ * Server runs Brotli/Gzip optimization at this step.
  */
 export async function commitDeploy(deploymentToken: string): Promise<CommitResponse> {
     const response = await apiClient.post<CommitResponse>("/api/deploy/commit", {

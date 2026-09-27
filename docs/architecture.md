@@ -21,7 +21,8 @@ This document provides a comprehensive overview of the PageX platform architectu
 │ PostgreSQL · Redis · MinIO/S3                                                │
 │                                                                              │
 │ Vector reads Caddy logs and posts aggregates to the console ingest route.   │
-│ GC runs fire-and-forget after deploy/rollback; there are no build workers.  │
+│ GC is enqueued to a Cloudflare queue drained by the Go worker.          │
+│ There are no build workers; deploys are fully synchronous.               │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -496,7 +497,7 @@ Client Request
 
 **Implementation:**
 - **Text files:** Create `.br` (Brotli) and `.gz` (Gzip) variants
-- **Images:** Create `.webp` variants for PNG/JPEG/GIF
+- **Images:** No generated variants. A `.webp` the build output already contains is stored as-is and served if present in the manifest
 - **Serving:** Select best variant based on Accept-Encoding header
 - **Storage:** Store variants as separate blobs with content-encoded hashes
 
@@ -519,13 +520,16 @@ Client Request
 
 ### Background Processing
 
-**Decision (superseded):** Use BullMQ for background job processing — **removed.**
-BullMQ and the cloud-build worker/DLQ have been deleted; CLI deploy
+**Decision:** Deploys are fully synchronous. The only async boundary is the
+Cloudflare Queue `pagex-background`, drained by the Go worker in
+`services/worker`, carrying cleanup only (`deployment_gc`, `page_delete`).
+BullMQ and the cloud-build worker/DLQ remain deleted; CLI deploy
 (`/api/deploy/prepare|presign|commit`) is the only deploy path.
+See `services/console/docs/queue.md`.
 
 **Implementation:**
 - **Analytics / usage:** Vector aggregates Caddy access logs per site and hour and posts them to the console ingest endpoint; the native API applies them to `site_daily_stats`, `service_metrics_hourly`, and `bandwidth_usage_hourly` with idempotent dedup (no queue).
-- **GC:** Runs fire-and-forget after deploy/rollback, in-process
+- **GC:** Enqueued to `pagex-background` after deploy/rollback and drained by the Go worker. A queue outage delays cleanup but cannot fail the committed deploy
 
 ### Deployment Safety (Production Hardening)
 
@@ -625,8 +629,8 @@ pending
 | CSS | 100% | 40-60% | 40-60% |
 | JavaScript | 100% | 50-70% | 30-50% |
 | JSON | 100% | 50-70% | 30-50% |
-| PNG | 100% | 60-80% (WebP) | 20-40% |
-| JPEG | 100% | 50-70% (WebP) | 30-50% |
+| PNG | 100% | 100% (no generated variant) | 0% |
+| JPEG | 100% | 100% (no generated variant) | 0% |
 
 ## 🔒 Security Considerations
 

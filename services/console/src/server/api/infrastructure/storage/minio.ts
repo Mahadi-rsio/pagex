@@ -209,7 +209,7 @@ export async function deleteManifestObjects(
 
 /**
  * Build MinIO putObject metadata for a blob object.
- * Compressed variants carry Content-Encoding; WebP gets image/webp.
+ * Compressed variants carry Content-Encoding.
  */
 export function objectMetaForPath(
     filePath: string,

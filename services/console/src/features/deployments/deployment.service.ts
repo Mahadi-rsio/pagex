@@ -12,7 +12,7 @@ import {
     incrementSiteVersion,
     setActiveDeploymentCache,
 } from "./manifest.service";
-import { runDeploymentGC } from "./gc.service";
+import { enqueueDeploymentGC } from "@/features/background/jobs";
 import {
     DEPLOY_LOCK_COMMIT_TTL_SECONDS,
     pageDeploymentLock,
@@ -129,10 +129,13 @@ export async function rollbackToDeployment(
             await cacheManifestInRedis(activatedDeployment.id, manifest);
             await incrementSiteVersion(dep.site_id);
 
-            // fire and forget — never await
-            runDeploymentGC(dep.page_id, dep.site_id).catch((err) =>
-                console.error("GC failed silently", err),
-            );
+            // Background cleanup only — enqueued after activation and never
+            // allowed to fail an already-committed rollback.
+            await enqueueDeploymentGC({
+                pageId: dep.page_id,
+                siteId: dep.site_id,
+                deploymentId: activatedDeployment.id,
+            });
 
             return activatedDeployment;
         },

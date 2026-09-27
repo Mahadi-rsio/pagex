@@ -56,7 +56,7 @@ PageX combines a Next.js control panel and native management API (hosted on Verc
 
 1. Caddy extracts the subdomain from the `Host` header → resolves `site_id`
 2. Path → blob hash via the active deployment's manifest (MinIO `manifests/{deploymentID}.json`, cached in PostgreSQL LRU)
-3. File streamed from MinIO `blobs/{sha256}` with correct `Content-Type`, precompressed `.br`/`.gz`/`.webp` variant negotiation, and range support
+3. File streamed from MinIO `blobs/{sha256}` with correct `Content-Type`, precompressed `.br`/`.gz` variant negotiation, and range support (a `.webp` present in the build output is served if it is in the manifest; none is generated)
 4. Atomic activation: a deploy/rollback flips `is_active` in one DB transaction, then bumps the Redis site version to invalidate Caddy's L1 cache
 
 ### Metrics & usage pipeline

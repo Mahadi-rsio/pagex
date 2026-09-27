@@ -14,6 +14,8 @@ The console (Next.js UI + native API) is **not** a Compose service — it is dep
 **Not in Compose:** Neon Postgres, Upstash Redis, and MinIO/S3 are all external.
 **Removed:** the cloud-build stack (BullMQ workers and the Docker build environment). Deploys go through the CLI path only (`/api/deploy/prepare|presign|commit`).
 
+**Added:** a `worker` service — the Go cleanup consumer in `services/worker`. It pulls from the Cloudflare Queue `pagex-background` (HTTP Pull API) and performs `deployment_gc` / `page_delete`. It carries no deploy traffic, so stopping it only delays storage reclamation. Provision the queue once with `docker compose run --rm worker provision`.
+
 Postgres is **Neon** and Redis is **Upstash** — neither runs in Compose. The console reaches Neon with a single `DATABASE_URL` and talks to Upstash over REST using `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`. Upstash exposes one logical database, so cache keys, deploy tokens, and page deploy locks share a namespaced key space instead of separate DB numbers.
 
 Migrations and bucket provisioning run from `src/instrumentation.ts`. On Vercel this is skipped on serverless cold starts unless `RUN_STARTUP_TASKS=1` is set for that deploy.

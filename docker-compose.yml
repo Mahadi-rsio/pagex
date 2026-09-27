@@ -76,6 +76,62 @@ services:
     networks:
       - pagex
 
+  # ============================================================================
+  # Worker — background cleanup consumer (Cloudflare Queues, HTTP Pull)
+  # ============================================================================
+  # Consumes `deployment_gc` and `page_delete` only. Deployments stay
+  # synchronous, so this service is never in the request path: if it is down,
+  # cleanup is merely delayed.
+  #
+  # First run: provision the queue/DLQ/consumer once, then set CF_QUEUE_ID and
+  # CF_QUEUE_DLQ_ID in .env.
+  #   docker compose run --rm worker provision
+  worker:
+    container_name: pagex-worker
+    build:
+      context: ./services/worker
+      dockerfile: Dockerfile
+    environment:
+      # Cloudflare Queues (HTTP Pull)
+      - CF_ACCOUNT_ID=${CF_ACCOUNT_ID:-}
+      - CF_QUEUE_ID=${CF_QUEUE_ID:-}
+      - CF_QUEUE_DLQ_ID=${CF_QUEUE_DLQ_ID:-}
+      - CF_QUEUE_API_TOKEN=${CF_QUEUE_API_TOKEN:-}
+      - CF_QUEUE_NAME=${CF_QUEUE_NAME:-pagex-background}
+      - CF_QUEUE_DLQ_NAME=${CF_QUEUE_DLQ_NAME:-pagex-background-dlq}
+      - CF_QUEUE_MAX_RETRIES=${CF_QUEUE_MAX_RETRIES:-3}
+      - CF_QUEUE_RETENTION=${CF_QUEUE_RETENTION:-96h}
+      # Consumer tuning. These names are read by the worker as WORKER_*.
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-10}
+      - WORKER_BATCH_SIZE=${WORKER_BATCH_SIZE:-10}
+      - WORKER_VISIBILITY_TIMEOUT=${WORKER_VISIBILITY_TIMEOUT:-30s}
+      - WORKER_POLL_INTERVAL=${WORKER_POLL_INTERVAL:-2s}
+      - WORKER_MAX_ATTEMPTS=${WORKER_MAX_ATTEMPTS:-3}
+      - WORKER_REQUEST_TIMEOUT=${WORKER_REQUEST_TIMEOUT:-30s}
+      - WORKER_DATABASE_MAX_CONNS=${WORKER_DATABASE_MAX_CONNS:-10}
+      - WORKER_DELETE_BATCH_SIZE=${WORKER_DELETE_BATCH_SIZE:-100}
+      - WORKER_REDIS_CLEANUP=${WORKER_REDIS_CLEANUP:-true}
+      - DEPLOYMENT_RETENTION=${DEPLOYMENT_RETENTION:-10}
+      # Storage: Postgres (Neon) + MinIO/R2, shared with the console.
+      # These deliberately use the SAME variable names as the console so the
+      # worker and blob-server read one set of values from .env.
+      - DATABASE_URL=${DATABASE_URL:-}
+      - MINIO_ENDPOINT_URL=${MINIO_ENDPOINT_URL:-}
+      - MINIO_BUCKET=${MINIO_BUCKET:-sites}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-}
+      - S3_REGION=${S3_REGION:-auto}
+      - MINIO_USE_PATH_STYLE=${MINIO_USE_PATH_STYLE:-true}
+      - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
+      # Redis cache invalidation is best-effort; unset disables it.
+      - UPSTASH_REDIS_REST_URL=${UPSTASH_REDIS_REST_URL:-}
+      - UPSTASH_REDIS_REST_TOKEN=${UPSTASH_REDIS_REST_TOKEN:-}
+      - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-px}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    restart: unless-stopped
+    networks:
+      - pagex
+
 volumes:
   caddy_logs:
   vector_data:

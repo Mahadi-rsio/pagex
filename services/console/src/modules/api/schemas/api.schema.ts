@@ -85,6 +85,17 @@ export const siteDailyStats = pgTable(
 /**
  * `pages` — tenant project metadata.
  * `site_id` references sites(id); live files live at tenant/{site_id}/ in MinIO.
+ *
+ * `deleted_at` implements a two-phase project deletion:
+ *   1. `DELETE /api/pages/[id]` soft-deletes the row, deactivates the site and
+ *      fences the deploy lock, then enqueues a `page_delete` job.
+ *   2. The Go worker (services/worker) purges deployments, blob references,
+ *      manifests and MinIO objects for the site and hard-deletes this row.
+ *
+ * The soft delete exists because `deployments.page_id` is ON DELETE CASCADE:
+ * without it the console's delete would destroy the very rows the worker needs
+ * in order to find the objects to remove. Every API read path filters on
+ * `deleted_at IS NULL`, so a soft-deleted project is already invisible.
  */
 export const pages = pgTable(
     "pages",
@@ -114,6 +125,9 @@ export const pages = pgTable(
             .default(2147483648),
 
         createdAt: timestamp("createdAt").defaultNow().notNull(),
+
+        /** Set by the soft delete; NULL while the project exists. */
+        deletedAt: timestamp("deleted_at", { withTimezone: true }),
     },
     (t) => ({
         // Index for tenant-scoped page listing
@@ -125,6 +139,8 @@ export const pages = pgTable(
             t.project_name,
             t.tenant_id,
         ),
+        // Index for the worker's purge sweep by site
+        siteIdx: index("idx_pages_site").on(t.site_id),
     }),
 );
 

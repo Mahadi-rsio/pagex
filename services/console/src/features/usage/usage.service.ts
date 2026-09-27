@@ -19,6 +19,7 @@ import {
     type MetricsResponse,
     type MetricsWindow,
 } from "@/server/api/utils/metrics";
+import { withLivePage } from "@/server/api/utils/page-visibility";
 
 /**
  * Usage / metrics read model.
@@ -55,7 +56,12 @@ async function findPageBySite(
     const [page] = await db
         .select(pageSelection)
         .from(pages)
-        .where(and(eq(pages.site_id, siteId), eq(pages.tenant_id, tenantId)))
+        .where(
+            withLivePage(
+                eq(pages.site_id, siteId),
+                eq(pages.tenant_id, tenantId),
+            ),
+        )
         .limit(1);
     return page ?? null;
 }
@@ -67,7 +73,9 @@ async function findPageById(
     const [page] = await db
         .select(pageSelection)
         .from(pages)
-        .where(and(eq(pages.id, pageId), eq(pages.tenant_id, tenantId)))
+        .where(
+            withLivePage(eq(pages.id, pageId), eq(pages.tenant_id, tenantId)),
+        )
         .limit(1);
     return page ?? null;
 }
@@ -76,7 +84,7 @@ async function listTenantPages(tenantId: string): Promise<TenantPage[]> {
     return db
         .select(pageSelection)
         .from(pages)
-        .where(eq(pages.tenant_id, tenantId));
+        .where(withLivePage(eq(pages.tenant_id, tenantId)));
 }
 
 /** Account plan is the strongest plan across the tenant's sites. */

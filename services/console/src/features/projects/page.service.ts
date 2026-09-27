@@ -11,10 +11,26 @@ import { and, eq, sql } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import { routingWriter } from "@/server/api/infrastructure/cache/routing";
-import { TOP_LEVEL_DOMAIN } from "@/server/api/constants/index";
+import {
+    DEPLOY_LOCK_PREPARE_TTL_SECONDS,
+    TOP_LEVEL_DOMAIN,
+} from "@/server/api/constants/index";
 import { clearSiteFilesMap } from "@/features/deployments/deploy.service";
 import { clearDeploymentRuntimeCache } from "@/features/deployments/manifest.service";
+import { pageDeploymentLock } from "@/features/deployments/deployment-lock.service";
+import { enqueuePageDelete } from "@/features/background/jobs";
+import { withLivePage } from "@/server/api/utils/page-visibility";
 import type { CreatePageInput } from "./page.validator";
+
+/**
+ * Sentinel lock holder written by `deletePage`. It is intentionally unguessable
+ * in the sense that no real deploy path can ever produce this exact string —
+ * deploy holders are always `{prepare-token}`, `build:{buildId}`,
+ * `commit:{uuid}` or `rollback:{deploymentId}` — so an in-flight deploy can
+ * never release this fence, and `assertHeld` fails for it. The lock then lapses
+ * with its TTL, by which point the `pages` row is long gone.
+ */
+const PAGE_DELETED_LOCK_HOLDER = "page:deleted:fence";
 
 export async function createPage(
     data: CreatePageInput,
@@ -243,7 +259,7 @@ export async function getPageUsage(domain: string) {
             bandwidth_limit: pages.bandwidth_limit,
         })
         .from(pages)
-        .where(eq(pages.domain, domain))
+        .where(withLivePage(eq(pages.domain, domain)))
         .limit(1);
 
     if (!page) return null;
@@ -362,7 +378,7 @@ export async function getListPages(tenantId: string) {
     const result = await db
         .select()
         .from(pages)
-        .where(eq(pages.tenant_id, tenantId));
+        .where(withLivePage(eq(pages.tenant_id, tenantId)));
     return result;
 }
 
@@ -375,7 +391,7 @@ export async function deletePage(pageId: string, tenantId: string) {
     const existing = await db
         .select()
         .from(pages)
-        .where(eq(pages.id, pageId))
+        .where(withLivePage(eq(pages.id, pageId)))
         .limit(1);
 
     if (!existing.length) return { error: "Page not found" };
@@ -383,15 +399,40 @@ export async function deletePage(pageId: string, tenantId: string) {
 
     const page = existing[0]!;
 
-    // 1. Delete pages row (cascades deployments / blob_tree_entries / builds)
-    await db.delete(pages).where(eq(pages.id, pageId));
+    // 1. Make the project unusable before anything else, so a new deployment
+    //    cannot go live behind the delete:
+    //      - the soft delete removes it from every API read path
+    //        (`withLivePage`), so prepare/presign/commit all 404.
+    //      - `sites.active = false` makes the blob-server's routing lookups miss.
+    //      - the deploy lock is taken under a sentinel holder that no deploy
+    //        path can produce, so an already-in-flight commit fails its
+    //        `assertHeld` check and refuses to activate.
+    //
+    //    The row itself survives because `deployments.page_id` is ON DELETE
+    //    CASCADE: the background `page_delete` job needs those deployments to
+    //    find the manifests and blob objects to remove.
+    await db
+        .update(pages)
+        .set({ deletedAt: new Date() })
+        .where(eq(pages.id, pageId));
 
-    // 2. Deactivate the site in the `sites` table and invalidate Redis caches
-    //    so the caddy plugin immediately stops routing this subdomain.
     await db
         .update(sites)
         .set({ active: false })
         .where(eq(sites.id, page.site_id));
+
+    await pageDeploymentLock
+        .acquire(
+            pageId,
+            PAGE_DELETED_LOCK_HOLDER,
+            DEPLOY_LOCK_PREPARE_TTL_SECONDS,
+        )
+        .catch((err) => {
+            console.error(
+                `[page-delete] could not fence deployments for page ${pageId}`,
+                err,
+            );
+        });
 
     const [site] = await db
         .select({ subdomain: sites.subdomain })
@@ -399,16 +440,15 @@ export async function deletePage(pageId: string, tenantId: string) {
         .where(eq(sites.id, page.site_id))
         .limit(1);
 
-    // Remove the immutable subdomain → site_id mapping now that the project is
-    // permanently gone. Deployments/rollbacks never touch this key.
+    // Stop routing traffic and drop the cached runtime state. Both are
+    // best-effort: the PostgreSQL writes above have already committed and the
+    // blob-server repairs a missing Redis key from Postgres on the next miss.
     await routingWriter.deleteSubdomainMapping(
         site?.subdomain ?? page.project_name,
     );
     await clearSiteFilesMap(page.site_id);
     await clearDeploymentRuntimeCache(page.site_id);
 
-    // Remaining Redis cleanup is best-effort: the PostgreSQL deletion above has
-    // already committed, so a Redis outage must not fail the request.
     try {
         await redis.del(redisKey(`site_version:${page.site_id}`));
         await redis.del(redisKey(`db_cache:${page.domain}`));
@@ -421,9 +461,25 @@ export async function deletePage(pageId: string, tenantId: string) {
         );
     }
 
+    // 2. Enqueue the asynchronous purge. The project is already invisible and
+    //    unservable at this point, so a failed enqueue can only leak storage
+    //    until a manual purge — it can never resurrect the project or put it
+    //    back in front of traffic. The worker is idempotent, so a retried or
+    //    duplicated delivery is safe.
+    const enqueued = await enqueuePageDelete({
+        pageId,
+        siteId: page.site_id,
+    });
+    if (!enqueued) {
+        console.error(
+            `[page-delete] could not enqueue purge for page ${pageId} (site ${page.site_id}); ` +
+                "deployments, MinIO objects and manifests are orphaned until a manual purge",
+        );
+    }
+
     console.log(
-        `🗑️  Deleted project "${page.project_name}" (site_id: ${page.site_id})`,
+        `🗑️  Deleted project "${page.project_name}" (site_id: ${page.site_id}); purge ${enqueued ? "enqueued" : "NOT enqueued"}`,
     );
 
-    return { success: true };
+    return { success: true, purgeEnqueued: enqueued };
 }

@@ -1,0 +1,10 @@
+# Only the Go sources are needed to build the worker.
+.git
+.gitignore
+Dockerfile
+.dockerignore
+README.md
+*.md
+**/*_test.go
+.env
+.env.*

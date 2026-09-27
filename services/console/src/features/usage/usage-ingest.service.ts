@@ -75,6 +75,10 @@ function utcDateKey(date: Date): string {
 }
 
 async function resolveTenantId(siteId: string, tx: Tx): Promise<string | null> {
+    // Deliberately NOT filtered on `pages.deleted_at`: a project that was just
+    // deleted can still have access-log records in flight, and they must be
+    // attributed to the right tenant until the background purge removes the
+    // site's usage rows.
     const [page] = await tx
         .select({ tenantId: pages.tenant_id })
         .from(pages)

@@ -104,7 +104,7 @@ It is deployment/build-time metadata used to construct manifests.
 - [x] Direct blob lookup by hash
 - [x] Brotli variants
 - [x] Gzip variants
-- [x] WebP variants
+- [x] WebP variants — generation **removed**; a user-supplied `.webp` is still served
 
 ## Redis
 

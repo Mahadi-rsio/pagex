@@ -83,9 +83,20 @@ After editing either schema, run `pnpm db:generate` and then `pnpm db:migrate`. 
 
 ---
 
-## No Job Queues
+## Queue Scope: Cleanup Only
 
-BullMQ and background build workers were removed. Deploys are synchronous through `/api/deploy/prepare`, `/api/deploy/presign`, and `/api/deploy/commit`; do not introduce queue/worker infrastructure.
+Deploys are synchronous through `/api/deploy/prepare`, `/api/deploy/presign`, and `/api/deploy/commit`. **Never** move the commit behind an async boundary, and do not reintroduce BullMQ or a Redis job queue.
+
+The one async boundary in the codebase is the Cloudflare Queue `pagex-background`, drained by the Go worker in `services/worker`. It carries **only** cleanup:
+
+- `deployment_gc` — prune superseded deployments and orphaned blobs.
+- `page_delete` — reclaim objects and rows for a soft-deleted project.
+
+When adding a job type, update the contract in **both** `src/server/api/queues/background-job.ts` and `services/worker/internal/jobs/jobs.go`; a mismatch fails silently in production. Handlers must be idempotent (delivery is at-least-once), and a body that fails to parse must be ACKed rather than retried.
+
+Producers must never let a queue failure fail the request: use `enqueueBackgroundJob`, which swallows errors, and enqueue only **after** the PostgreSQL write has committed.
+
+See `services/console/docs/queue.md` for the full design.
 
 ---
 
@@ -141,7 +152,7 @@ Never hardcode bucket names or copy live objects into `tenant/{siteId}/`.
 
 - Do not import from `dist/` or `.next/`; import source modules.
 - Do not put database, Redis, or MinIO logic in route handlers.
-- Do not await `runDeploymentGC(...)` during commit or rollback.
+- Cleanup goes through the queue (`enqueueDeploymentGC` / `enqueuePageDelete`), not in-process. Enqueue only after the PostgreSQL write commits.
 - Do not delete MinIO blobs except through GC after cross-checking references.
 - Do not run simultaneous deployments for one page; use `deploy:lock:{pageId}`.
 - Do not edit applied migrations.
