@@ -1,7 +1,9 @@
-import type { OpenNextConfig } from "@opennextjs/aws/types/open-next.js";
+import type { OpenNextConfig } from "@opennextjs/cloudflare/types/open-next.js";
 
 const config = {
-    default: {},
+    default: {
+        minify: true,
+    },
 } satisfies OpenNextConfig;
 
 export default config;

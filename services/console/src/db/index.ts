@@ -1,85 +1,58 @@
-import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { Pool } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-serverless";
 import * as schema from "./schema";
 
-type Database = PostgresJsDatabase<typeof schema>;
-
 const globalForDb = globalThis as unknown as {
-    client?: postgres.Sql;
+    pool?: Pool;
 };
 
-function createClient(): postgres.Sql {
+function createPool(): Pool {
     const url = process.env.DATABASE_URL;
     if (!url) {
         throw new Error("DATABASE_URL environment variable is required");
     }
 
-    const client = postgres(url, {
-        // Neon exposes a PgBouncer-compatible pooled endpoint, which does not
-        // support prepared statements. `DATABASE_URL` should point at that
-        // pooled host; run migrations against Neon's direct (unpooled) endpoint
-        // by overriding DATABASE_URL for that single `pnpm db:migrate` run if
-        // the pooled endpoint ever blocks on the DDL lock.
-        prepare: false,
-        // Serverless functions are short-lived, so keep the pool small and
-        // recycle idle connections rather than holding them open.
+    const pool = new Pool({
+        connectionString: url,
         max: Number(process.env.DATABASE_POOL_MAX ?? 5),
-        idle_timeout: 20,
-        connect_timeout: 10,
     });
 
     if (process.env.NODE_ENV !== "production") {
-        globalForDb.client = client;
+        globalForDb.pool = pool;
     }
 
-    return client;
+    return pool;
+}
+
+export function getPool(): Pool {
+    return (globalForDb.pool ??= createPool());
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: Drizzle inferred type is too complex to write out here
+let database: any;
+
+function getDatabase() {
+    return (database ??= drizzle(getPool(), { schema }));
 }
 
 /**
- * Connection is created on first use rather than at import time so that module
- * evaluation stays side-effect free. `next build` imports this module while
- * collecting page data, where no database is reachable.
+ * Lazily-initialised Neon pool client.
  */
-function getClient(): postgres.Sql {
-    return (globalForDb.client ??= createClient());
-}
-
-/**
- * Lazily-initialised postgres-js client, also used as a tagged template.
- *
- * A Proxy over a non-callable target cannot be invoked, so the target here is a
- * callable function (the `apply` trap forwards to the real client). Property
- * access (`dbClient.foo`) is forwarded through the `get` trap. This keeps the
- * connection lazy while preserving both usage patterns.
- */
-export const dbClient = new Proxy(
-    function dbClientPlaceholder() {
-        throw new Error("dbClient must be accessed via a property or tag");
-    } as unknown as postgres.Sql,
-    {
-        get(_target, prop) {
-            const client = getClient() as unknown as Record<
-                string | symbol,
-                unknown
-            >;
-            const value = client[prop];
-            return typeof value === "function" ? value.bind(client) : value;
-        },
-        apply(_target, thisArg, argArray) {
-            const client = getClient() as unknown as (
-                ...args: unknown[]
-            ) => unknown;
-            return Reflect.apply(client, thisArg, argArray);
-        },
+export const dbClient = new Proxy({} as Pool, {
+    get(_target, prop) {
+        const pool = getPool();
+        const value = (pool as unknown as Record<string | symbol, unknown>)[
+            prop
+        ];
+        return typeof value === "function" ? value.bind(pool) : value;
     },
-);
-
-let database: Database | null = null;
+});
 
 /** Lazily-initialised Drizzle query builder bound to the shared schema. */
-export const db: Database = new Proxy({} as Database, {
+// biome-ignore lint/suspicious/noExplicitAny: Proxy target
+export const db: any = new Proxy({} as any, {
     get(_target, prop) {
-        database ??= drizzle(getClient(), { schema });
+        const database = getDatabase();
         const value = (database as unknown as Record<string | symbol, unknown>)[
             prop
         ];
@@ -92,7 +65,12 @@ export async function getDb() {
 }
 
 export async function checkDatabaseConnection() {
-    await getClient()`SELECT 1`;
+    const client = await getPool().connect();
+    try {
+        await client.query("SELECT 1");
+    } finally {
+        client.release();
+    }
 }
 
 export * from "./schema";
