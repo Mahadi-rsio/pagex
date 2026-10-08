@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
 
 export const metadata = {
     title: "Terms of Service — Cloudisy Console",

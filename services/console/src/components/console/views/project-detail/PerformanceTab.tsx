@@ -1,28 +1,28 @@
 "use client";
 
+import { Gauge } from "lucide-react";
+import {
+    Area,
+    AreaChart,
+    Bar,
+    BarChart,
+    CartesianGrid,
+    Legend,
+    Line,
+    LineChart,
+    ResponsiveContainer,
+    Tooltip,
+    XAxis,
+    YAxis,
+} from "recharts";
+import { Badge } from "@/components/ui/badge";
 import {
     Card,
     CardContent,
+    CardDescription,
     CardHeader,
     CardTitle,
-    CardDescription,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Gauge } from "lucide-react";
-import {
-    ResponsiveContainer,
-    LineChart,
-    Line,
-    AreaChart,
-    Area,
-    BarChart,
-    Bar,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    Legend,
-} from "recharts";
 
 // Mock data — replace with real RUM / edge metrics when available
 const ttfbTimeline = Array.from({ length: 24 }, (_, i) => ({

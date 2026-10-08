@@ -6,8 +6,9 @@
  * Redis); only cleanup work is deferred, and the consumer is the Go worker in
  * `services/worker`.
  *
- * Producers are the console's native API route handlers; they enqueue over the
- * Cloudflare Queues HTTP API (no Worker binding, no BullMQ/Redis queue).
+ * Producers are the console's feature services; they enqueue through the
+ * native Worker binding `BACKGROUND_QUEUE` declared in `wrangler.jsonc` — no
+ * HTTP publishing, no BullMQ/Redis queue.
  * The consumer must tolerate duplicate and retried deliveries, so every handler
  * here is written to be idempotent.
  */

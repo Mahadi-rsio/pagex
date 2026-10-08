@@ -1,13 +1,8 @@
 // auth-config.ts — CLI generate only; not used at runtime
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import {
-    bearer,
-    jwt,
-    deviceAuthorization,
-    openAPI,
-} from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
+import { bearer, deviceAuthorization, jwt, openAPI } from "better-auth/plugins";
 import * as schema from "@/modules/auth/schemas/auth.schema";
 
 // CLI placeholder values for schema generation

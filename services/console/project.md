@@ -19,7 +19,7 @@ PageX's console is a Next.js 16 monolith with PostgreSQL (Neon via Hyperdrive), 
 
 ```text
 services/console/
-├── wrangler.jsonc             # Worker bindings (BLOBS, HYPERDRIVE)
+├── wrangler.jsonc             # Worker bindings (BLOBS, HYPERDRIVE, BACKGROUND_QUEUE)
 ├── open-next.config.ts        # OpenNext Cloudflare adapter
 ├── drizzle.config.ts          # Auth migration config
 ├── drizzle.api.config.ts      # API migration config

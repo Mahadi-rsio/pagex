@@ -1,16 +1,16 @@
 "use client";
 
-import { useAppStore } from "@/store/useAppStore";
+import { Plus, Wallet } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
+    CardDescription,
     CardHeader,
     CardTitle,
-    CardDescription,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Wallet, Plus } from "lucide-react";
-import { toast } from "sonner";
+import { useAppStore } from "@/store/useAppStore";
 
 export function BillingView() {
     const { balance } = useAppStore();

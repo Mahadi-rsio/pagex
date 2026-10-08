@@ -7,12 +7,12 @@
 import "dotenv/config";
 import { eq, isNull } from "drizzle-orm";
 import { db } from "../src/db/index";
-import { deployments } from "../src/modules/api/schemas/api.schema";
 import {
     cacheManifestInRedis,
     generateAndPersistManifest,
     setActiveDeploymentCache,
 } from "../src/features/deployments/manifest.service";
+import { deployments } from "../src/modules/api/schemas/api.schema";
 
 async function main(): Promise<void> {
     const rows = await db

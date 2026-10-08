@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
+import {
+    DEPLOYMENT_MANIFEST_VERSION,
+    MANIFEST_REDIS_TTL_SECONDS,
+} from "@/server/api/constants/index";
 import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import {
     activeDeploymentMappingKey,
@@ -17,15 +21,11 @@ import {
 } from "@/server/api/infrastructure/storage/r2";
 import { HttpError } from "@/server/api/utils/http-error";
 import {
-    DEPLOYMENT_MANIFEST_VERSION,
-    MANIFEST_REDIS_TTL_SECONDS,
-} from "@/server/api/constants/index";
-import {
+    type DeploymentManifest,
     normalizeBlobHashForStorage,
     normalizeManifestPath,
     serializeManifest,
     validateDeploymentManifest,
-    type DeploymentManifest,
 } from "@/server/api/utils/manifest-validation";
 
 export type { DeploymentManifest };

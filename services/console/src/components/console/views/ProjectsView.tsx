@@ -1,23 +1,23 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useAppStore } from "@/store/useAppStore";
-import { formatRelativeTime } from "@/lib/utils";
-import { navigateToProjectOverview } from "@/lib/navigate";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
-    Plus,
-    FolderKanban,
-    CheckCircle2,
     AlertCircle,
-    Loader2,
+    CheckCircle2,
     Clock,
-    GitBranch,
     ExternalLink,
+    FolderKanban,
+    GitBranch,
     Globe,
+    Loader2,
+    Plus,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { navigateToProjectOverview } from "@/lib/navigate";
+import { formatRelativeTime } from "@/lib/utils";
+import { useAppStore } from "@/store/useAppStore";
 
 const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg

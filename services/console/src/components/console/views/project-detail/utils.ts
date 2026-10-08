@@ -1,8 +1,8 @@
 "use client";
 
+import { AlertCircle, CheckCircle2, Clock, Loader2 } from "lucide-react";
 import type { TreeViewElement } from "@/components/ui/file-tree";
 import type { ApiBuild } from "@/lib/api-client";
-import { CheckCircle2, AlertCircle, Loader2, Clock } from "lucide-react";
 
 export const buildStatusConfig: Record<
     ApiBuild["status"],

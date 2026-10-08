@@ -1,16 +1,16 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
     Card,
     CardContent,
+    CardDescription,
     CardHeader,
     CardTitle,
-    CardDescription,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
 
 type ProjectNameStepProps = {
     projectName: string;

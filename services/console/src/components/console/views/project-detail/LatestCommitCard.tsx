@@ -1,14 +1,14 @@
 "use client";
 
+import { GitCommitHorizontal } from "lucide-react";
 import {
     Card,
     CardContent,
+    CardDescription,
     CardHeader,
     CardTitle,
-    CardDescription,
 } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { GitCommitHorizontal } from "lucide-react";
 import { formatRelativeTime } from "@/lib/utils";
 import type { LatestCommitInfo } from "./utils";
 

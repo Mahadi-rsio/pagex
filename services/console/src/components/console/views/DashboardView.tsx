@@ -1,29 +1,29 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAppStore } from "@/store/useAppStore";
-import { formatRelativeTime } from "@/lib/utils";
-import { navigateToProjectOverview } from "@/lib/navigate";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import {
-    FolderKanban,
     Activity,
-    Wallet,
-    TrendingUp,
-    Plus,
-    ArrowRight,
-    GitBranch,
-    CheckCircle2,
     AlertCircle,
-    Loader2,
+    ArrowRight,
+    CheckCircle2,
     Clock,
+    FolderKanban,
+    GitBranch,
     HardDrive,
+    Loader2,
+    Plus,
+    TrendingUp,
+    Wallet,
     Zap,
 } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { navigateToProjectOverview } from "@/lib/navigate";
+import { formatRelativeTime } from "@/lib/utils";
+import { useAppStore } from "@/store/useAppStore";
 
 const statusConfig = {
     active: {

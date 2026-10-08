@@ -2,8 +2,8 @@ import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
 import { DEPLOYMENT_RETENTION } from "@/server/api/constants/index";
 import { db } from "@/server/api/infrastructure/db/db";
 import {
-    blobTreeEntries,
     blobs,
+    blobTreeEntries,
     deployments,
 } from "@/server/api/infrastructure/db/schema";
 import {

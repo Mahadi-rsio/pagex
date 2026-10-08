@@ -802,7 +802,7 @@ function parseSseStream(
                         return;
                     }
                     buffer += decoder.decode(value, { stream: true });
-                    let boundary = buffer.lastIndexOf("\n\n");
+                    const boundary = buffer.lastIndexOf("\n\n");
                     if (boundary === -1) continue;
                     const chunk = buffer.slice(0, boundary);
                     buffer = buffer.slice(boundary);

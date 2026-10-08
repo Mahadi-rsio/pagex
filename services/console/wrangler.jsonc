@@ -19,16 +19,25 @@
 	],
 	"r2_buckets": [
 		{
+			"bucket_name": "pagex-blobs-dev",
 			"binding": "BLOBS",
-			"bucket_name": "pagex-blobs-dev"
+			"remote": true
 		}
 	],
 	"hyperdrive": [
 		{
 			"binding": "HYPERDRIVE",
-			"id": "5719588386e44575bcf12822e3838253"
+			"id": "0ac41863f821462ba90a1bb5d9ad81d3"
 		}
 	],
+	"queues": {
+		"producers": [
+			{
+				"binding": "BACKGROUND_QUEUE",
+				"queue": "pagex-background"
+			}
+		]
+	},
 	"images": {
 		"binding": "IMAGES"
 	}

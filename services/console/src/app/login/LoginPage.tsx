@@ -1,17 +1,17 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
 import { AnimatedGridPattern } from "@/components/ui/animated-grid-pattern";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/modules/auth/utils/auth-client";
+import { EmailAuthSection } from "./components/EmailAuthSection";
 import { getCallbackUrl } from "./components/getCallbackUrl";
+import { LoginFooter } from "./components/LoginFooter";
 import { LoginHeader } from "./components/LoginHeader";
 import { LoginHeroCard } from "./components/LoginHeroCard";
-import { LoginFooter } from "./components/LoginFooter";
 import { SocialAuthButtons } from "./components/SocialAuthButtons";
-import { EmailAuthSection } from "./components/EmailAuthSection";
 
 export function LoginPage() {
     const router = useRouter();

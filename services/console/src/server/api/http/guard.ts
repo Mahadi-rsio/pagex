@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateRequest, type AuthContext } from "./auth";
+import { type AuthContext, authenticateRequest } from "./auth";
 import { checkPublicRateLimit, withRateLimitHeaders } from "./rate-limit";
 
 /**

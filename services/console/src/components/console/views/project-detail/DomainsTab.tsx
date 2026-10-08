@@ -1,17 +1,24 @@
 "use client";
 
+import {
+    CheckCircle2,
+    Copy,
+    ExternalLink,
+    Globe,
+    Plus,
+    RefreshCw,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import type { Project } from "@/store/useAppStore";
-import { Spinner } from "@/components/ui/spinner";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
+    CardDescription,
     CardHeader,
     CardTitle,
-    CardDescription,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -22,16 +29,9 @@ import {
     SheetHeader,
     SheetTitle,
 } from "@/components/ui/sheet";
+import { Spinner } from "@/components/ui/spinner";
 import { apiClient } from "@/lib/api-client";
-import { toast } from "sonner";
-import {
-    ExternalLink,
-    CheckCircle2,
-    Globe,
-    Plus,
-    Copy,
-    RefreshCw,
-} from "lucide-react";
+import type { Project } from "@/store/useAppStore";
 
 import { CNAME_TARGET } from "./utils";
 

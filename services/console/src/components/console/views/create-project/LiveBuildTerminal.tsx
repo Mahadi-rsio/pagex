@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { apiClient, type BuildDoneEvent } from "@/lib/api-client";
-import { Badge } from "@/components/ui/badge";
 import { Terminal } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { apiClient, type BuildDoneEvent } from "@/lib/api-client";
 
 export function LiveBuildTerminal({
     projectName,

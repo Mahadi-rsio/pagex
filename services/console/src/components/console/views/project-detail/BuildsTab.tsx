@@ -1,28 +1,28 @@
 "use client";
 
+import {
+    AlertCircle,
+    CheckCircle2,
+    ChevronDown,
+    ChevronUp,
+    Clock,
+    Terminal,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Project } from "@/store/useAppStore";
-import { formatRelativeTime } from "@/lib/utils";
-import { Spinner } from "@/components/ui/spinner";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
+    CardDescription,
     CardHeader,
     CardTitle,
-    CardDescription,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { apiClient, type ApiBuild } from "@/lib/api-client";
-import { toast } from "sonner";
-import {
-    CheckCircle2,
-    AlertCircle,
-    Clock,
-    ChevronDown,
-    ChevronUp,
-    Terminal,
-} from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { type ApiBuild, apiClient } from "@/lib/api-client";
+import { formatRelativeTime } from "@/lib/utils";
+import type { Project } from "@/store/useAppStore";
 
 import { LatestCommitCard } from "./LatestCommitCard";
 import {

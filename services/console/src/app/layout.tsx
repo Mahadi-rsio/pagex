@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Toaster } from "@/components/ui/sonner";
 import Script from "next/script";
-import { TopLoader } from "@/components/TopLoader";
 import { Suspense } from "react";
+import { TopLoader } from "@/components/TopLoader";
+import { Toaster } from "@/components/ui/sonner";
 
 const themeInitScript = `
 (() => {

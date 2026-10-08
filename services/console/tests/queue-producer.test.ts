@@ -1,118 +1,109 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-
-import {
-    createQueueProducer,
-    enqueueBackgroundJob,
-    isQueueConfigured,
-    type QueueProducer,
-} from "@/server/api/queues/cloudflare-queue";
 import {
     DEPLOYMENT_GC_JOB,
     PAGE_DELETE_JOB,
     parseBackgroundJob,
 } from "@/server/api/queues/background-job";
+import {
+    createQueueProducer,
+    enqueueBackgroundJob,
+    isQueueConfigured,
+    type QueueBinding,
+    type QueueProducer,
+    resolveQueueBinding,
+} from "@/server/api/queues/cloudflare-queue";
 
-const ORIGINAL_ENV = { ...process.env };
-
-function withQueueEnv(fn: () => void | Promise<void>) {
-    process.env.CF_ACCOUNT_ID = "acct";
-    process.env.CF_QUEUE_ID = "q1";
-    process.env.CF_QUEUE_API_TOKEN = "token";
-    return Promise.resolve(fn()).finally(() => {
-        process.env = { ...ORIGINAL_ENV };
-    });
-}
-
-/** Records every fetch the producer makes and replies with a canned status. */
-function stubFetch(statuses: number[] = [200]): {
-    fetchImpl: typeof fetch;
-    calls: Array<{ url: string; init: RequestInit }>;
+/** Records every message handed to the binding; `outcomes` drives failures. */
+function stubBinding(outcomes: Array<"ok" | "fail"> = ["ok"]): {
+    binding: QueueBinding;
+    sent: unknown[];
 } {
-    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const sent: unknown[] = [];
     let i = 0;
-    const fetchImpl = (async (url: string, init: RequestInit) => {
-        calls.push({ url: String(url), init });
-        const status = statuses[Math.min(i, statuses.length - 1)] ?? 200;
-        i++;
-        return new Response(JSON.stringify({ success: status < 300 }), {
-            status,
-            headers: { "content-type": "application/json" },
-        });
-    }) as unknown as typeof fetch;
-    return { fetchImpl, calls };
+    const binding: QueueBinding = {
+        async send(message) {
+            sent.push(message);
+            const outcome = outcomes[Math.min(i, outcomes.length - 1)] ?? "ok";
+            i++;
+            if (outcome === "fail") throw new Error("queue unavailable");
+        },
+    };
+    return { binding, sent };
 }
 
-describe("cloudflare queue producer", () => {
-    it("is not configured without the Cloudflare env vars", () => {
-        process.env.CF_ACCOUNT_ID = "";
-        process.env.CF_QUEUE_ID = "";
-        process.env.CF_QUEUE_API_TOKEN = "";
-        assert.equal(isQueueConfigured(), false);
+describe("cloudflare queue binding producer", () => {
+    // The message body IS the job object: the Worker compatibility date makes
+    // `send()` default to the `json` content type, so the Go pull consumer
+    // receives `body` as the serialized job — the exact payload the old HTTP
+    // push endpoint produced with `{"body": <job>}`.
+    it("sends the job object as the message body", async () => {
+        const { binding, sent } = stubBinding();
+        const producer = createQueueProducer(async () => binding);
 
-        process.env.CF_ACCOUNT_ID = "acct";
-        assert.equal(isQueueConfigured(), false);
-    });
+        const ok = await producer.enqueue({
+            type: DEPLOYMENT_GC_JOB,
+            page_id: "p1",
+            site_id: "s1",
+            deployment_id: "d1",
+        });
 
-    // Cloudflare's push endpoint takes ONE message and requires `body` to be a
-    // JSON object. A stringified body is rejected with
-    // "Expected object, received string at body", and a top-level `messages`
-    // array belongs to the separate messages/batch endpoint. Both mistakes fail
-    // silently at runtime because the producer swallows errors, so the payload
-    // shape is asserted here.
-    it("posts a single message with an object body", async () => {
-        await withQueueEnv(async () => {
-            const { fetchImpl, calls } = stubFetch();
-            const producer = createQueueProducer(fetchImpl);
-
-            const ok = await producer.enqueue({
-                type: DEPLOYMENT_GC_JOB,
-                page_id: "p1",
-                site_id: "s1",
-                deployment_id: "d1",
-            });
-            assert.equal(ok, true);
-            assert.equal(calls.length, 1);
-
-            const { url, init } = calls[0]!;
-            assert.equal(
-                url,
-                "https://api.cloudflare.com/client/v4/accounts/acct/queues/q1/messages",
-            );
-            assert.equal(init.method, "POST");
-            assert.equal(
-                (init.headers as Record<string, string>).authorization,
-                "Bearer token",
-            );
-
-            const payload = JSON.parse(init.body as string) as Record<
-                string,
-                unknown
-            >;
-            assert.deepEqual(
-                Object.keys(payload),
-                ["body"],
-                "only `body` at the top level",
-            );
-            assert.equal(
-                typeof payload.body,
-                "object",
-                "`body` must be a JSON object, not a stringified payload",
-            );
-            assert.deepEqual(payload.body, {
-                type: DEPLOYMENT_GC_JOB,
-                page_id: "p1",
-                site_id: "s1",
-                deployment_id: "d1",
-            });
+        assert.equal(ok, true);
+        assert.equal(sent.length, 1);
+        assert.deepEqual(sent[0], {
+            type: DEPLOYMENT_GC_JOB,
+            page_id: "p1",
+            site_id: "s1",
+            deployment_id: "d1",
         });
     });
 
-    it("returns false instead of throwing when unconfigured", async () => {
-        process.env.CF_ACCOUNT_ID = "";
-        process.env.CF_QUEUE_ID = "";
-        process.env.CF_QUEUE_API_TOKEN = "";
-        const producer = createQueueProducer(stubFetch().fetchImpl);
+    it("sends page_delete without a deployment_id", async () => {
+        const { binding, sent } = stubBinding();
+        const producer = createQueueProducer(async () => binding);
+
+        assert.equal(
+            await producer.enqueue({
+                type: PAGE_DELETE_JOB,
+                page_id: "p",
+                site_id: "s",
+            }),
+            true,
+        );
+        assert.deepEqual(sent, [
+            { type: PAGE_DELETE_JOB, page_id: "p", site_id: "s" },
+        ]);
+    });
+
+    it("returns false without sending when the binding is missing", async () => {
+        const { sent } = stubBinding();
+        const producer = createQueueProducer(async () => null);
+
+        assert.equal(
+            await producer.enqueue({
+                type: PAGE_DELETE_JOB,
+                page_id: "p",
+                site_id: "s",
+            }),
+            false,
+        );
+        assert.equal(sent.length, 0);
+    });
+
+    // The test process is plain Node: there is no Workers context and no
+    // binding, which is exactly the "misconfigured / not running on Workers"
+    // path the production code must survive.
+    it("reports the queue as unconfigured outside a Worker runtime", async () => {
+        assert.equal(await isQueueConfigured(), false);
+        assert.equal(await resolveQueueBinding(), null);
+    });
+
+    // A commit or delete that already succeeded in PostgreSQL must not fail
+    // because the queue is unavailable.
+    it("swallows send failures so deployments are unaffected", async () => {
+        const { binding } = stubBinding(["fail"]);
+        const producer = createQueueProducer(async () => binding);
+
         assert.equal(
             await producer.enqueue({
                 type: PAGE_DELETE_JOB,
@@ -123,72 +114,34 @@ describe("cloudflare queue producer", () => {
         );
     });
 
-    // A commit or delete that already succeeded in PostgreSQL must not fail
-    // because the queue is unavailable.
-    it("swallows API errors so deployments are unaffected", async () => {
-        await withQueueEnv(async () => {
-            const producer = createQueueProducer(stubFetch([500]).fetchImpl);
-            assert.equal(
-                await producer.enqueue({
-                    type: PAGE_DELETE_JOB,
-                    page_id: "p",
-                    site_id: "s",
-                }),
-                false,
-            );
-        });
+    it("retries a transient failure once", async () => {
+        const { binding, sent } = stubBinding(["fail", "ok"]);
+        const producer = createQueueProducer(async () => binding);
+
+        assert.equal(
+            await producer.enqueue({
+                type: PAGE_DELETE_JOB,
+                page_id: "p",
+                site_id: "s",
+            }),
+            true,
+        );
+        assert.equal(sent.length, 2);
     });
 
-    it("retries a transient 5xx once", async () => {
-        await withQueueEnv(async () => {
-            const { fetchImpl, calls } = stubFetch([500, 200]);
-            const producer = createQueueProducer(fetchImpl);
+    it("does not retry past the attempt budget", async () => {
+        const { binding, sent } = stubBinding(["fail", "fail", "ok"]);
+        const producer = createQueueProducer(async () => binding);
 
-            assert.equal(
-                await producer.enqueue({
-                    type: PAGE_DELETE_JOB,
-                    page_id: "p",
-                    site_id: "s",
-                }),
-                true,
-            );
-            assert.equal(calls.length, 2);
-        });
-    });
-
-    it("does not retry a 4xx", async () => {
-        await withQueueEnv(async () => {
-            const { fetchImpl, calls } = stubFetch([400]);
-            const producer = createQueueProducer(fetchImpl);
-
-            assert.equal(
-                await producer.enqueue({
-                    type: PAGE_DELETE_JOB,
-                    page_id: "p",
-                    site_id: "s",
-                }),
-                false,
-            );
-            assert.equal(calls.length, 1);
-        });
-    });
-
-    it("swallows network errors", async () => {
-        await withQueueEnv(async () => {
-            const fetchImpl = (async () => {
-                throw new Error("ECONNREFUSED");
-            }) as unknown as typeof fetch;
-            const producer = createQueueProducer(fetchImpl);
-
-            assert.equal(
-                await producer.enqueue({
-                    type: PAGE_DELETE_JOB,
-                    page_id: "p",
-                    site_id: "s",
-                }),
-                false,
-            );
-        });
+        assert.equal(
+            await producer.enqueue({
+                type: PAGE_DELETE_JOB,
+                page_id: "p",
+                site_id: "s",
+            }),
+            false,
+        );
+        assert.equal(sent.length, 2);
     });
 
     it("never throws from enqueueBackgroundJob", async () => {

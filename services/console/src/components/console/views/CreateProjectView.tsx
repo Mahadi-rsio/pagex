@@ -1,24 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useAppStore } from "@/store/useAppStore";
-import { navigateToProjectOverview } from "@/lib/navigate";
-import { apiClient } from "@/lib/api-client";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Cloud, Code2, Workflow } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { apiClient } from "@/lib/api-client";
+import { navigateToProjectOverview } from "@/lib/navigate";
+import { useAppStore } from "@/store/useAppStore";
+import { CicdDeployPanel } from "./create-project/CicdDeployPanel";
+import { CliDeployPanel } from "./create-project/CliDeployPanel";
+import { CloudDeployPanel } from "./create-project/CloudDeployPanel";
 import {
     API_KEY_PLACEHOLDER,
     getDeployCommand,
     getWorkflowCode,
 } from "./create-project/deploy-snippets";
 import { ProjectNameStep } from "./create-project/ProjectNameStep";
-import { CloudDeployPanel } from "./create-project/CloudDeployPanel";
-import { CliDeployPanel } from "./create-project/CliDeployPanel";
-import { CicdDeployPanel } from "./create-project/CicdDeployPanel";
 
 export function CreateProjectView() {
     const { createProject, error, clearError } = useAppStore();

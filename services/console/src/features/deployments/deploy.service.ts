@@ -6,23 +6,7 @@ import { brotliCompress, gzip } from "node:zlib";
 import { and, desc, eq, gt, inArray, ne } from "drizzle-orm";
 import { lookup } from "mime-types";
 import pLimit from "p-limit";
-import { db } from "@/server/api/infrastructure/db/db";
-import {
-    blobTreeEntries,
-    blobs,
-    deployments,
-    idempotencyKeys,
-    pages,
-    sites,
-} from "@/server/api/infrastructure/db/schema";
-import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
-import {
-    blobObjectKey,
-    getObjectBuffer,
-    objectExists,
-    objectMetaForPath,
-    putObject,
-} from "@/server/api/infrastructure/storage/r2";
+import { enqueueDeploymentGC } from "@/features/background/jobs";
 import {
     BLOB_IO_CONCURRENCY,
     DEPLOY_LOCK_COMMIT_TTL_SECONDS,
@@ -31,22 +15,38 @@ import {
     MAX_DEPLOY_FILE_SIZE,
     MAX_FILE_SIZE,
 } from "@/server/api/constants/index";
-import { enqueueDeploymentGC } from "@/features/background/jobs";
+import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
+import { db } from "@/server/api/infrastructure/db/db";
 import {
-    cacheManifestInRedis,
-    generateAndPersistManifest,
-    incrementSiteVersion,
-    setActiveDeploymentCache,
-} from "./manifest.service";
+    blobs,
+    blobTreeEntries,
+    deployments,
+    idempotencyKeys,
+    pages,
+    sites,
+} from "@/server/api/infrastructure/db/schema";
+import {
+    blobObjectKey,
+    getObjectBuffer,
+    objectExists,
+    objectMetaForPath,
+    putObject,
+} from "@/server/api/infrastructure/storage/r2";
 import { validateManifest } from "@/server/api/utils/deployment-validator";
 import { validateFile } from "@/server/api/utils/file-validator";
 import { HttpError } from "@/server/api/utils/http-error";
 import { withLivePage } from "@/server/api/utils/page-visibility";
+import type {
+    CommitDeployInput,
+    DeployFileInput,
+    PrepareDeployInput,
+    PresignDeployInput,
+} from "./deploy.validator";
 import {
     DEPLOYMENT_IN_PROGRESS_MESSAGE,
-    STALE_DEPLOYMENT_MESSAGE,
     newLockHolder,
     pageDeploymentLock,
+    STALE_DEPLOYMENT_MESSAGE,
 } from "./deployment-lock.service";
 import {
     checkAndReserveIdempotencyKey,
@@ -54,12 +54,12 @@ import {
     failIdempotencyKey,
     findCompletedIdempotencyByKey,
 } from "./idempotency.service";
-import type {
-    CommitDeployInput,
-    DeployFileInput,
-    PrepareDeployInput,
-    PresignDeployInput,
-} from "./deploy.validator";
+import {
+    cacheManifestInRedis,
+    generateAndPersistManifest,
+    incrementSiteVersion,
+    setActiveDeploymentCache,
+} from "./manifest.service";
 
 const brotliCompressAsync = promisify(brotliCompress);
 const gzipAsync = promisify(gzip);

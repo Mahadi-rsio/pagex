@@ -1,5 +1,5 @@
-import { createAuthClient } from "better-auth/react";
 import { deviceAuthorizationClient } from "better-auth/client/plugins";
+import { createAuthClient } from "better-auth/react";
 
 // Create the auth client for client-side usage
 // The baseURL will be automatically determined from the current origin

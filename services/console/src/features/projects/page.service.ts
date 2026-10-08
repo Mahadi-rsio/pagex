@@ -1,24 +1,24 @@
+import { and, eq, sql } from "drizzle-orm";
+import { customAlphabet } from "nanoid";
+import { enqueuePageDelete } from "@/features/background/jobs";
+import { clearSiteFilesMap } from "@/features/deployments/deploy.service";
+import { pageDeploymentLock } from "@/features/deployments/deployment-lock.service";
+import { clearDeploymentRuntimeCache } from "@/features/deployments/manifest.service";
+import {
+    DEPLOY_LOCK_PREPARE_TTL_SECONDS,
+    TOP_LEVEL_DOMAIN,
+} from "@/server/api/constants/index";
+import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
+import { routingWriter } from "@/server/api/infrastructure/cache/routing";
 import { db } from "@/server/api/infrastructure/db/db";
 import {
-    blobTreeEntries,
     blobs,
+    blobTreeEntries,
     deployments,
     pages,
     siteDailyStats,
     sites,
 } from "@/server/api/infrastructure/db/schema";
-import { and, eq, sql } from "drizzle-orm";
-import { customAlphabet } from "nanoid";
-import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
-import { routingWriter } from "@/server/api/infrastructure/cache/routing";
-import {
-    DEPLOY_LOCK_PREPARE_TTL_SECONDS,
-    TOP_LEVEL_DOMAIN,
-} from "@/server/api/constants/index";
-import { clearSiteFilesMap } from "@/features/deployments/deploy.service";
-import { clearDeploymentRuntimeCache } from "@/features/deployments/manifest.service";
-import { pageDeploymentLock } from "@/features/deployments/deployment-lock.service";
-import { enqueuePageDelete } from "@/features/background/jobs";
 import { withLivePage } from "@/server/api/utils/page-visibility";
 import type { CreatePageInput } from "./page.validator";
 
@@ -36,7 +36,7 @@ export async function createPage(
     data: CreatePageInput,
     reqHeader: { tenant_name: string; tenant_id: string },
 ) {
-    let { project_name } = data;
+    const { project_name } = data;
 
     if (!reqHeader.tenant_id || !reqHeader.tenant_name) {
         return { message: "token is not valid" };

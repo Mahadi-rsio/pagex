@@ -1,6 +1,6 @@
-import type { NextConfig } from "next";
 import fs from "node:fs";
 import path from "node:path";
+import type { NextConfig } from "next";
 
 // Detect if running inside the monorepo root (host development / builds).
 // Inside Docker (services/console alone), ../.. is / which is not the monorepo.
@@ -105,4 +105,5 @@ const nextConfig: NextConfig = {
 export default nextConfig;
 
 import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
+
 initOpenNextCloudflareForDev();

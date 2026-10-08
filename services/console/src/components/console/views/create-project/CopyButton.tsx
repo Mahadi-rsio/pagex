@@ -1,8 +1,8 @@
 "use client";
 
+import { CheckCircle2, Copy } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Copy } from "lucide-react";
 
 export function CopyButton({
     value,

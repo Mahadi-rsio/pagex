@@ -1,5 +1,5 @@
+import type { AxiosError } from "axios";
 import { create } from "zustand";
-import { AxiosError } from "axios";
 
 export interface ApiRequestLog {
     id: string;

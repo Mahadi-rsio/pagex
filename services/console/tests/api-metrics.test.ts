@@ -1,13 +1,13 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
+import { test } from "node:test";
 
 import {
     buildMetricsResponse,
     emptyMetricsInput,
     estimatePercentile,
+    type LatencyInput,
     resolveMetricsWindow,
     summarizeLatency,
-    type LatencyInput,
 } from "../src/server/api/utils/metrics";
 
 function latency(partial: Partial<LatencyInput> = {}): LatencyInput {

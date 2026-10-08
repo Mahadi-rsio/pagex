@@ -1,17 +1,17 @@
 "use client";
 
+import { KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
+    CardDescription,
     CardHeader,
     CardTitle,
-    CardDescription,
 } from "@/components/ui/card";
-import { KeyRound } from "lucide-react";
-import { API_KEY_PLACEHOLDER } from "./deploy-snippets";
-import { CopyButton } from "./CopyButton";
 import { CodeBlock } from "./CodeBlock";
+import { CopyButton } from "./CopyButton";
+import { API_KEY_PLACEHOLDER } from "./deploy-snippets";
 
 type CicdDeployPanelProps = {
     deployCommand: string;

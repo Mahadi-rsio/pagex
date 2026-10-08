@@ -2,17 +2,11 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
+import { bearer, deviceAuthorization, jwt, openAPI } from "better-auth/plugins";
 import { headers } from "next/headers";
 import { getDb } from "@/db";
-import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import * as schema from "@/modules/auth/schemas/auth.schema";
-
-import {
-    openAPI,
-    bearer,
-    jwt,
-    deviceAuthorization,
-} from "better-auth/plugins";
+import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 
 /** Atomic INCR with TTL set only on first create (rate-limit windows). */
 const INCREMENT_SCRIPT = `
