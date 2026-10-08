@@ -21,7 +21,7 @@ This project uses **codebase-memory-mcp** — a local knowledge graph of the cod
 
 ## PageX-specific quick references
 - **Native API routes**: public routes enter through `services/console/src/app/api/[...path]/route.ts`; matching, auth, rate limiting, and service dispatch live in `services/console/src/server/api/http/dispatcher.ts`. Internal usage ingest is at `services/console/src/app/internal/usage/ingest/route.ts`.
-- **API services / business logic**: `services/console/src/server/api/services/` own DB/MinIO/Redis logic.
+- **API services / business logic**: `services/console/src/features/` own DB/R2/Redis logic.
 - **Console modules**: `services/console/src/modules/[module]/` (schemas/, routes/, components/); schemas re-exported from `src/db/schema.ts`.
 - **Blob-server**: Go `static_s3` Caddy plugin under `services/blob-server/` — has **no upstream docs**, prefer `get_code_snippet`/read over Context7.
 - **Shared packages**: `packages/{config,types,utils}/` — `@pagex/*`, consumed via workspace.
@@ -60,7 +60,7 @@ Multi-tenant static site hosting platform. pnpm monorepo (pnpm@8.15.0, Node >=20
 
 ## Layout
 
-- `services/console/` — Next.js 16 App Router UI and native API (Better Auth, Drizzle, Zustand, shadcn/ui, MinIO, Redis). Has its own detailed **`services/console/AGENTS.md` — read it before touching the console**; a lot of root-level guesses will be wrong here.
+- `services/console/` — Next.js 16 App Router UI and native API (Better Auth, Drizzle, Zustand, shadcn/ui, R2, Redis), deployed to Cloudflare Workers via OpenNext. Has its own detailed **`services/console/AGENTS.md` — read it before touching the console**; a lot of root-level guesses will be wrong here.
 - `services/blob-server/` — Go Caddy server + custom `static_s3` plugin (`cmd/caddy`). Go tests: `pnpm test:blob-server`.
 - `packages/{config,types,utils}/` — shared libs `@pagex/*`. Not directly published; consumed via workspace.
 
@@ -97,12 +97,12 @@ Where Context7 is least helpful: the custom Go `static_s3` Caddy plugin and inte
 
 Docker runs **only** the blob-server (Caddy + `static_s3`) and the Vector access-log pipeline. There is no console, Postgres, or Redis container:
 
-- The console is a Next.js app hosted on **Vercel** (serverless).
-- Postgres is **Neon** — a single `DATABASE_URL` (no `DB`/`DIRECT_DB`/`NEXT_WEB_DATABASE_URL` variants).
+- The console is a Next.js app hosted on **Cloudflare Workers** (OpenNext + Wrangler). Object storage uses the R2 binding `BLOBS`; Postgres goes through Hyperdrive (`HYPERDRIVE`).
+- Postgres is **Neon** — Workers use Hyperdrive; CLI/migrations use `DATABASE_URL` (no `DB`/`DIRECT_DB`/`NEXT_WEB_DATABASE_URL` variants).
 - Redis is **Upstash** — `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`, reached over REST rather than the wire protocol. Upstash has one logical database, so cache keys, deploy tokens, and page locks share a namespaced key space.
 - `.github/workflows/blob-server-publish.yml` is the only publish workflow; there is no console image.
 - `CONSOLE_UPSTREAM` is the console origin the Caddy console host blocks reverse-proxy to.
-- On Vercel, migrations and bucket provisioning are skipped on cold starts unless `RUN_STARTUP_TASKS=1` is set for that deploy.
+- Workers never auto-migrate or create R2 buckets. Apply migrations with `pnpm db:migrate`; set `RUN_STARTUP_TASKS=1` only on a deliberate Node admin process.
 
 Docker is only for the blob-server. To run the console locally, point `.env` at the same Neon/Upstash projects and use `pnpm dev:console` — there is no local Postgres or Redis to start.
 
@@ -110,7 +110,7 @@ Docker is only for the blob-server. To run the console locally, point `.env` at 
 
 - `tsconfig.json` is strict: `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` are on — handle possibly-undefined values.
 - Native route handlers live under `src/app/`; add route matching to `src/server/api/http/dispatcher.ts` and keep handlers thin.
-- Services in `src/server/api/services/` own business logic and DB/MinIO/Redis access; thrown errors may carry an HTTP `status`.
+- Feature services own business logic and DB/R2/Redis access; thrown errors may carry an HTTP `status`.
 - Public routes use Bearer JWT verification through `jose` and Better Auth JWKS. Internal ingest uses `USAGE_INGEST_TOKEN` and bypasses public rate limiting.
 - The API schema lives at `src/modules/api/schemas/api.schema.ts` and is re-exported from `src/db/schema.ts`.
 - Auth migrations live in `drizzle/`; API migrations live in `drizzle-api/`. Never edit applied migrations.
@@ -122,7 +122,7 @@ Docker is only for the blob-server. To run the console locally, point `.env` at 
 
 ## Env requirements
 
-Strictly required to run anything against infra: `BETTER_AUTH_SECRET` (32+ hex chars, `openssl rand -hex 32`), `BASE_DOMAIN`, `DATABASE_URL` (Neon, `-pooler` host), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `S3_ACCESS_KEY`/`S3_SECRET_KEY`, `MINIO_ENDPOINT`, `MINIO_BUCKET`. Console uses `NEXT_PUBLIC_*` for client code (and `PUBLIC_URL` mapped via `next.config.ts`).
+Strictly required for the console: `BETTER_AUTH_SECRET` (32+ hex chars, `openssl rand -hex 32`), `BASE_DOMAIN`, Neon via Hyperdrive / `DATABASE_URL`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, plus Wrangler bindings `BLOBS` and `HYPERDRIVE`. Blob-server / compose still need S3-compatible credentials (`S3_*`, `MINIO_*`). Console uses `NEXT_PUBLIC_*` for client code (and `PUBLIC_URL` mapped via `next.config.ts`).
 
 ## Other repo notes
 
@@ -130,7 +130,7 @@ Strictly required to run anything against infra: `BETTER_AUTH_SECRET` (32+ hex c
 - Docs live in `docs/` (SCHEMA, API, RULES, WORKERS, architecture, development, INFRASTRUCTURE, PROJECT). The product name still appears as “Cloudisy” in some text; trust current code and root `AGENTS.md` over stale paths.
 - Docker images publish to GHCR on `blob-server/v*` tags only (see `.github/workflows/blob-server-publish.yml`). Current platform version is `1.6.0`.
 - **Production compose:** root `docker-compose.prod.yml` (project `pagex-prod`) pulls GHCR images (default tag `latest`, **no `build:` sections**); `pnpm docker:prod` (script `scripts/docker-prod.sh`) pulls + starts it. Pin with `PAGEX_VERSION=1.6.0`, override namespace with `PAGEX_REGISTRY`.
-- Root `Caddyfile` reverse-proxies the console host to `{$CONSOLE_UPSTREAM}` (the Vercel origin) and serves tenant sites via `static_s3` with S3 + Neon lookups. TLS/HTTPS blocks are toggled by `TLS_CFG` (off locally, on in prod).
+- Root `Caddyfile` reverse-proxies the console host to `{$CONSOLE_UPSTREAM}` (the Cloudflare Worker origin) and serves tenant sites via `static_s3` with S3/R2 + Neon lookups. TLS/HTTPS blocks are toggled by `TLS_CFG` (off locally, on in prod).
 
 ## Subagent usage & parallel execution
 

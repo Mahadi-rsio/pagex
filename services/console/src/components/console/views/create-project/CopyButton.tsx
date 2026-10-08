@@ -6,7 +6,8 @@ import { CheckCircle2, Copy } from "lucide-react";
 
 export function CopyButton({
     value,
-    label = "Copy"}: {
+    label = "Copy",
+}: {
     value: string;
     label?: string;
 }) {

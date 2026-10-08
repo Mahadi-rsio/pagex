@@ -1,5 +1,5 @@
 import path from "node:path";
-import { migrate } from "drizzle-orm/neon-serverless/migrator";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { bootstrapApiMigrations } from "../server/api/infrastructure/db/bootstrap-migrations";
 import { db } from "./index";
 

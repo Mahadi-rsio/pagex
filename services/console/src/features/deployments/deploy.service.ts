@@ -18,9 +18,11 @@ import {
 import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import {
     blobObjectKey,
-    getStorageConfig,
+    getObjectBuffer,
+    objectExists,
     objectMetaForPath,
-} from "@/server/api/infrastructure/storage/minio";
+    putObject,
+} from "@/server/api/infrastructure/storage/r2";
 import {
     BLOB_IO_CONCURRENCY,
     DEPLOY_LOCK_COMMIT_TTL_SECONDS,
@@ -28,7 +30,6 @@ import {
     DEPLOY_TOKEN_TTL_SECONDS,
     MAX_DEPLOY_FILE_SIZE,
     MAX_FILE_SIZE,
-    PRESIGN_EXPIRY_SECONDS,
 } from "@/server/api/constants/index";
 import { enqueueDeploymentGC } from "@/features/background/jobs";
 import {
@@ -156,16 +157,6 @@ async function loadDeployToken(
     return payload;
 }
 
-async function objectExists(key: string): Promise<boolean> {
-    const { client, bucket } = getStorageConfig();
-    try {
-        await client.statObject(bucket, key);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
 /**
  * Upload a blob from a local buffer if it is not already in the store.
  */
@@ -184,12 +175,9 @@ export async function storeBlobFromBuffer(
 
     const key = blobObjectKey(hash);
     if (!(await objectExists(key))) {
-        const { client, bucket } = getStorageConfig();
-        await client.putObject(
-            bucket,
+        await putObject(
             key,
             body,
-            body.length,
             objectMetaForPath(key, contentType, contentEncoding),
         );
     }
@@ -202,17 +190,11 @@ export async function storeBlobFromBuffer(
 }
 
 async function readBlobBuffer(hash: string): Promise<Buffer> {
-    const { client, bucket } = getStorageConfig();
-    try {
-        const stream = await client.getObject(bucket, blobObjectKey(hash));
-        const chunks: Buffer[] = [];
-        for await (const chunk of stream) {
-            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        }
-        return Buffer.concat(chunks);
-    } catch {
+    const body = await getObjectBuffer(blobObjectKey(hash));
+    if (!body) {
         throw new HttpError(`Missing blob object for hash ${hash}`, 400);
     }
+    return body;
 }
 
 interface FileVariant {
@@ -520,7 +502,7 @@ export interface BlobManifestFile {
 
 /**
  * Shared commit path for CLI and cloud builds:
- * blobs already in MinIO → write tree → Redis map → activate.
+ * blobs already in R2 → write tree → Redis map → activate.
  * No tenant/ copy — Caddy serves directly from blobs/{hash}.
  */
 export async function commitBlobTreeDeploy(opts: {
@@ -1040,11 +1022,17 @@ export async function prepareDeploy(
     };
 }
 
+/**
+ * Return Worker-mediated upload URLs for missing blobs.
+ *
+ * R2 Worker bindings do not issue S3-style presigned PUTs. Clients still
+ * receive `{ hash, url, method: "PUT" }` and upload with a bare PUT; the URL
+ * embeds the short-lived deployment token and is served by `/api/deploy/blob`.
+ */
 export async function presignDeploy(
     input: PresignDeployInput,
     tenantId: string,
 ) {
-    const { client, bucket } = getStorageConfig();
     const payload = await loadDeployToken(input.deploymentToken, tenantId);
     const manifestHashes = new Set(payload.fileManifest.map((f) => f.hash));
 
@@ -1055,6 +1043,12 @@ export async function presignDeploy(
               .where(inArray(blobs.hash, input.hashes))
         : [];
     const existingSet = new Set(existing.map((b) => b.hash));
+
+    const baseUrl = (
+        process.env.PUBLIC_URL ||
+        process.env.BETTER_AUTH_URL ||
+        "http://localhost:3000"
+    ).replace(/\/$/, "");
 
     const urls: Array<{ hash: string; url: string; method: "PUT" }> = [];
 
@@ -1069,12 +1063,15 @@ export async function presignDeploy(
             continue;
         }
 
-        const url = await client.presignedPutObject(
-            bucket,
-            blobObjectKey(hash),
-            PRESIGN_EXPIRY_SECONDS,
-        );
-        urls.push({ hash, url, method: "PUT" });
+        const params = new URLSearchParams({
+            token: input.deploymentToken,
+            hash,
+        });
+        urls.push({
+            hash,
+            url: `${baseUrl}/api/deploy/blob?${params.toString()}`,
+            method: "PUT",
+        });
     }
 
     return { urls };

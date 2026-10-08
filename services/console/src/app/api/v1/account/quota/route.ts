@@ -6,9 +6,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export const GET = withApiAuth(async (_request, auth) => {
-    const { getAccountQuota } = await import(
-        "@/features/usage/usage.service"
-    );
+    const { getAccountQuota } = await import("@/features/usage/usage.service");
     try {
         const result = await getAccountQuota(auth.id);
         return NextResponse.json(result);

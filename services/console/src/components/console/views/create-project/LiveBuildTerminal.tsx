@@ -9,7 +9,8 @@ export function LiveBuildTerminal({
     projectName,
     repoName,
     buildId,
-    onComplete}: {
+    onComplete,
+}: {
     projectName: string;
     repoName: string;
     buildId: string;
@@ -50,7 +51,8 @@ export function LiveBuildTerminal({
                             `[error] ${event.message}`,
                         ]);
                         onCompleteRef.current();
-                    }},
+                    },
+                },
                 controller.signal,
             )
             .catch(() => {

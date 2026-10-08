@@ -8,9 +8,7 @@ import {
     CardDescription,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-    Gauge,
-} from "lucide-react";
+import { Gauge } from "lucide-react";
 import {
     ResponsiveContainer,
     LineChart,
@@ -115,12 +113,20 @@ export function PerformanceTab() {
                     <div className="flex items-center gap-2">
                         <Gauge className="size-4 text-muted-foreground" />
                         <div className="flex-1">
-                            <CardTitle className="text-sm">Performance <span className="font-normal text-muted-foreground">· mock data</span></CardTitle>
+                            <CardTitle className="text-sm">
+                                Performance{" "}
+                                <span className="font-normal text-muted-foreground">
+                                    · mock data
+                                </span>
+                            </CardTitle>
                             <CardDescription className="text-xs">
-                                Real-user and edge performance metrics — showing synthetic sample data until RUM is enabled
+                                Real-user and edge performance metrics — showing
+                                synthetic sample data until RUM is enabled
                             </CardDescription>
                         </div>
-                        <Badge variant="secondary" className="text-[10px]">MOCK</Badge>
+                        <Badge variant="secondary" className="text-[10px]">
+                            MOCK
+                        </Badge>
                     </div>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -133,7 +139,12 @@ export function PerformanceTab() {
                                 <p className="text-xs text-muted-foreground">
                                     {m.label}
                                 </p>
-                                <Badge variant={m.badgeVariant} className="text-[10px] h-5 px-1.5">{m.badge}</Badge>
+                                <Badge
+                                    variant={m.badgeVariant}
+                                    className="text-[10px] h-5 px-1.5"
+                                >
+                                    {m.badge}
+                                </Badge>
                             </div>
                             <p className="text-2xl font-semibold text-foreground mt-1 tabular-nums">
                                 {m.value}
@@ -148,20 +159,46 @@ export function PerformanceTab() {
 
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-sm">TTFB over last 24h</CardTitle>
-                    <CardDescription className="text-xs">Time to first byte — p50 vs p95 (mock, ms)</CardDescription>
+                    <CardTitle className="text-sm">
+                        TTFB over last 24h
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                        Time to first byte — p50 vs p95 (mock, ms)
+                    </CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="h-[240px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={ttfbTimeline}>
-                                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                                <XAxis dataKey="hour" tick={{ fontSize: 10 }} interval={3} />
+                                <CartesianGrid
+                                    strokeDasharray="3 3"
+                                    opacity={0.3}
+                                />
+                                <XAxis
+                                    dataKey="hour"
+                                    tick={{ fontSize: 10 }}
+                                    interval={3}
+                                />
                                 <YAxis tick={{ fontSize: 11 }} unit="ms" />
                                 <Tooltip contentStyle={{ fontSize: 12 }} />
                                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                                <Line type="monotone" dataKey="ttfb" name="p50" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
-                                <Line type="monotone" dataKey="p95" name="p95" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="4 4" dot={false} />
+                                <Line
+                                    type="monotone"
+                                    dataKey="ttfb"
+                                    name="p50"
+                                    stroke="hsl(var(--primary))"
+                                    strokeWidth={2}
+                                    dot={false}
+                                />
+                                <Line
+                                    type="monotone"
+                                    dataKey="p95"
+                                    name="p95"
+                                    stroke="#f59e0b"
+                                    strokeWidth={1.5}
+                                    strokeDasharray="4 4"
+                                    dot={false}
+                                />
                             </LineChart>
                         </ResponsiveContainer>
                     </div>
@@ -171,20 +208,44 @@ export function PerformanceTab() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <Card>
                     <CardHeader>
-                        <CardTitle className="text-sm">Web Vitals — 7 days</CardTitle>
-                        <CardDescription className="text-xs">LCP (s) · CLS · INP (ms) — mock</CardDescription>
+                        <CardTitle className="text-sm">
+                            Web Vitals — 7 days
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                            LCP (s) · CLS · INP (ms) — mock
+                        </CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="h-[220px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={webVitalsDaily}>
-                                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                                    <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+                                    <CartesianGrid
+                                        strokeDasharray="3 3"
+                                        opacity={0.3}
+                                    />
+                                    <XAxis
+                                        dataKey="day"
+                                        tick={{ fontSize: 11 }}
+                                    />
                                     <YAxis tick={{ fontSize: 11 }} />
                                     <Tooltip contentStyle={{ fontSize: 12 }} />
                                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                                    <Area type="monotone" dataKey="lcp" name="LCP (s)" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.15} />
-                                    <Area type="monotone" dataKey="inp" name="INP (ms)" stroke="#22c55e" fill="#22c55e" fillOpacity={0.1} />
+                                    <Area
+                                        type="monotone"
+                                        dataKey="lcp"
+                                        name="LCP (s)"
+                                        stroke="#3b82f6"
+                                        fill="#3b82f6"
+                                        fillOpacity={0.15}
+                                    />
+                                    <Area
+                                        type="monotone"
+                                        dataKey="inp"
+                                        name="INP (ms)"
+                                        stroke="#22c55e"
+                                        fill="#22c55e"
+                                        fillOpacity={0.1}
+                                    />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </div>
@@ -193,20 +254,46 @@ export function PerformanceTab() {
 
                 <Card>
                     <CardHeader>
-                        <CardTitle className="text-sm">Cache hit ratio — 7 days</CardTitle>
-                        <CardDescription className="text-xs">Hit vs miss % — edge / blob cache (mock)</CardDescription>
+                        <CardTitle className="text-sm">
+                            Cache hit ratio — 7 days
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                            Hit vs miss % — edge / blob cache (mock)
+                        </CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="h-[220px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={cacheHitData}>
-                                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                                    <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-                                    <YAxis tick={{ fontSize: 11 }} unit="%" domain={[0, 100]} />
+                                    <CartesianGrid
+                                        strokeDasharray="3 3"
+                                        opacity={0.3}
+                                    />
+                                    <XAxis
+                                        dataKey="day"
+                                        tick={{ fontSize: 11 }}
+                                    />
+                                    <YAxis
+                                        tick={{ fontSize: 11 }}
+                                        unit="%"
+                                        domain={[0, 100]}
+                                    />
                                     <Tooltip contentStyle={{ fontSize: 12 }} />
                                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                                    <Bar dataKey="hit" stackId="a" fill="#22c55e" name="Hit %" radius={[0, 0, 0, 0]} />
-                                    <Bar dataKey="miss" stackId="a" fill="hsl(var(--muted-foreground))" name="Miss %" radius={[2, 2, 0, 0]} />
+                                    <Bar
+                                        dataKey="hit"
+                                        stackId="a"
+                                        fill="#22c55e"
+                                        name="Hit %"
+                                        radius={[0, 0, 0, 0]}
+                                    />
+                                    <Bar
+                                        dataKey="miss"
+                                        stackId="a"
+                                        fill="hsl(var(--muted-foreground))"
+                                        name="Miss %"
+                                        radius={[2, 2, 0, 0]}
+                                    />
                                 </BarChart>
                             </ResponsiveContainer>
                         </div>
@@ -216,23 +303,41 @@ export function PerformanceTab() {
 
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-sm">Error rate timeline</CardTitle>
-                    <CardDescription className="text-xs">5xx errors as % of traffic — 24h buckets (mock)</CardDescription>
+                    <CardTitle className="text-sm">
+                        Error rate timeline
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                        5xx errors as % of traffic — 24h buckets (mock)
+                    </CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="h-[160px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={errorRateData}>
-                                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                                <CartesianGrid
+                                    strokeDasharray="3 3"
+                                    opacity={0.3}
+                                />
                                 <XAxis dataKey="hour" tick={{ fontSize: 11 }} />
                                 <YAxis tick={{ fontSize: 11 }} unit="%" />
-                                <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v) => [`${v ?? 0}%`, "5xx rate"]} />
-                                <Bar dataKey="rate" fill="#ef4444" radius={[2, 2, 0, 0]} />
+                                <Tooltip
+                                    contentStyle={{ fontSize: 12 }}
+                                    formatter={(v) => [
+                                        `${v ?? 0}%`,
+                                        "5xx rate",
+                                    ]}
+                                />
+                                <Bar
+                                    dataKey="rate"
+                                    fill="#ef4444"
+                                    radius={[2, 2, 0, 0]}
+                                />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
                     <p className="mt-2 text-center text-xs text-muted-foreground">
-                        Mock data — wire to real <code>status_codes.5xx / requests</code> when RUM ships.
+                        Mock data — wire to real{" "}
+                        <code>status_codes.5xx / requests</code> when RUM ships.
                     </p>
                 </CardContent>
             </Card>

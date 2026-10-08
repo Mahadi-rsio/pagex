@@ -36,9 +36,7 @@ export function BillingView() {
                             size="sm"
                             className="gap-1.5"
                             onClick={() =>
-                                toast.success(
-                                    "Add funds feature coming soon",
-                                )
+                                toast.success("Add funds feature coming soon")
                             }
                         >
                             <Plus className="size-4" /> Add Funds

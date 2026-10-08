@@ -2,12 +2,7 @@
 
 import type { TreeViewElement } from "@/components/ui/file-tree";
 import type { ApiBuild } from "@/lib/api-client";
-import {
-    CheckCircle2,
-    AlertCircle,
-    Loader2,
-    Clock,
-} from "lucide-react";
+import { CheckCircle2, AlertCircle, Loader2, Clock } from "lucide-react";
 
 export const buildStatusConfig: Record<
     ApiBuild["status"],
@@ -126,7 +121,9 @@ export function parseEnvVars(text: string): Record<string, string> {
     return result;
 }
 
-export function parseGithubRepo(repoUrl: string): { owner: string; repo: string } | null {
+export function parseGithubRepo(
+    repoUrl: string,
+): { owner: string; repo: string } | null {
     const match = repoUrl
         .trim()
         .match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i);
@@ -170,9 +167,7 @@ export async function fetchLatestGithubCommit(
             shortSha: commit.sha.slice(0, 7),
             message: commit.commit.message.split("\n")[0] || "No message",
             author:
-                commit.commit.author?.name ||
-                commit.author?.login ||
-                "unknown",
+                commit.commit.author?.name || commit.author?.login || "unknown",
             date: commit.commit.author?.date || "",
             url: commit.html_url,
         };

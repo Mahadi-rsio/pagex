@@ -29,9 +29,7 @@ export const POST = withApiAuth(async (request, auth) => {
         "@/features/deployments/deploy.service"
     );
     try {
-        return NextResponse.json(
-            await commitDeploy(validation.data, auth.id),
-        );
+        return NextResponse.json(await commitDeploy(validation.data, auth.id));
     } catch (error) {
         console.error("deploy.commit failed:", error);
         return NextResponse.json(

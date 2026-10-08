@@ -12,7 +12,10 @@ Read these files — they contain essential project context not repeated here:
 |---|---|
 | `pnpm install` | Install deps (pnpm only, not npm) |
 | `pnpm run dev` | Start Next.js dev server |
-| `pnpm run build` | Build (Vercel uses its own serverless output; `output: standalone` applies elsewhere) |
+| `pnpm run build` | Standard Next.js build (local / non-Worker) |
+| `pnpm run build:cloudflare` | OpenNext Cloudflare Worker build (`.open-next/`) |
+| `pnpm run preview` | Build + `opennextjs-cloudflare preview` (Wrangler local) |
+| `pnpm run cf-typegen` | Regenerate `cloudflare-env.d.ts` from `wrangler.jsonc` |
 | `pnpm run lint` | `npx biome format --write` (formats only, no lint check) |
 | `pnpm run test` | Node test runner for API utility tests |
 | `pnpm run db:generate` | Drizzle: generate auth and API migrations after schema changes |
@@ -23,13 +26,13 @@ Tests use Node's built-in test runner with `tsx`; run `pnpm run test`.
 
 ## Build modes
 
-Set `BUILD_MODE=export` (static SSG → `out/`) or `BUILD_MODE=standalone` (Node API server). Default local builds are standalone. Dual build is used in Docker. `next.config.ts` maps `PUBLIC_URL` to `env.PUBLIC_URL` for client-side access.
+Production console deploys via **OpenNext Cloudflare** (`pnpm run build:cloudflare` → Worker + assets). Local `next dev` still works against Neon/Upstash; Wrangler bindings (`BLOBS`, `HYPERDRIVE`) are declared in `wrangler.jsonc`. `next.config.ts` maps `PUBLIC_URL` to `env.PUBLIC_URL` for client-side access.
 
 ## Project structure
 
 - `src/app/` — App Router routes. Public API handlers are native route files under `api/` (e.g. `api/pages/route.ts`); internal ingest is at `internal/usage/ingest/route.ts`. UI pages are **client components** (statically exportable). Only `src/proxy.ts` handles auth CORS, **not** `middleware.ts`.
 - `src/db/` — Drizzle connection, migration runner, and aggregated auth/API schema exports.
-- `src/server/api/` — infrastructure (Postgres/MinIO/Redis clients), HTTP auth, rate limits, and the `withApiAuth` guard. There is no dispatcher.
+- `src/server/api/` — infrastructure (Postgres/R2/Redis clients), HTTP auth, rate limits, and the `withApiAuth` guard. There is no dispatcher.
 - `src/features/` — business logic grouped by domain (`projects`, `deployments`, `usage`), with each feature's service and validator colocated.
 - `src/modules/auth/` — All auth logic. Server-side: `getAuthInstance()`/`getSession()` from `auth-utils.ts`. Client-side: `authClient` from `auth-client.ts`.
 - `src/components/ui/` — shadcn/ui components (new-york style). `src/components/console/` — app-specific components.
@@ -44,9 +47,9 @@ Set `BUILD_MODE=export` (static SSG → `out/`) or `BUILD_MODE=standalone` (Node
 
 ## Production serving model
 
-The console is deployed to **Vercel** (serverless) — there is no console Docker image, and `.github/workflows/` publishes only the blob-server. Root Caddy reverse-proxies the console host to `{$CONSOLE_UPSTREAM}` (the Vercel origin). Postgres is **Neon** (`DATABASE_URL`, `-pooler` host) and Redis is **Upstash** (`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`, REST protocol).
+The console is deployed to **Cloudflare Workers** via OpenNext (`@opennextjs/cloudflare`) — there is no console Docker image, and `.github/workflows/` publishes only the blob-server. Root Caddy reverse-proxies the console host to `{$CONSOLE_UPSTREAM}` (the Worker origin). Postgres is **Neon** through the **Hyperdrive** binding `HYPERDRIVE` (local CLI falls back to `DATABASE_URL`). Object storage uses the native R2 binding **`BLOBS`**. Redis remains **Upstash** (`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`, REST protocol).
 
-`src/instrumentation.ts` applies both Drizzle histories and provisions the storage bucket, but returns early on Vercel unless `RUN_STARTUP_TASKS=1`, so serverless cold starts never race on the DDL lock. Set that variable on the one deploy that should migrate.
+Workers never auto-migrate or create buckets. Apply schema with `pnpm db:migrate` against an explicit database. Set `RUN_STARTUP_TASKS=1` only on a deliberate Node admin process that should migrate once. R2 buckets are provisioned via Wrangler / the Cloudflare dashboard.
 
 ## Drizzle schema workflow
 
@@ -65,6 +68,7 @@ Writers must run **after** the matching PostgreSQL mutation commits and must nev
 
 - Client code reads `NEXT_PUBLIC_*` vars normally. `PUBLIC_URL` is also safe — mapped explicitly via `next.config.ts env`.
 - For URL fallbacks on client: `process.env.PUBLIC_URL || window.location.origin`.
-- Native API storage and ingest also use `BASE_DOMAIN`, `MINIO_ENDPOINT`, `MINIO_PORT`, `MINIO_USE_SSL`, `MINIO_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, and `USAGE_INGEST_TOKEN`.
-- `DATABASE_POOL_MAX` caps concurrent Postgres connections per serverless instance (default 5).
-- `.env.example` is the template; `.env` is used directly.
+- Console Workers bind `BLOBS` (R2) and `HYPERDRIVE` in `wrangler.jsonc`; secrets for local preview live in `.dev.vars` (gitignored).
+- Native API also uses `BASE_DOMAIN` and `USAGE_INGEST_TOKEN`. Blob-server / compose still use S3-compatible MinIO/R2 env vars separately.
+- `DATABASE_POOL_MAX` caps concurrent Postgres connections per Worker isolate (default 5).
+- `.env.example` is the template; `.env` / `.dev.vars` are used locally.

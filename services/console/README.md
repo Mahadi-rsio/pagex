@@ -1,19 +1,22 @@
 # PageX Console
 
-The PageX console is a Next.js 16 monolith that serves the browser UI, Better Auth, and the native hosting API from one Node.js process.
+The PageX console is a Next.js 16 monolith that serves the browser UI, Better Auth, and the native hosting API. Production runs on **Cloudflare Workers** via OpenNext (`@opennextjs/cloudflare`).
 
 ## Architecture
 
 | Piece | Role |
 |-------|------|
-| Vercel | Hosts the console — Next.js UI, Better Auth, and native API (serverless) |
+| Cloudflare Workers + OpenNext | Hosts the console — Next.js UI, Better Auth, and native API |
+| R2 (`BLOBS` binding) | Content-addressed blobs (`blobs/{hash}`) and immutable manifests |
+| Hyperdrive (`HYPERDRIVE`) | Pooled Neon PostgreSQL access from Workers |
 | Caddy | Reverse-proxies the console host to `{$CONSOLE_UPSTREAM}` and serves tenant sites with `static_s3` |
-| Neon | Managed Postgres for auth and API data, via a single `DATABASE_URL`, with separate Drizzle migration histories |
+| Neon | Managed Postgres for auth and API data (separate Drizzle migration histories) |
 | Upstash | Managed Redis (REST) for sessions, caches, rate limits, deploy tokens, and locks |
-| MinIO | Blob-direct deployment storage and immutable manifests |
 | Vector | Aggregates Caddy access logs and posts usage to the console |
 
 Public `/api/*` requests are native App Router route files under `src/app/api/`. Each wraps its handler in the `withApiAuth` guard from `src/server/api/http/guard.ts`, which applies rate limiting and authentication (CLI Bearer JWT verified against Better Auth JWKS, or a browser session cookie) exactly once, before the feature service runs. `/internal/usage/ingest` uses `USAGE_INGEST_TOKEN` instead.
+
+Blob uploads use `/api/deploy/blob` (token-gated PUT) rather than S3-style presigned URLs.
 
 ## Local Development
 
@@ -22,6 +25,7 @@ From the repository root:
 ```bash
 pnpm install
 cp .env.example .env
+# For Wrangler / OpenNext preview, also copy secrets into services/console/.dev.vars
 pnpm dev:console
 ```
 
@@ -32,8 +36,8 @@ Run these checks from `services/console`:
 ```bash
 pnpm run test
 pnpm run lint
-pnpm exec tsc --noEmit
-pnpm run build
+pnpm run typecheck
+pnpm run build:cloudflare
 ```
 
 ## Database
@@ -50,11 +54,11 @@ pnpm run db:push       # local development only
 pnpm run db:studio
 ```
 
-`src/instrumentation.ts` applies both histories on Node.js server startup. The API bootstrap is compatible with databases originally created with `drizzle-kit push`.
+Workers never auto-migrate. Use `pnpm db:migrate` against an explicit database, or set `RUN_STARTUP_TASKS=1` only on a deliberate Node admin process.
 
 ## Deployment
 
-The console is deployed to **Vercel** — it is not a Docker/Compose service. Docker runs only the blob-server (Caddy + `static_s3`) and the Vector log pipeline:
+The console deploys to **Cloudflare Workers** (`pnpm run deploy` from `services/console` after review — never auto-deploy production from agents). Docker runs only the blob-server (Caddy + `static_s3`) and the Vector log pipeline:
 
 ```bash
 # repository root
@@ -62,19 +66,10 @@ docker compose --env-file .env up -d      # blob-server, vector
 docker compose --env-file .env ps
 ```
 
-Useful console dev endpoints (the Next.js server):
+Useful console endpoints:
 
 - Console: `http://localhost:3000`
 - Health: `http://localhost:3000/api/health`
 - Native API: `http://localhost:3000/api/*`
+- Blob upload: `http://localhost:3000/api/deploy/blob`
 - Usage ingest: `http://localhost:3000/internal/usage/ingest`
-
-## Images
-
-Release images are published under `ghcr.io/mahadi-rsio/pagex/console`. Production Compose uses:
-
-```text
-ghcr.io/mahadi-rsio/pagex/console:${PAGEX_VERSION:-latest}
-```
-
-The separate API image is no longer published or deployed.

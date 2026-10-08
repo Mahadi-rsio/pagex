@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { dbClient } from "./db";
+import { getPool } from "@/db";
 
 interface JournalEntry {
     idx: number;
@@ -12,6 +12,13 @@ interface JournalEntry {
 
 interface Journal {
     entries: JournalEntry[];
+}
+
+function assertSafeIdent(value: string): string {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+        throw new Error(`Unsafe SQL identifier: ${value}`);
+    }
+    return value;
 }
 
 function migrationHash(migrationsFolder: string, entry: JournalEntry) {
@@ -26,6 +33,7 @@ async function isMigrationApplied(
     migrationsFolder: string,
     entry: JournalEntry,
 ): Promise<boolean> {
+    const pool = getPool();
     const sql = fs.readFileSync(
         path.join(migrationsFolder, `${entry.tag}.sql`),
         "utf8",
@@ -34,12 +42,13 @@ async function isMigrationApplied(
         /CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?(\w+)"?/i,
     );
     if (createTable?.[1]) {
-        const rows = await dbClient`
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-              AND table_name = ${createTable[1]}
-        `;
+        const { rows } = await pool.query(
+            `SELECT 1
+             FROM information_schema.tables
+             WHERE table_schema = 'public'
+               AND table_name = $1`,
+            [createTable[1]],
+        );
         return rows.length > 0;
     }
 
@@ -47,13 +56,14 @@ async function isMigrationApplied(
         /ALTER TABLE\s+"?(\w+)"?\s+ADD COLUMN\s+"?(\w+)"?/i,
     );
     if (addColumn?.[1] && addColumn[2]) {
-        const rows = await dbClient`
-            SELECT 1
-            FROM information_schema.columns
-            WHERE table_schema = 'public'
-              AND table_name = ${addColumn[1]}
-              AND column_name = ${addColumn[2]}
-        `;
+        const { rows } = await pool.query(
+            `SELECT 1
+             FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name = $1
+               AND column_name = $2`,
+            [addColumn[1], addColumn[2]],
+        );
         return rows.length > 0;
     }
 
@@ -61,12 +71,13 @@ async function isMigrationApplied(
         /CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF NOT EXISTS\s+)?"?(\w+)"?/i,
     );
     if (createIndex?.[1]) {
-        const rows = await dbClient`
-            SELECT 1
-            FROM pg_indexes
-            WHERE schemaname = 'public'
-              AND indexname = ${createIndex[1]}
-        `;
+        const { rows } = await pool.query(
+            `SELECT 1
+             FROM pg_indexes
+             WHERE schemaname = 'public'
+               AND indexname = $1`,
+            [createIndex[1]],
+        );
         return rows.length > 0;
     }
 
@@ -78,14 +89,17 @@ async function seedEntries(
     entries: JournalEntry[],
     migrationsTable: string,
 ) {
+    const pool = getPool();
+    const table = assertSafeIdent(migrationsTable);
     for (const entry of entries) {
         const hash = migrationHash(migrationsFolder, entry);
-        await dbClient`
-            INSERT INTO drizzle.${dbClient(migrationsTable)}
+        await pool.query(
+            `INSERT INTO drizzle.${table}
                 (hash, created_at)
-            VALUES (${hash}, ${entry.when})
-            ON CONFLICT DO NOTHING
-        `;
+             VALUES ($1, $2)
+             ON CONFLICT DO NOTHING`,
+            [hash, entry.when],
+        );
     }
 }
 
@@ -98,42 +112,45 @@ export async function bootstrapApiMigrations(
         throw new Error(`[migrate] Cannot find journal at ${journalPath}`);
     }
 
+    const pool = getPool();
+    const table = assertSafeIdent(migrationsTable);
     const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as Journal;
-    const trackingRows = await dbClient`
-        SELECT 1
-        FROM information_schema.tables
-        WHERE table_schema = 'drizzle'
-          AND table_name = ${migrationsTable}
-    `;
+    const tracking = await pool.query(
+        `SELECT 1
+         FROM information_schema.tables
+         WHERE table_schema = 'drizzle'
+           AND table_name = $1`,
+        [migrationsTable],
+    );
 
-    if (trackingRows.length === 0) {
-        const siteRows = await dbClient`
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-              AND table_name = 'sites'
-        `;
-        if (siteRows.length === 0) return;
+    if (tracking.rows.length === 0) {
+        const siteRows = await pool.query(
+            `SELECT 1
+             FROM information_schema.tables
+             WHERE table_schema = 'public'
+               AND table_name = 'sites'`,
+        );
+        if (siteRows.rows.length === 0) return;
 
-        await dbClient`CREATE SCHEMA IF NOT EXISTS drizzle`;
-        await dbClient`
-            CREATE TABLE IF NOT EXISTS ${dbClient("drizzle")}.${dbClient(migrationsTable)} (
+        await pool.query(`CREATE SCHEMA IF NOT EXISTS drizzle`);
+        await pool.query(
+            `CREATE TABLE IF NOT EXISTS drizzle.${table} (
                 id serial PRIMARY KEY,
                 hash text NOT NULL,
                 created_at bigint
-            )
-        `;
+            )`,
+        );
         await seedEntries(migrationsFolder, journal.entries, migrationsTable);
         return;
     }
 
-    const appliedRows = await dbClient`
-        SELECT hash
-        FROM drizzle.${dbClient(migrationsTable)}
-        ORDER BY id
-    `;
+    const appliedRows = await pool.query(
+        `SELECT hash
+         FROM drizzle.${table}
+         ORDER BY id`,
+    );
     const appliedHashes = new Set(
-        appliedRows.map((row) => String(row["hash"])),
+        appliedRows.rows.map((row) => String(row["hash"])),
     );
     const missingEntries = journal.entries.filter(
         (entry) =>
