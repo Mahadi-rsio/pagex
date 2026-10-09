@@ -253,6 +253,71 @@ describe("runPageDelete", () => {
         assert.deepEqual(repo.hardDeletedPages, ["page-1"]);
     });
 
+    it("retries (no reference drop) when a blob delete fails in R2", async () => {
+        const repo = new MemoryRepo();
+        repo.pages = [pageRef()];
+        repo.deployments = [deploymentRef("d1", true)].map((d) => ({
+            ...d,
+            pageId: "page-1",
+            createdAt: 0,
+        }));
+        repo.entries = [
+            { deploymentId: "d1", path: "a", blobHash: "h1" },
+            { deploymentId: "d1", path: "b", blobHash: "h2" },
+        ];
+        repo.blobs = [
+            { hash: "h1", size: 1 },
+            { hash: "h2", size: 2 },
+        ];
+        const bucket = new FakeBucket();
+        bucket.failKeys.add("blobs/h1");
+
+        await assert.rejects(
+            runPageDelete(
+                { type: "page_delete", page_id: "page-1", site_id: "site-1" },
+                {
+                    repo,
+                    bucket: asBucket(bucket),
+                    redis: null,
+                    redisPrefix: "px",
+                },
+            ),
+            /blob delete incomplete/,
+        );
+        // DB references are untouched so the retry can still delete h1.
+        assert.deepEqual(repo.purged, []);
+        assert.deepEqual(repo.hardDeletedPages, []);
+    });
+
+    it("retries (no reference drop) when a manifest delete fails in R2", async () => {
+        const repo = new MemoryRepo();
+        repo.pages = [pageRef()];
+        repo.deployments = [deploymentRef("d1", false)].map((d) => ({
+            ...d,
+            pageId: "page-1",
+            createdAt: 0,
+        }));
+        repo.entries = [{ deploymentId: "d1", path: "a", blobHash: "h1" }];
+        repo.blobs = [{ hash: "h1", size: 1 }];
+        const bucket = new FakeBucket();
+        bucket.failKeys.add("manifests/d1.manifest.json");
+
+        await assert.rejects(
+            runPageDelete(
+                { type: "page_delete", page_id: "page-1", site_id: "site-1" },
+                {
+                    repo,
+                    bucket: asBucket(bucket),
+                    redis: null,
+                    redisPrefix: "px",
+                },
+            ),
+            /manifest delete incomplete/,
+        );
+        assert.deepEqual(repo.purged, []);
+        assert.deepEqual(repo.hardDeletedPages, []);
+    });
+
     it("tolerates a missing site row (falls back to project_name)", async () => {
         const repo = new MemoryRepo();
         repo.pages = [pageRef()];

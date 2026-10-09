@@ -24,6 +24,8 @@ export interface PageDeleteDeps {
  *  - page row missing            → skip (already purged or never existed)
  *  - page not soft-deleted       → permanent error, never purge a live project
  *  - blob orphan check is cross-page, so blobs shared with live pages survive
+ *  - R2 objects are deleted before their DB references; a partial R2 failure
+ *    throws (transient) so the message retries instead of orphaning files
  *
  * `deployments.is_active` is deliberately NOT a guard: the console's delete
  * flow only sets `pages.deleted_at` and `sites.active = false`, never clears
@@ -72,14 +74,29 @@ export async function runPageDelete(
         );
     }
 
-    // 4. R2 first; only successfully deleted hashes proceed to blobs DELETE.
+    // 4. R2 first. Never drop the DB references for an object that still lives
+    //    in R2: a partial failure is thrown so the message is retried (deletes
+    //    are idempotent) instead of ACKing and permanently orphaning files.
     let deletedHashes: string[] = [];
     if (orphanedHashes.length > 0) {
         deletedHashes = await deleteBlobObjects(bucket, orphanedHashes);
+        if (deletedHashes.length !== orphanedHashes.length) {
+            throw new Error(
+                `R2 blob delete incomplete for page ${job.page_id}: ` +
+                    `${deletedHashes.length}/${orphanedHashes.length} deleted; retrying`,
+            );
+        }
     }
-    await deleteManifestObjects(bucket, deploymentIds);
+    const deletedManifests = await deleteManifestObjects(bucket, deploymentIds);
+    if (deletedManifests.length !== deploymentIds.length) {
+        throw new Error(
+            `R2 manifest delete incomplete for page ${job.page_id}: ` +
+                `${deletedManifests.length}/${deploymentIds.length} deleted; retrying`,
+        );
+    }
 
-    // 5. DB transaction: tree → deployments → blobs.
+    // 5. DB transaction: tree → deployments → blobs. Only reached once every
+    //    R2 object above is confirmed gone.
     await repo.purgeDeployments(deploymentIds, deletedHashes);
 
     // 6. Best-effort cache sweep (subdomain key falls back to project_name).

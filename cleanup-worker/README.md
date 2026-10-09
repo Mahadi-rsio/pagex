@@ -25,9 +25,12 @@ deleted project or break a live site.
   so a soft-deleted page usually still has one marked active.
 - Blob orphan checks are **cross-page**: a content-addressed blob is only
   deleted when no deployment outside the target set still references it.
-- **R2 first, DB second**: only hashes whose R2 delete succeeded are removed
-  from `blobs`. Deletes run in batches of 100 with concurrency 10, with
-  per-object fallback so partial failures are retained.
+- **R2 first, DB second**: every blob/manifest for the page is confirmed deleted
+  from R2 before any DB reference is dropped. Deletes run in batches of 100 with
+  concurrency 10, with per-object fallback; if any object still fails, the
+  handler throws so the message is retried (deletes are idempotent) rather than
+  ACKing and permanently orphaning files. Only confirmed hashes reach the
+  `blobs` DELETE.
 - Malformed queue bodies are ACKed and logged; transient failures (DB/R2
   outages) are retried up to `max_retries` (5), then ACKed. The handler never
   throws out of `queue`, so one bad message cannot wedge a batch.
