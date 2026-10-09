@@ -34,11 +34,27 @@ function createPool(connectionString: string): Pool {
     // prepared statements can cause hangs under transaction pooling.
     // `maxUses: 1` avoids reusing a TCP socket across isolated requests
     // (OpenNext Hyperdrive guidance).
-    return new Pool({
+    const pool = new Pool({
         connectionString,
         max: Number(process.env.DATABASE_POOL_MAX ?? 5),
         maxUses: 1,
     });
+    // pg-pool has no default error listener: an idle-client socket error would
+    // otherwise be rethrown through EventEmitter and surface as an
+    // unhandledRejection. With `maxUses: 1` every connection is closed right
+    // after its query, which races with pg-cloudflare's read loop
+    // (`CloudflareSocket._listen`) and rejects with this expected teardown
+    // error — ignore it, but keep logging any real idle-connection failure.
+    pool.on("error", (err) => {
+        if (
+            err instanceof Error &&
+            err.message === "This socket has been closed."
+        ) {
+            return;
+        }
+        console.error("postgres pool error", err);
+    });
+    return pool;
 }
 
 export function getPool(): Pool {
