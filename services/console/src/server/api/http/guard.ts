@@ -83,3 +83,45 @@ export function errorStatus(error: unknown): number {
 export function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : "Internal Server Error";
 }
+
+/**
+ * Plain-object snapshot of an error for structured logging. Surfaces the
+ * driver-level fields (pg `code`/`detail`/`constraint`, Drizzle call site,
+ * nested `cause`) that a bare `console.error(error)` hides in Workers logs.
+ * Never send this to clients.
+ */
+export function errorDetails(error: unknown): Record<string, unknown> {
+    if (!(error instanceof Error)) {
+        return { message: String(error) };
+    }
+
+    const driver = error as Error & {
+        code?: unknown;
+        detail?: unknown;
+        hint?: unknown;
+        constraint?: unknown;
+        table?: unknown;
+        column?: unknown;
+        cause?: unknown;
+    };
+
+    const details: Record<string, unknown> = {
+        name: error.name,
+        message: error.message,
+    };
+    if (driver.code !== undefined) details.code = driver.code;
+    if (driver.detail !== undefined) details.detail = driver.detail;
+    if (driver.hint !== undefined) details.hint = driver.hint;
+    if (driver.constraint !== undefined) details.constraint = driver.constraint;
+    if (driver.table !== undefined) details.table = driver.table;
+    if (driver.column !== undefined) details.column = driver.column;
+    if (driver.cause !== undefined) {
+        details.cause =
+            driver.cause instanceof Error
+                ? `${driver.cause.name}: ${driver.cause.message}`
+                : String(driver.cause);
+    }
+    if (error.stack) details.stack = error.stack;
+
+    return details;
+}

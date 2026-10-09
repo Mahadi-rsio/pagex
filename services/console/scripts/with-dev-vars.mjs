@@ -12,8 +12,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = path.dirname(fileURLToPath(new URL(".", import.meta.url)));
-const consoleRoot = path.resolve(root, "..");
+const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
+const consoleRoot = path.resolve(scriptsDir, "..");
 const varsPath = path.join(consoleRoot, ".dev.vars");
 
 function isUsablePostgresUrl(value) {

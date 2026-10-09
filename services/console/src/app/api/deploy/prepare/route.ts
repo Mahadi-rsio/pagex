@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+    errorDetails,
     errorMessage,
     errorStatus,
     readJsonBody,
@@ -31,7 +32,13 @@ export const POST = withApiAuth(async (request, auth) => {
     try {
         return NextResponse.json(await prepareDeploy(validation.data, auth.id));
     } catch (error) {
-        console.error("deploy.prepare failed:", error);
+        console.error("[api/deploy/prepare] failed", {
+            tenant_id: auth.id,
+            page_id: validation.data.pageId,
+            file_count: validation.data.files.length,
+            idempotency_key: validation.data.idempotencyKey ?? null,
+            error: errorDetails(error),
+        });
         return NextResponse.json(
             { error: errorMessage(error) },
             { status: errorStatus(error) },

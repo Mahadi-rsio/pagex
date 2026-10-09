@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { readJsonBody, withApiAuth } from "@/server/api/http/guard";
+import {
+    errorDetails,
+    errorStatus,
+    readJsonBody,
+    withApiAuth,
+} from "@/server/api/http/guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,10 +34,15 @@ export const POST = withApiAuth(async (request, auth) => {
             ),
         );
     } catch (error) {
-        console.error(error);
+        console.error("[api/pages/create] createPage failed", {
+            tenant_id: auth.id,
+            tenant_name: auth.name,
+            project_name: validation.data.project_name,
+            error: errorDetails(error),
+        });
         return NextResponse.json(
             { error: "Internal Server Error" },
-            { status: 500 },
+            { status: errorStatus(error) },
         );
     }
 });

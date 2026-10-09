@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { MAX_DEPLOY_FILE_SIZE } from "@/server/api/constants/index";
-import { errorMessage, errorStatus } from "@/server/api/http/guard";
+import {
+    errorDetails,
+    errorMessage,
+    errorStatus,
+} from "@/server/api/http/guard";
 import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import {
     blobObjectKey,
@@ -88,7 +92,17 @@ export async function PUT(request: Request) {
 
         return new NextResponse(null, { status: 204 });
     } catch (error) {
-        console.error("deploy.blob upload failed:", error);
+        const hash = (() => {
+            try {
+                return new URL(request.url).searchParams.get("hash");
+            } catch {
+                return null;
+            }
+        })();
+        console.error("[api/deploy/blob] upload failed", {
+            hash,
+            error: errorDetails(error),
+        });
         return NextResponse.json(
             { error: errorMessage(error) },
             { status: errorStatus(error) },

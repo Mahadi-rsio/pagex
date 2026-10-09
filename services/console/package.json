@@ -4,7 +4,7 @@
     "description": "PageX Console - Next.js web interface for multi-tenant static site hosting",
     "private": true,
     "scripts": {
-        "dev": "next dev",
+        "dev": "node scripts/with-dev-vars.mjs next dev",
         "build": "node scripts/with-dev-vars.mjs next build",
         "build:cloudflare": "node scripts/with-dev-vars.mjs opennextjs-cloudflare build",
         "preview": "node scripts/with-dev-vars.mjs opennextjs-cloudflare build && node scripts/with-dev-vars.mjs opennextjs-cloudflare preview",
@@ -17,7 +17,7 @@
         "db:generate": "pnpm run db:generate:auth && pnpm run db:generate:api",
         "db:generate:auth": "drizzle-kit generate --config=drizzle.config.ts",
         "db:generate:api": "drizzle-kit generate --config=drizzle.api.config.ts",
-        "db:migrate": "tsx scripts/migrate.ts",
+        "db:migrate": "node scripts/with-dev-vars.mjs tsx scripts/migrate.ts",
         "db:push": "drizzle-kit push --config=drizzle.config.ts && drizzle-kit push --config=drizzle.api.config.ts",
         "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
         "db:studio:api": "drizzle-kit studio --config=drizzle.api.config.ts"

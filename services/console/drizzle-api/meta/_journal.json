@@ -8,6 +8,13 @@
             "when": 1790327885139,
             "tag": "0000_clumsy_absorbing_man",
             "breakpoints": true
+        },
+        {
+            "idx": 1,
+            "version": "7",
+            "when": 1790520930000,
+            "tag": "0001_pages_soft_delete",
+            "breakpoints": true
         }
     ]
 }

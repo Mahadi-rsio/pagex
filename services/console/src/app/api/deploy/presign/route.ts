@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+    errorDetails,
     errorMessage,
     errorStatus,
     readJsonBody,
@@ -31,7 +32,12 @@ export const POST = withApiAuth(async (request, auth) => {
     try {
         return NextResponse.json(await presignDeploy(validation.data, auth.id));
     } catch (error) {
-        console.error("deploy.presign failed:", error);
+        console.error("[api/deploy/presign] failed", {
+            tenant_id: auth.id,
+            hash_count: validation.data.hashes.length,
+            has_deployment_token: Boolean(validation.data.deploymentToken),
+            error: errorDetails(error),
+        });
         return NextResponse.json(
             { error: errorMessage(error) },
             { status: errorStatus(error) },
