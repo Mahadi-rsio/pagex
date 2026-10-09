@@ -36,6 +36,7 @@ import { validateManifest } from "@/server/api/utils/deployment-validator";
 import { validateFile } from "@/server/api/utils/file-validator";
 import { HttpError } from "@/server/api/utils/http-error";
 import { withLivePage } from "@/server/api/utils/page-visibility";
+import { buildBlobUploadUrl } from "./blob-upload-url";
 import type {
     CommitDeployInput,
     DeployFileInput,
@@ -95,6 +96,12 @@ export interface DeployTokenPayload {
     subdomain: string;
     /** Max `deployments.version` for the page when the lock was taken. */
     baseVersion: number;
+    /**
+     * Unix seconds at which the token stops being valid. Present on tokens
+     * issued after this field was introduced; absent on older tokens, which
+     * still rely on the Redis TTL as the source of truth.
+     */
+    expiresAt?: number;
     fileManifest: Array<{
         path: string;
         hash: string;
@@ -870,6 +877,7 @@ export async function prepareDeploy(
         siteId: page.site_id,
         subdomain: site.subdomain,
         baseVersion,
+        expiresAt: Math.floor(Date.now() / 1000) + DEPLOY_TOKEN_TTL_SECONDS,
         fileManifest: input.files.map((f: DeployFileInput) => ({
             path: f.path,
             hash: f.hash,
@@ -1028,10 +1036,16 @@ export async function prepareDeploy(
  * R2 Worker bindings do not issue S3-style presigned PUTs. Clients still
  * receive `{ hash, url, method: "PUT" }` and upload with a bare PUT; the URL
  * embeds the short-lived deployment token and is served by `/api/deploy/blob`.
+ *
+ * `origin` is the origin of the incoming API request (e.g.
+ * `https://pagex-console.rsioex.workers.dev`). Deriving the upload base from
+ * the request — rather than `PUBLIC_URL`/`BETTER_AUTH_URL` — keeps the URL
+ * reachable from whatever host the client actually called.
  */
 export async function presignDeploy(
     input: PresignDeployInput,
     tenantId: string,
+    origin: string,
 ) {
     const payload = await loadDeployToken(input.deploymentToken, tenantId);
     const manifestHashes = new Set(payload.fileManifest.map((f) => f.hash));
@@ -1044,11 +1058,13 @@ export async function presignDeploy(
         : [];
     const existingSet = new Set(existing.map((b) => b.hash));
 
-    const baseUrl = (
-        process.env.PUBLIC_URL ||
-        process.env.BETTER_AUTH_URL ||
-        "http://localhost:3000"
-    ).replace(/\/$/, "");
+    const baseUrl = origin.replace(/\/+$/, "");
+    if (!/^https?:\/\//i.test(baseUrl)) {
+        throw new HttpError(
+            "Unable to resolve a public origin for blob uploads",
+            500,
+        );
+    }
 
     const urls: Array<{ hash: string; url: string; method: "PUT" }> = [];
 
@@ -1063,13 +1079,9 @@ export async function presignDeploy(
             continue;
         }
 
-        const params = new URLSearchParams({
-            token: input.deploymentToken,
-            hash,
-        });
         urls.push({
             hash,
-            url: `${baseUrl}/api/deploy/blob?${params.toString()}`,
+            url: buildBlobUploadUrl(baseUrl, input.deploymentToken, hash),
             method: "PUT",
         });
     }

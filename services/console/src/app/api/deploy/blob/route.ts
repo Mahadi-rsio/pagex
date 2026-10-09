@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
-import { MAX_DEPLOY_FILE_SIZE } from "@/server/api/constants/index";
-import {
-    errorDetails,
-    errorMessage,
-    errorStatus,
-} from "@/server/api/http/guard";
+import { handleBlobUpload } from "@/features/deployments/blob-upload.service";
+import { errorDetails } from "@/server/api/http/guard";
 import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import {
     blobObjectKey,
@@ -22,90 +18,49 @@ function deployTokenKey(token: string) {
 }
 
 /**
+ * Only the URL shape is ever logged — never the query string, which carries
+ * the short-lived deployment token.
+ */
+function requestTarget(request: Request): {
+    protocol: string | null;
+    hostname: string | null;
+    port: string | null;
+} {
+    try {
+        const url = new URL(request.url);
+        return {
+            protocol: url.protocol,
+            hostname: url.hostname,
+            port: url.port,
+        };
+    } catch {
+        return { protocol: null, hostname: null, port: null };
+    }
+}
+
+/**
  * Token-gated blob upload endpoint that replaces S3/MinIO presigned PUTs.
  * Auth is the short-lived deployment token embedded in the query string.
+ * All validation lives in `handleBlobUpload`.
  */
 export async function PUT(request: Request) {
     try {
-        const url = new URL(request.url);
-        const token = url.searchParams.get("token");
-        const hash = url.searchParams.get("hash");
-
-        if (!token || !hash) {
-            return NextResponse.json(
-                { error: "token and hash query parameters are required" },
-                { status: 400 },
-            );
-        }
-
-        const raw = await redis.get<string>(redisKey(deployTokenKey(token)));
-        if (!raw) {
-            return NextResponse.json(
-                { error: "Deployment token expired or invalid" },
-                { status: 400 },
-            );
-        }
-
-        let payload: { fileManifest?: Array<{ hash: string }> };
-        try {
-            payload = JSON.parse(raw) as {
-                fileManifest?: Array<{ hash: string }>;
-            };
-        } catch {
-            return NextResponse.json(
-                { error: "Corrupt deployment token" },
-                { status: 400 },
-            );
-        }
-
-        const allowed = new Set(
-            (payload.fileManifest ?? []).map((file) => file.hash),
-        );
-        if (!allowed.has(hash)) {
-            return NextResponse.json(
-                { error: `Hash ${hash} is not in the deployment manifest` },
-                { status: 400 },
-            );
-        }
-
-        const body = Buffer.from(await request.arrayBuffer());
-        if (body.byteLength === 0) {
-            return NextResponse.json(
-                { error: "Empty upload body" },
-                { status: 400 },
-            );
-        }
-        if (body.byteLength > MAX_DEPLOY_FILE_SIZE) {
-            return NextResponse.json(
-                { error: "Upload exceeds maximum file size" },
-                { status: 413 },
-            );
-        }
-
-        const key = blobObjectKey(hash);
-        if (!(await objectExists(key))) {
-            const contentType =
-                request.headers.get("content-type") ||
-                "application/octet-stream";
-            await putObject(key, body, objectMetaForPath(key, contentType));
-        }
-
-        return new NextResponse(null, { status: 204 });
+        return await handleBlobUpload(request, {
+            loadToken: (token) =>
+                redis.get<string>(redisKey(deployTokenKey(token))),
+            objectExists,
+            objectKey: blobObjectKey,
+            putObject: (key, body, contentType) =>
+                putObject(key, body, objectMetaForPath(key, contentType)),
+        });
     } catch (error) {
-        const hash = (() => {
-            try {
-                return new URL(request.url).searchParams.get("hash");
-            } catch {
-                return null;
-            }
-        })();
         console.error("[api/deploy/blob] upload failed", {
-            hash,
+            ...requestTarget(request),
             error: errorDetails(error),
         });
         return NextResponse.json(
-            { error: errorMessage(error) },
-            { status: errorStatus(error) },
+            { error: "Failed to store blob" },
+            { status: 500 },
         );
     }
 }

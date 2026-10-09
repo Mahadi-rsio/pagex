@@ -76,6 +76,23 @@ function ensureHyperdriveLocalConnectionString(): void {
 
 ensureHyperdriveLocalConnectionString();
 
+const LOOPBACK_PUBLIC_URL_RE =
+    /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?\/?$/i;
+
+/**
+ * `env` values are inlined into the bundle at build time. `.dev.vars` carries a
+ * local-preview `PUBLIC_URL` (e.g. the Wrangler port), so blindly forwarding it
+ * bakes `http://127.0.0.1:8787` into a production Worker and hands that origin
+ * to the CLI during deploys. Only forward a non-loopback absolute URL; leave it
+ * empty otherwise so runtime code falls back to the request/window origin.
+ */
+function resolveInlinePublicUrl(): string {
+    const value = process.env.PUBLIC_URL?.trim();
+    if (!value || !/^https?:\/\//i.test(value)) return "";
+    if (LOOPBACK_PUBLIC_URL_RE.test(value)) return "";
+    return value;
+}
+
 const nextConfig: NextConfig = {
     // Cloudflare OpenNext Workers — do not emit Next.js standalone output.
     ...(monorepoRoot
@@ -98,7 +115,7 @@ const nextConfig: NextConfig = {
     },
     serverExternalPackages: ["pg", "pg-cloudflare"],
     env: {
-        PUBLIC_URL: process.env.PUBLIC_URL || "",
+        PUBLIC_URL: resolveInlinePublicUrl(),
     },
 };
 

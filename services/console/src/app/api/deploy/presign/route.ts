@@ -30,7 +30,10 @@ export const POST = withApiAuth(async (request, auth) => {
         "@/features/deployments/deploy.service"
     );
     try {
-        return NextResponse.json(await presignDeploy(validation.data, auth.id));
+        const origin = new URL(request.url).origin;
+        return NextResponse.json(
+            await presignDeploy(validation.data, auth.id, origin),
+        );
     } catch (error) {
         console.error("[api/deploy/presign] failed", {
             tenant_id: auth.id,
