@@ -166,6 +166,13 @@ async function loadDeployToken(
 
 /**
  * Upload a blob from a local buffer if it is not already in the store.
+ *
+ * The R2 object is the source of truth for existence — never the `blobs` row.
+ * Background GC and project purge delete R2 objects before their `blobs` rows
+ * (and can crash in between), and a bucket can be swapped out underneath the
+ * DB, so a row may survive its object. Re-putting whenever the object is
+ * missing repairs that drift instead of shipping a tree that references a
+ * blob that cannot be read at serve time.
  */
 export async function storeBlobFromBuffer(
     hash: string,
@@ -173,15 +180,9 @@ export async function storeBlobFromBuffer(
     contentType = "application/octet-stream",
     contentEncoding?: string,
 ): Promise<"deployed" | "reused"> {
-    const [existing] = await db
-        .select()
-        .from(blobs)
-        .where(eq(blobs.hash, hash))
-        .limit(1);
-    if (existing) return "reused";
-
     const key = blobObjectKey(hash);
-    if (!(await objectExists(key))) {
+    const exists = await objectExists(key);
+    if (!exists) {
         await putObject(
             key,
             body,
@@ -193,7 +194,7 @@ export async function storeBlobFromBuffer(
         .insert(blobs)
         .values({ hash, size: body.length })
         .onConflictDoNothing();
-    return "deployed";
+    return exists ? "reused" : "deployed";
 }
 
 async function readBlobBuffer(hash: string): Promise<Buffer> {
@@ -202,6 +203,30 @@ async function readBlobBuffer(hash: string): Promise<Buffer> {
         throw new HttpError(`Missing blob object for hash ${hash}`, 400);
     }
     return body;
+}
+
+/**
+ * Filter a set of blob hashes down to those whose R2 object actually exists.
+ *
+ * The `blobs` table alone is not evidence that a blob can be served: GC and
+ * project purge delete R2 objects before their rows, and storage can be
+ * swapped independently of the DB. Prepare/presign must only treat a hash as
+ * reusable when the object is physically present, otherwise the client skips
+ * the upload and commit fails with "Missing blob object".
+ */
+async function hashesExistingInR2(hashes: string[]): Promise<Set<string>> {
+    const limit = pLimit(BLOB_IO_CONCURRENCY);
+    const present = new Set<string>();
+    await Promise.all(
+        hashes.map((hash) =>
+            limit(async () => {
+                if (await objectExists(blobObjectKey(hash))) {
+                    present.add(hash);
+                }
+            }),
+        ),
+    );
+    return present;
 }
 
 interface FileVariant {
@@ -847,7 +872,10 @@ export async function prepareDeploy(
               .from(blobs)
               .where(inArray(blobs.hash, hashes))
         : [];
-    const existingSet = new Set(existing.map((b) => b.hash));
+    // A `blobs` row is not proof the object exists in R2 (GC deletes objects
+    // before rows, and storage can be swapped independently). Only hashes whose
+    // object is actually present may be treated as reusable.
+    const existingSet = await hashesExistingInR2(existing.map((b) => b.hash));
 
     const uploadRequired: Array<{ path: string; hash: string; size: number }> =
         [];
@@ -1056,7 +1084,9 @@ export async function presignDeploy(
               .from(blobs)
               .where(inArray(blobs.hash, input.hashes))
         : [];
-    const existingSet = new Set(existing.map((b) => b.hash));
+    // Same DB/R2-drift guard as prepare: a hash whose row exists but whose R2
+    // object is gone must still get an upload URL, or commit will fail.
+    const existingSet = await hashesExistingInR2(existing.map((b) => b.hash));
 
     const baseUrl = origin.replace(/\/+$/, "");
     if (!/^https?:\/\//i.test(baseUrl)) {
