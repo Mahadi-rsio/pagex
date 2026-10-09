@@ -23,8 +23,14 @@ export interface PageDeleteDeps {
  * provably deleted:
  *  - page row missing            → skip (already purged or never existed)
  *  - page not soft-deleted       → permanent error, never purge a live project
- *  - page has an active deployment → permanent error, never break a live site
  *  - blob orphan check is cross-page, so blobs shared with live pages survive
+ *
+ * `deployments.is_active` is deliberately NOT a guard: the console's delete
+ * flow only sets `pages.deleted_at` and `sites.active = false`, never clears
+ * `is_active` (that flag is only rewritten by deploy/rollback). A soft-deleted
+ * page is excluded from every API read path and its site no longer serves, so
+ * treating a stale `is_active` row as "live" would permanently block the purge
+ * and leak R2 objects.
  */
 export async function runPageDelete(
     job: PageDeleteJob,
@@ -47,14 +53,9 @@ export async function runPageDelete(
         };
     }
 
-    // 2. Collect every deployment of the page.
+    // 2. Collect every deployment of the page. `is_active` is intentionally not
+    //    a blocker (see the header note) — the page is already soft-deleted.
     const pageDeployments = await repo.findDeploymentsByPage(job.page_id);
-    if (pageDeployments.some((d) => d.is_active)) {
-        return {
-            outcome: "permanent-error",
-            reason: `page ${job.page_id} has an active deployment; refusing to purge`,
-        };
-    }
     const deploymentIds = pageDeployments.map((d) => d.id);
 
     // 3. Orphan detection — drop hashes still referenced by any OTHER page.

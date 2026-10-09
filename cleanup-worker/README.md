@@ -19,8 +19,10 @@ deleted project or break a live site.
 ## Safety guards
 
 - `page_delete` refuses to run unless the page row is **soft-deleted**
-  (`deleted_at IS NOT NULL`) and has **no active deployment**. Live pages are
-  never touched; a bad/stale message is ACKed with a permanent-error log.
+  (`deleted_at IS NOT NULL`). Live pages are never touched; a bad/stale message
+  is ACKed with a permanent-error log. A deployment's `is_active` flag is **not**
+  a blocker — the console only rewrites it on deploy/rollback (never on delete),
+  so a soft-deleted page usually still has one marked active.
 - Blob orphan checks are **cross-page**: a content-addressed blob is only
   deleted when no deployment outside the target set still references it.
 - **R2 first, DB second**: only hashes whose R2 delete succeeded are removed

@@ -225,14 +225,19 @@ describe("runPageDelete", () => {
         assert.deepEqual(repo.purged, []);
     });
 
-    it("refuses to purge a page with an active deployment", async () => {
+    it("purges despite a stale is_active flag on a deployment", async () => {
         const repo = new MemoryRepo();
         repo.pages = [pageRef()];
+        repo.sites = [{ id: "site-1", subdomain: "acme", active: false }];
+        // The console never clears is_active on delete, so a soft-deleted page
+        // commonly still has a deployment flagged active.
         repo.deployments = [deploymentRef("d1", true)].map((d) => ({
             ...d,
             pageId: "page-1",
             createdAt: 0,
         }));
+        repo.entries = [{ deploymentId: "d1", path: "a", blobHash: "h1" }];
+        repo.blobs = [{ hash: "h1", size: 1 }];
         const bucket = new FakeBucket();
 
         const result = await runPageDelete(
@@ -240,9 +245,12 @@ describe("runPageDelete", () => {
             { repo, bucket: asBucket(bucket), redis: null, redisPrefix: "px" },
         );
 
-        assert.equal(result.outcome, "permanent-error");
-        assert.deepEqual(bucket.deleted, []);
-        assert.deepEqual(repo.hardDeletedPages, []);
+        assert.equal(result.outcome, "completed");
+        assert.deepEqual(
+            bucket.deleted.sort(),
+            ["blobs/h1", "manifests/d1.manifest.json"].sort(),
+        );
+        assert.deepEqual(repo.hardDeletedPages, ["page-1"]);
     });
 
     it("tolerates a missing site row (falls back to project_name)", async () => {
