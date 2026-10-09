@@ -83,6 +83,7 @@ infrastructure/certs/
 *.test.ts
 *.spec.ts
 !services/console/tests/*.test.ts
+!cleanup-worker/tests/*.test.ts
 
 # Scratch / ad-hoc scripts with credentials
 /test.js

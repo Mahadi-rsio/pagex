@@ -1,5 +1,6 @@
 packages:
   - "services/*"
+  - "cleanup-worker"
 allowBuilds:
   '@tailwindcss/oxide': false
   better-sqlite3: false

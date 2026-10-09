@@ -1,0 +1,42 @@
+{
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "pagex-cleanup-worker",
+    "main": "src/index.ts",
+    "compatibility_date": "2026-10-08",
+    "compatibility_flags": ["nodejs_compat"],
+    "observability": {
+        "logs": {
+            "enabled": true,
+            "head_sampling_rate": 1,
+            "invocation_logs": true,
+            "persist": true
+        },
+        "traces": {
+            "enabled": true
+        }
+    },
+    "r2_buckets": [
+        {
+            "bucket_name": "pagex-blobs-dev",
+            "binding": "BLOBS",
+            "remote": true
+        }
+    ],
+    "hyperdrive": [
+        {
+            "binding": "HYPERDRIVE",
+            "id": "0ac41863f821462ba90a1bb5d9ad81d3"
+        }
+    ],
+    "queues": {
+        "consumers": [
+            {
+                "queue": "pagex-background",
+                "max_batch_size": 10,
+                "max_batch_timeout": 10,
+                "max_retries": 5,
+                "max_concurrency": 1
+            }
+        ]
+    }
+}
