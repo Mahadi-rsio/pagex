@@ -22,37 +22,62 @@ export function detectPackageManager(dir: string): PackageManager {
     return "npm";
 }
 
-export function installCommandFor(pm: PackageManager): string[] {
+/**
+ * Ordered install attempts for a package manager, strictest first. The runner
+ * tries each in turn and stops at the first success. Strict/"frozen" installs
+ * keep clean lockfiles reproducible; the later tiers exist because real-world
+ * public repos frequently drift and Vercel/Netlify tolerate that instead of
+ * failing the deploy:
+ *
+ *   - lockfile out of sync with package.json
+ *   - npm 7+ peer-dependency conflicts (`ERESOLVE`) → `--legacy-peer-deps`
+ *   - packages declaring `engines` the runtime does not satisfy
+ */
+export function installCommandCandidates(pm: PackageManager): string[][] {
     switch (pm) {
         case "pnpm":
-            return ["pnpm", "install", "--frozen-lockfile"];
+            return [
+                ["pnpm", "install", "--frozen-lockfile"],
+                ["pnpm", "install", "--no-frozen-lockfile"],
+            ];
         case "yarn":
-            return ["yarn", "install", "--frozen-lockfile"];
+            return [
+                ["yarn", "install", "--frozen-lockfile"],
+                ["yarn", "install"],
+                ["yarn", "install", "--ignore-engines"],
+            ];
         case "bun":
-            return ["bun", "install", "--frozen-lockfile"];
+            return [
+                ["bun", "install", "--frozen-lockfile"],
+                ["bun", "install"],
+            ];
         case "npm":
-            return ["npm", "ci"];
+            return [
+                ["npm", "ci"],
+                ["npm", "install", "--no-audit", "--no-fund"],
+                [
+                    "npm",
+                    "install",
+                    "--no-audit",
+                    "--no-fund",
+                    "--legacy-peer-deps",
+                ],
+            ];
     }
 }
 
+/** The strict primary install attempt for a package manager. */
+export function installCommandFor(pm: PackageManager): string[] {
+    return installCommandCandidates(pm)[0]!;
+}
+
 /**
- * A less-strict install fallback used when the frozen/`ci` install fails
- * because a repo's lockfile is out of sync with its package.json. Real-world
- * public repos often drift, and Vercel/Netlify tolerate this by allowing the
- * install to update the lockfile. We only fall back after the strict attempt
- * fails, so clean lockfiles stay reproducible.
+ * The first relaxed fallback attempt (lockfile drift). Kept for callers that
+ * only want a single fallback.
  */
 export function fallbackInstallCommandFor(pm: PackageManager): string[] {
-    switch (pm) {
-        case "pnpm":
-            return ["pnpm", "install", "--no-frozen-lockfile"];
-        case "yarn":
-            return ["yarn", "install"];
-        case "bun":
-            return ["bun", "install"];
-        case "npm":
-            return ["npm", "install"];
-    }
+    const candidates = installCommandCandidates(pm);
+    return candidates[1] ?? candidates[0]!;
 }
 
 function readPackageJson(
@@ -82,9 +107,35 @@ export function detectOutputDir(
         svelte: "build",
         nuxt: ".output/public",
         next: "out",
+        gatsby: "public",
+        docusaurus: "build",
+        vitepress: ".vitepress/dist",
+        vuepress: ".vuepress/dist",
+        eleventy: "_site",
+        hexo: "public",
+        hugo: "public",
+        jekyll: "_site",
+        gridsome: "dist",
+        vue: "dist",
+        angular: "dist",
+        ember: "dist",
+        preact: "build",
+        parcel: "dist",
+        "solid-start": ".output/public",
+        remix: "build/client",
     };
     if (known[framework]) return known[framework];
-    for (const candidate of ["dist", "build", "out", "public", ".output/public"]) {
+    for (const candidate of [
+        "dist",
+        "build",
+        "out",
+        "public",
+        ".output/public",
+        "build/client",
+        ".vitepress/dist",
+        ".vuepress/dist",
+        "_site",
+    ]) {
         if (hasDir(candidate)) return candidate;
     }
     return "dist";
@@ -95,11 +146,24 @@ export function detectFramework(dir: string): string {
     const deps = { ...(pkg?.dependencies ?? {}), ...(pkg?.devDependencies ?? {}) };
     if (deps.next) return "next";
     if (deps["@sveltejs/kit"]) return "svelte-kit";
+    if (deps["@solidjs/start"]) return "solid-start";
     if (deps.nuxt || deps["nuxt3"]) return "nuxt";
+    if (deps["@remix-run/dev"] || deps["@remix-run/react"]) return "remix";
     if (deps.astro) return "astro";
-    if (deps.vite) return "vite";
+    if (deps["@docusaurus/core"]) return "docusaurus";
+    if (deps.vitepress) return "vitepress";
+    if (deps.vuepress) return "vuepress";
+    if (deps["@11ty/eleventy"]) return "eleventy";
+    if (deps.hexo) return "hexo";
+    if (deps.gatsby) return "gatsby";
+    if (deps.gridsome) return "gridsome";
+    if (deps["@vue/cli-service"]) return "vue";
     if (deps["react-scripts"]) return "cra";
+    if (deps["preact-cli"]) return "preact";
+    if (deps["@parcel/core"] || deps.parcel) return "parcel";
+    if (deps["ember-source"]) return "ember";
     if (deps["@angular/core"]) return "angular";
+    if (deps.vite) return "vite";
     return "static";
 }
 
@@ -214,4 +278,23 @@ export async function cloneRepo(params: {
             throw new Error(`Unable to check out ${commitSha}`);
         }
     }
+
+    // Best-effort submodule checkout. Many static-site repos vendor themes or
+    // content as submodules; a missing submodule would otherwise fail the build
+    // with confusing "file not found" errors. Failure here is non-fatal because
+    // repos without submodules are the common case.
+    await run(
+        "git",
+        [
+            "-C",
+            dir,
+            "submodule",
+            "update",
+            "--init",
+            "--recursive",
+            "--depth",
+            "1",
+        ],
+        { cwd: dir, env, timeoutMs, onOutput: (c) => onOutput(c) },
+    );
 }

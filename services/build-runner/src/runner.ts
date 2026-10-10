@@ -8,7 +8,7 @@ import { createLogSink, type LogSink } from "./log-sink.js";
 import { run } from "./process.js";
 import {
     cloneRepo,
-    fallbackInstallCommandFor,
+    installCommandCandidates,
     resolveBuildPlan,
 } from "./workspace.js";
 import { runCliDeploy } from "./deploy.js";
@@ -110,36 +110,39 @@ export async function processJob(job: ClaimedJob, deps: RunnerDeps): Promise<voi
             `==> Installing dependencies (${plan.packageManager})\n`,
             stage,
         );
-        const install = await run(plan.installCommand[0]!, plan.installCommand.slice(1), {
-            cwd: workspace,
-            env: installEnv,
-            timeoutMs: config.jobTimeoutMs,
-            onOutput,
-        });
-        // A frozen/`ci` install is strict: it fails when the repo's lockfile is
-        // out of sync with package.json. Most public repos have drifted
-        // lockfiles (Vercel/Netlify tolerate this), so fall back to a permissive
-        // install that updates the lockfile before declaring the job failed.
-        if (install.code !== 0 && !install.timedOut) {
-            logSink.append(
-                "==> Retrying install without --frozen-lockfile\n",
-                stage,
-            );
-            const fallback = fallbackInstallCommandFor(plan.packageManager);
-            const relaxed = await run(fallback[0]!, fallback.slice(1), {
+        // Try progressively more permissive installs. Strict/"frozen" installs
+        // keep clean lockfiles reproducible, but real-world public repos often
+        // drift or hit npm peer-dependency conflicts (`ERESOLVE`), which
+        // Vercel/Netlify tolerate. Stop at the first success.
+        const installAttempts = installCommandCandidates(plan.packageManager);
+        let installSucceeded = false;
+        let lastInstallCode: number | null = null;
+        for (let i = 0; i < installAttempts.length; i++) {
+            const attempt = installAttempts[i]!;
+            if (i > 0) {
+                logSink.append(
+                    `==> Retrying install: ${attempt.join(" ")}\n`,
+                    stage,
+                );
+            }
+            const res = await run(attempt[0]!, attempt.slice(1), {
                 cwd: workspace,
                 env: installEnv,
                 timeoutMs: config.jobTimeoutMs,
                 onOutput,
             });
-            if (relaxed.timedOut) throw new Error("Dependency install timed out");
-            if (relaxed.code !== 0) {
-                throw new Error(
-                    `Dependency install failed (code ${relaxed.code})`,
-                );
+            if (res.timedOut) throw new Error("Dependency install timed out");
+            if (res.code === 0) {
+                installSucceeded = true;
+                break;
             }
+            lastInstallCode = res.code;
         }
-        if (install.timedOut) throw new Error("Dependency install timed out");
+        if (!installSucceeded) {
+            throw new Error(
+                `Dependency install failed (code ${lastInstallCode})`,
+            );
+        }
 
         stage = "building";
         logSink.append(`==> Building (${plan.framework})\n`, stage);

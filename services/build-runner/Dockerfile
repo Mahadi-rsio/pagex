@@ -35,9 +35,13 @@ RUN npx tsc -p tsconfig.json
 # declare engines >=22.12, so a Node 20 runtime is not enough.
 FROM node:24-bookworm-slim AS runtime
 
-# git + the archive/binary helpers bun's installer needs.
+# git + the archive/binary helpers bun's installer needs, plus a native build
+# toolchain so node-gyp can compile dependencies without prebuilt binaries
+# (node-sass, better-sqlite3, canvas, bcrypt, …). Vercel ships equivalents.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ca-certificates curl unzip \
+    && apt-get install -y --no-install-recommends \
+        git ca-certificates curl unzip \
+        python3 make g++ pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Package managers the runner may encounter in a project:

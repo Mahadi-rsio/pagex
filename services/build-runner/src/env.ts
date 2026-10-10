@@ -61,6 +61,13 @@ export function buildScriptEnv(
     // Never let npm/pnpm reach a user-level config that might carry a token.
     env.NPM_CONFIG_USERCONFIG = "/dev/null";
     env.npm_config_userconfig = "/dev/null";
+    // Hosting platforms do not hard-fail on `engines` mismatches (Vercel warns
+    // and proceeds). Repo-level `.npmrc` `engine-strict=true` is lower
+    // precedence than env, so these override it. Install code still runs on the
+    // image Node; this only removes the version gate.
+    env.npm_config_engine_strict = "false";
+    env.NPM_CONFIG_ENGINE_STRICT = "false";
+    env.YARN_IGNORE_ENGINES = "1";
     return env;
 }
 
