@@ -6,7 +6,11 @@ import { buildScriptEnv } from "./env.js";
 import { chunkLog, redactSecrets } from "./log.js";
 import { createLogSink, type LogSink } from "./log-sink.js";
 import { run } from "./process.js";
-import { cloneRepo, resolveBuildPlan } from "./workspace.js";
+import {
+    cloneRepo,
+    fallbackInstallCommandFor,
+    resolveBuildPlan,
+} from "./workspace.js";
 import { runCliDeploy } from "./deploy.js";
 
 const MAX_CHUNK = 60 * 1024;
@@ -112,10 +116,30 @@ export async function processJob(job: ClaimedJob, deps: RunnerDeps): Promise<voi
             timeoutMs: config.jobTimeoutMs,
             onOutput,
         });
-        if (install.timedOut) throw new Error("Dependency install timed out");
-        if (install.code !== 0) {
-            throw new Error(`Dependency install failed (code ${install.code})`);
+        // A frozen/`ci` install is strict: it fails when the repo's lockfile is
+        // out of sync with package.json. Most public repos have drifted
+        // lockfiles (Vercel/Netlify tolerate this), so fall back to a permissive
+        // install that updates the lockfile before declaring the job failed.
+        if (install.code !== 0 && !install.timedOut) {
+            logSink.append(
+                "==> Retrying install without --frozen-lockfile\n",
+                stage,
+            );
+            const fallback = fallbackInstallCommandFor(plan.packageManager);
+            const relaxed = await run(fallback[0]!, fallback.slice(1), {
+                cwd: workspace,
+                env: installEnv,
+                timeoutMs: config.jobTimeoutMs,
+                onOutput,
+            });
+            if (relaxed.timedOut) throw new Error("Dependency install timed out");
+            if (relaxed.code !== 0) {
+                throw new Error(
+                    `Dependency install failed (code ${relaxed.code})`,
+                );
+            }
         }
+        if (install.timedOut) throw new Error("Dependency install timed out");
 
         stage = "building";
         logSink.append(`==> Building (${plan.framework})\n`, stage);

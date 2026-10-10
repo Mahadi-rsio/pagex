@@ -35,6 +35,26 @@ export function installCommandFor(pm: PackageManager): string[] {
     }
 }
 
+/**
+ * A less-strict install fallback used when the frozen/`ci` install fails
+ * because a repo's lockfile is out of sync with its package.json. Real-world
+ * public repos often drift, and Vercel/Netlify tolerate this by allowing the
+ * install to update the lockfile. We only fall back after the strict attempt
+ * fails, so clean lockfiles stay reproducible.
+ */
+export function fallbackInstallCommandFor(pm: PackageManager): string[] {
+    switch (pm) {
+        case "pnpm":
+            return ["pnpm", "install", "--no-frozen-lockfile"];
+        case "yarn":
+            return ["yarn", "install"];
+        case "bun":
+            return ["bun", "install"];
+        case "npm":
+            return ["npm", "install"];
+    }
+}
+
 function readPackageJson(
     dir: string,
 ): { scripts?: Record<string, string>; dependencies?: Record<string, string>; devDependencies?: Record<string, string> } | null {
