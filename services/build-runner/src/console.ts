@@ -55,6 +55,26 @@ export interface ConsoleClient {
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
+/** HTTP error carrying the status code and optional Retry-After (ms) on 429. */
+export class ConsoleHttpError extends Error {
+    readonly status: number;
+    readonly retryAfterMs: number | null;
+
+    constructor(operation: string, status: number, retryAfterMs: number | null) {
+        super(`${operation} failed: ${status}`);
+        this.name = "ConsoleHttpError";
+        this.status = status;
+        this.retryAfterMs = retryAfterMs;
+    }
+}
+
+function retryAfterMs(res: Response): number | null {
+    const header = res.headers.get("retry-after");
+    if (!header) return null;
+    const value = Number(header);
+    return Number.isFinite(value) && value >= 0 ? value * 1000 : null;
+}
+
 export function createConsoleClient(
     consoleUrl: string,
     machineToken: string,
@@ -72,12 +92,23 @@ export function createConsoleClient(
             signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
 
+    const requireOk = async (res: Response, operation: string) => {
+        if (!res.ok) {
+            throw new ConsoleHttpError(
+                operation,
+                res.status,
+                retryAfterMs(res),
+            );
+        }
+        return res;
+    };
+
     return {
         async claim(workerId) {
             const res = await post(`${base}/api/builds/claim`, machineToken, {
                 workerId,
             });
-            if (!res.ok) throw new Error(`claim failed: ${res.status}`);
+            await requireOk(res, "claim");
             const data = (await res.json()) as { job: ClaimedJob | null };
             return data.job;
         },
@@ -88,7 +119,7 @@ export function createConsoleClient(
                 token,
                 stage ? { workerId, chunk, stage } : { workerId, chunk },
             );
-            if (!res.ok) throw new Error(`appendLog failed: ${res.status}`);
+            await requireOk(res, "appendLog");
         },
 
         async heartbeat(buildId, token, workerId) {
@@ -97,7 +128,7 @@ export function createConsoleClient(
                 token,
                 { workerId },
             );
-            if (!res.ok) throw new Error(`heartbeat failed: ${res.status}`);
+            await requireOk(res, "heartbeat");
         },
 
         async complete(buildId, token, workerId, body) {
@@ -106,7 +137,7 @@ export function createConsoleClient(
                 token,
                 { workerId, ...body },
             );
-            if (!res.ok) throw new Error(`complete failed: ${res.status}`);
+            await requireOk(res, "complete");
         },
 
         async controllerTick() {
@@ -115,7 +146,7 @@ export function createConsoleClient(
                 machineToken,
                 {},
             );
-            if (!res.ok) throw new Error(`controller tick failed: ${res.status}`);
+            await requireOk(res, "controller tick");
         },
     };
 }

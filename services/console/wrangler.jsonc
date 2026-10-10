@@ -1,7 +1,7 @@
 {
     "$schema": "node_modules/wrangler/config-schema.json",
     "name": "pagex-console",
-    "main": ".open-next/worker.js",
+    "main": "custom-worker.ts",
     "compatibility_date": "2026-10-08",
     "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
     "assets": {
@@ -46,12 +46,16 @@
             "persist": true
         },
         "traces": {
-            "enabled": false,
+            "enabled": true,
             "head_sampling_rate": 1,
             "persist": true
         },
-        "issue_detection": {
-            "enabled": false
-        }
+        "issues": {
+            "enabled": true
+        },
+        "redact_query_string": true
+    },
+    "triggers": {
+        "crons": ["*/2 * * * *"]
     }
 }

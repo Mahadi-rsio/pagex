@@ -4,6 +4,7 @@ import {
     BUILD_MACHINE_LOCK_TTL_SECONDS,
 } from "@/server/api/constants";
 import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
+import { structuredLog } from "@/server/api/http/request-log";
 import {
     decideControllerAction,
     type MachineState,
@@ -58,6 +59,48 @@ export type FetchLike = (
     init?: RequestInit,
 ) => Promise<Response>;
 
+/**
+ * Structured Fly error that carries the operation, upstream status and a
+ * sanitized body so operators can distinguish a permanent auth/config failure
+ * (401/403/404) from a transient network/5xx error without seeing the token.
+ */
+export class FlyApiError extends Error {
+    readonly operation: string;
+    readonly status: number;
+    readonly retryable: boolean;
+
+    constructor(operation: string, status: number, message: string) {
+        super(
+            `Fly ${operation} failed: ${status}${message ? ` ${message}` : ""}`,
+        );
+        this.name = "FlyApiError";
+        this.operation = operation;
+        this.status = status;
+        // 401/403/404 are permanent — retrying will not help and only adds
+        // load; everything else (5xx, 429) is transient.
+        this.retryable = isTransientStatus(status);
+    }
+}
+
+/** Read and sanitize an upstream Fly response body (never includes secrets). */
+async function readSanitizedBody(res: Response): Promise<string> {
+    try {
+        const text = (await res.text()).replace(/\s+/g, " ").trim();
+        return text.slice(0, 300);
+    } catch {
+        return "";
+    }
+}
+
+const TRANSIENT_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+function isTransientStatus(status: number): boolean {
+    return TRANSIENT_STATUSES.has(status) || status >= 500;
+}
+
+/** A machine that is already in the desired state is not an error. */
+const ACCEPTABLE_ALREADY = new Set([409]);
+
 export function createFlyClient(
     config: FlyConfig,
     fetchImpl: FetchLike = fetch,
@@ -74,13 +117,17 @@ export function createFlyClient(
         async getState() {
             try {
                 const res = await fetchImpl(base, { headers });
-                if (!res.ok) return "unknown";
-                const body = (await res.json()) as { state?: unknown };
+                if (!res.ok) {
+                    const body = await readSanitizedBody(res);
+                    throw new FlyApiError("getState", res.status, body);
+                }
+                const parsed = (await res.json()) as { state?: unknown };
                 return normalizeMachineState(
-                    typeof body.state === "string" ? body.state : "unknown",
+                    typeof parsed.state === "string" ? parsed.state : "unknown",
                 );
-            } catch {
-                return "unknown";
+            } catch (error) {
+                if (error instanceof FlyApiError) throw error;
+                throw new FlyApiError("getState", 0, "network error");
             }
         },
         async start() {
@@ -88,8 +135,9 @@ export function createFlyClient(
                 method: "POST",
                 headers,
             });
-            if (!res.ok && res.status !== 409) {
-                throw new Error(`Fly start failed: ${res.status}`);
+            if (!res.ok && !ACCEPTABLE_ALREADY.has(res.status)) {
+                const body = await readSanitizedBody(res);
+                throw new FlyApiError("start", res.status, body);
             }
         },
         async stop() {
@@ -97,12 +145,15 @@ export function createFlyClient(
                 method: "POST",
                 headers,
             });
-            if (!res.ok && res.status !== 409) {
-                throw new Error(`Fly stop failed: ${res.status}`);
+            if (!res.ok && !ACCEPTABLE_ALREADY.has(res.status)) {
+                const body = await readSanitizedBody(res);
+                throw new FlyApiError("stop", res.status, body);
             }
         },
     };
 }
+
+export { isTransientStatus };
 
 export interface ReconcileDeps {
     fly: FlyClient;
@@ -147,7 +198,18 @@ return 0
 /** Best-effort wake used right after a job is enqueued. Never throws. */
 export async function wakeBuildMachine(): Promise<boolean> {
     const config = readFlyConfig();
-    if (!config) return false;
+    if (!config) {
+        structuredLog.warn({
+            stage: "wake",
+            upstreamService: "fly",
+            outcome: "not-configured",
+            error: new Error(
+                "Fly config missing (FLY_API_TOKEN/FLY_APP_NAME/FLY_MACHINE_ID); " +
+                    "the queued build will wait for the controller cron to start the machine",
+            ),
+        });
+        return false;
+    }
     try {
         const client = createFlyClient(config);
         const state = await client.getState();
@@ -160,10 +222,21 @@ export async function wakeBuildMachine(): Promise<boolean> {
         }
         return true;
     } catch (err) {
-        console.error(
-            "[fly-controller] wake failed:",
-            err instanceof Error ? err.message : err,
-        );
+        if (err instanceof FlyApiError) {
+            structuredLog.warn({
+                stage: "wake",
+                upstreamService: "fly",
+                upstreamStatusCode: err.status,
+                retryable: err.retryable,
+                error: err,
+            });
+        } else {
+            structuredLog.error({
+                stage: "wake",
+                upstreamService: "fly",
+                error: err,
+            });
+        }
         return false;
     }
 }

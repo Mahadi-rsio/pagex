@@ -23,7 +23,12 @@ const BASE_ALLOWLIST = [
 export interface BuildEnvOptions {
     base?: NodeJS.ProcessEnv;
     passThrough?: string[];
-    nodeEnv?: string;
+    /**
+     * Value for NODE_ENV. Pass `undefined` to omit NODE_ENV entirely so npm /
+     * pnpm install all dependencies (including devDependencies) during the
+     * install step. Defaults to "production" for build/deploy steps.
+     */
+    nodeEnv?: string | null;
 }
 
 /**
@@ -42,7 +47,9 @@ export function buildScriptEnv(
     }
 
     env.CI = "true";
-    env.NODE_ENV = options.nodeEnv ?? "production";
+    if (options.nodeEnv !== null) {
+        env.NODE_ENV = options.nodeEnv ?? "production";
+    }
     // Never let npm/pnpm reach a user-level config that might carry a token.
     env.NPM_CONFIG_USERCONFIG = "/dev/null";
     env.npm_config_userconfig = "/dev/null";

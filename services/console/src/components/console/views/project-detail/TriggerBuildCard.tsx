@@ -15,8 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { apiClient } from "@/lib/api-client";
 import type { Project } from "@/store/useAppStore";
+import { BuildTerminal } from "../../builds/BuildTerminal";
 import { GithubIcon } from "../create-project/GithubIcon";
-import { LiveBuildTerminal } from "../create-project/LiveBuildTerminal";
 
 const FRAMEWORK_PRESETS = [
     "auto",
@@ -125,10 +125,10 @@ export function TriggerBuildCard({
                 </CardHeader>
                 <CardContent className="space-y-4 px-6 pb-6">
                     {activeBuildId ? (
-                        <LiveBuildTerminal
-                            projectName={project.name}
-                            repoName={repoUrl.trim()}
+                        <BuildTerminal
                             buildId={activeBuildId}
+                            title={`Build · ${project.name}`}
+                            subtitle={`${repoUrl.trim()} · GitHub · ${framework}`}
                             onComplete={handleBuildComplete}
                         />
                     ) : (

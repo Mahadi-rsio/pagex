@@ -6,12 +6,10 @@ import {
     ChevronDown,
     ChevronUp,
     Clock,
-    Terminal,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
@@ -24,6 +22,7 @@ import { type ApiBuild, apiClient } from "@/lib/api-client";
 import { formatRelativeTime } from "@/lib/utils";
 import type { Project } from "@/store/useAppStore";
 
+import { BuildTerminal } from "../../builds/BuildTerminal";
 import { LatestCommitCard } from "./LatestCommitCard";
 import { TriggerBuildCard } from "./TriggerBuildCard";
 import {
@@ -31,146 +30,6 @@ import {
     fetchLatestGithubCommit,
     type LatestCommitInfo,
 } from "./utils";
-
-// ─── Build Log Panel ─────────────────────────────────────────────────────────
-
-function BuildLogPanel({
-    build,
-    onClose,
-}: {
-    build: ApiBuild;
-    onClose: () => void;
-}) {
-    const [lines, setLines] = useState<string[]>([]);
-    const [progress, setProgress] = useState(0);
-    const [done, setDone] = useState(false);
-    const [error, setError] = useState("");
-    const bottomRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        setLines([]);
-        setProgress(0);
-        setDone(false);
-        setError("");
-
-        const controller = new AbortController();
-
-        apiClient
-            .streamBuildLogs(
-                build.id,
-                {
-                    onLog: (message) => setLines((prev) => [...prev, message]),
-                    onProgress: (value) => setProgress(value),
-                    onDone: (event) => {
-                        setDone(true);
-                        if (event.error) {
-                            setError(event.error);
-                        }
-                    },
-                    onError: (event) => {
-                        setDone(true);
-                        setError(event.message);
-                        setLines((prev) => [
-                            ...prev,
-                            `[error] ${event.message}`,
-                        ]);
-                    },
-                },
-                controller.signal,
-            )
-            .catch(() => {
-                setDone(true);
-                setError("Failed to connect to the build log stream");
-            });
-
-        return () => controller.abort();
-    }, [build.id]);
-
-    useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [lines]);
-
-    const statusLabel = done
-        ? error
-            ? "Failed"
-            : "Complete"
-        : progress > 0
-          ? `${Math.round(progress)}%`
-          : "Streaming…";
-
-    return (
-        <div className="overflow-hidden rounded-none border border-border bg-[#0a0a0a] font-mono text-xs leading-relaxed text-zinc-300">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-white/[0.06] bg-white/[0.03] px-4 py-2.5">
-                <div className="flex items-center gap-2">
-                    <Terminal className="size-3.5 text-zinc-400" />
-                    <span className="font-sans text-xs font-medium text-zinc-200">
-                        Build logs
-                    </span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <Badge
-                        variant="outline"
-                        className="border-white/10 bg-white/[0.04] font-sans text-xs text-zinc-300"
-                    >
-                        {statusLabel}
-                    </Badge>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-6 text-zinc-500 hover:text-zinc-200"
-                        onClick={onClose}
-                        aria-label="Close logs"
-                    >
-                        <ChevronUp className="size-3.5" />
-                    </Button>
-                </div>
-            </div>
-            {/* Progress bar */}
-            {progress > 0 && !done && (
-                <div className="h-0.5 bg-white/[0.06]">
-                    <div
-                        className="h-full bg-zinc-100 transition-all"
-                        style={{ width: `${progress}%` }}
-                    />
-                </div>
-            )}
-            {/* Log content */}
-            <div className="h-72 space-y-1 overflow-y-auto p-4">
-                {lines.length === 0 && !done ? (
-                    <div className="flex items-center gap-2 text-zinc-600">
-                        <Spinner size="inline" />
-                        <span>Waiting for build logs…</span>
-                    </div>
-                ) : (
-                    lines.map((line, i) => (
-                        <p
-                            key={`${i}-${line}`}
-                            className={
-                                line.startsWith("✓")
-                                    ? "text-zinc-100"
-                                    : line.startsWith(">")
-                                      ? "text-zinc-300"
-                                      : line.startsWith("[error]")
-                                        ? "text-red-400"
-                                        : line.startsWith("[Summary]") ||
-                                            line.startsWith("[Stats]")
-                                          ? "text-emerald-400"
-                                          : "text-zinc-500"
-                            }
-                        >
-                            {line}
-                        </p>
-                    ))
-                )}
-                {!done && lines.length > 0 && (
-                    <span className="inline-block h-3 w-1.5 animate-pulse bg-zinc-100" />
-                )}
-                <div ref={bottomRef} />
-            </div>
-        </div>
-    );
-}
 
 // ─── Main BuildsTab ───────────────────────────────────────────────────────────
 
@@ -355,8 +214,10 @@ export function BuildsTab({ project }: { project: Project }) {
                                             </div>
                                         </button>
                                         {isSelected && selectedBuild && (
-                                            <BuildLogPanel
-                                                build={selectedBuild}
+                                            <BuildTerminal
+                                                buildId={selectedBuild.id}
+                                                title={`Build logs · ${selectedBuild.framework}`}
+                                                subtitle={`${selectedBuild.repo_url}${selectedBuild.build_command ? ` · ${selectedBuild.build_command}` : ""}`}
                                                 onClose={() =>
                                                     setSelectedBuildId(null)
                                                 }

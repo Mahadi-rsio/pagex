@@ -11,8 +11,8 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { BuildTerminal } from "../../builds/BuildTerminal";
 import { GithubIcon } from "./GithubIcon";
-import { LiveBuildTerminal } from "./LiveBuildTerminal";
 
 type CloudDeployPanelProps = {
     showBuild: boolean;
@@ -67,10 +67,10 @@ export function CloudDeployPanel({
                             {buildError}
                         </div>
                     ) : activeBuildId ? (
-                        <LiveBuildTerminal
-                            projectName={slugName}
-                            repoName={repoUrl.trim()}
+                        <BuildTerminal
                             buildId={activeBuildId}
+                            title={`Build · ${slugName}`}
+                            subtitle={repoUrl.trim()}
                             onComplete={onBuildComplete}
                         />
                     ) : (

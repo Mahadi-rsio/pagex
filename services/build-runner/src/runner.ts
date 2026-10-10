@@ -4,6 +4,7 @@ import type { ConsoleClient, ClaimedJob, BuildStage } from "./console.js";
 import type { RunnerConfig } from "./config.js";
 import { buildScriptEnv } from "./env.js";
 import { chunkLog, redactSecrets } from "./log.js";
+import { createLogSink, type LogSink } from "./log-sink.js";
 import { run } from "./process.js";
 import { cloneRepo, resolveBuildPlan } from "./workspace.js";
 import { runCliDeploy } from "./deploy.js";
@@ -26,21 +27,6 @@ export interface RunnerDeps {
     logger?: Logger;
 }
 
-function safeAppend(
-    client: ConsoleClient,
-    job: ClaimedJob,
-    workerId: string,
-    text: string,
-    stage?: BuildStage,
-): void {
-    const safe = redactSecrets(text);
-    for (const chunk of chunkLog(safe, MAX_CHUNK)) {
-        void client
-            .appendLog(job.build.id, job.token, workerId, chunk, stage)
-            .catch(() => undefined);
-    }
-}
-
 /** Run exactly one claimed job end-to-end. Never throws. */
 export async function processJob(job: ClaimedJob, deps: RunnerDeps): Promise<void> {
     const { client, config } = deps;
@@ -50,11 +36,37 @@ export async function processJob(job: ClaimedJob, deps: RunnerDeps): Promise<voi
 
     const workspace = fs.mkdtempSync(path.join(config.workspaceDir, "pagex-build-"));
     let stage: BuildStage = "cloning";
+
+    // Buffered, serialized, bounded log sink. Replaces the old fire-and-forget
+    // per-chunk POSTs so a chatty build cannot starve heartbeats/completions or
+    // exhaust the API quota with unbounded requests.
+    const logSink: LogSink = createLogSink(
+        client,
+        buildId,
+        job.token,
+        workerId,
+    );
     let heartbeat: NodeJS.Timeout | undefined;
 
-    const onOutput = (chunk: string) => safeAppend(client, job, workerId, chunk);
+    const onOutput = (chunk: string) => {
+        const safe = redactSecrets(chunk);
+        for (const piece of chunkLog(safe, MAX_CHUNK)) {
+            logSink.append(piece, stage);
+        }
+    };
+
+    const reportDropped = () => {
+        const dropped = logSink.droppedBytes();
+        if (dropped > 0) {
+            logger.error(
+                `[build-runner] dropped ${dropped} bytes of build log for ${buildId} (console unavailable or quota exceeded)`,
+            );
+        }
+    };
 
     heartbeat = setInterval(() => {
+        // Heartbeats go through their own channel and are never queued behind
+        // log flushes, so log traffic cannot starve lease renewal.
         void client
             .heartbeat(buildId, job.token, workerId)
             .catch((err) => logger.error(`heartbeat failed for ${buildId}`, err));
@@ -63,8 +75,15 @@ export async function processJob(job: ClaimedJob, deps: RunnerDeps): Promise<voi
     try {
         logger.info(`building ${buildId} (${job.repo_url}@${job.commit_sha ?? job.branch})`);
 
-        safeAppend(client, job, workerId, `==> Cloning ${job.repo_url}\n`, stage);
+        logSink.append(`==> Cloning ${job.repo_url}\n`, stage);
         const buildEnv = buildScriptEnv({ passThrough: config.passThroughEnv });
+        // Install must NOT run with NODE_ENV=production, otherwise npm/pnpm
+        // skip devDependencies and builds that rely on them (e.g. Tailwind
+        // plugins like @tailwindcss/typography) break.
+        const installEnv = buildScriptEnv({
+            passThrough: config.passThroughEnv,
+            nodeEnv: null,
+        });
         await cloneRepo({
             repoUrl: job.repo_url,
             commitSha: job.commit_sha ?? job.branch,
@@ -83,16 +102,13 @@ export async function processJob(job: ClaimedJob, deps: RunnerDeps): Promise<voi
         });
 
         stage = "installing";
-        safeAppend(
-            client,
-            job,
-            workerId,
+        logSink.append(
             `==> Installing dependencies (${plan.packageManager})\n`,
             stage,
         );
         const install = await run(plan.installCommand[0]!, plan.installCommand.slice(1), {
             cwd: workspace,
-            env: buildEnv,
+            env: installEnv,
             timeoutMs: config.jobTimeoutMs,
             onOutput,
         });
@@ -102,7 +118,7 @@ export async function processJob(job: ClaimedJob, deps: RunnerDeps): Promise<voi
         }
 
         stage = "building";
-        safeAppend(client, job, workerId, `==> Building (${plan.framework})\n`, stage);
+        logSink.append(`==> Building (${plan.framework})\n`, stage);
         const build = await run(plan.buildCommand[0]!, plan.buildCommand.slice(1), {
             cwd: workspace,
             env: buildEnv,
@@ -118,7 +134,7 @@ export async function processJob(job: ClaimedJob, deps: RunnerDeps): Promise<voi
         }
 
         stage = "deploying";
-        safeAppend(client, job, workerId, "==> Deploying\n", stage);
+        logSink.append("==> Deploying\n", stage);
         const outcome = await runCliDeploy({
             cliEntry: config.cliEntry,
             consoleUrl: config.consoleUrl,
@@ -131,6 +147,18 @@ export async function processJob(job: ClaimedJob, deps: RunnerDeps): Promise<voi
         });
 
         stage = "ready";
+        logSink.append("==> Build complete\n", stage);
+
+        // Best-effort flush of the log tail before reporting completion. Bounded
+        // by the sink's retry/backoff so a console outage cannot deadlock the
+        // build or indefinitely delay completion.
+        try {
+            await logSink.flush();
+        } catch (flushErr) {
+            logger.error(`log flush failed for ${buildId}`, flushErr);
+        }
+        reportDropped();
+
         await client.complete(buildId, job.token, workerId, {
             status: "completed",
             deploymentId: outcome.deploymentId,
@@ -141,7 +169,9 @@ export async function processJob(job: ClaimedJob, deps: RunnerDeps): Promise<voi
         const message = err instanceof Error ? err.message : String(err);
         logger.error(`job ${buildId} failed`, err);
         try {
-            safeAppend(client, job, workerId, `\n==> Build failed: ${message}\n`);
+            logSink.append(`\n==> Build failed: ${message}\n`);
+            await logSink.flush();
+            reportDropped();
             await client.complete(buildId, job.token, workerId, {
                 status: "failed",
                 error: message,
@@ -151,6 +181,7 @@ export async function processJob(job: ClaimedJob, deps: RunnerDeps): Promise<voi
         }
     } finally {
         if (heartbeat) clearInterval(heartbeat);
+        logSink.dispose();
         try {
             fs.rmSync(workspace, { recursive: true, force: true });
         } catch (cleanupErr) {

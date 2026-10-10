@@ -1,11 +1,29 @@
 import { NextResponse } from "next/server";
 import { type AuthContext, authenticateRequest } from "./auth";
-import { checkPublicRateLimit, withRateLimitHeaders } from "./rate-limit";
+import {
+    buildRateLimitedResponse,
+    checkInternalRateLimit,
+    checkPublicRateLimit,
+    type RateLimitDecision,
+} from "./rate-limit";
+import { logRequest } from "./request-log";
 
 /**
- * Wrap a route handler with the shared API boundary: rate limiting and
- * authentication (CLI JWT or browser session). Resolves once; the inner
- * handler receives the authenticated tenant and must not re-authenticate.
+ * Wrap a route handler with the shared API boundary: authentication, then the
+ * rate-limit policy that matches the authenticated identity.
+ *
+ * The build runner calls the machine endpoints (`heartbeat`, `logs`,
+ * `complete`) and the deploy endpoints with a per-job build token. All of those
+ * requests originate from one shared Fly egress IP, so applying the public
+ * per-IP quota would let a chatty build's log traffic starve its own heartbeats
+ * and completion calls. We therefore authenticate *first* and:
+ *
+ *  - build-job requests  -> internal per-build quota (keyed by build id)
+ *  - tenant / browser     -> public per-IP quota (unchanged)
+ *  - unauthenticated      -> public per-IP quota (anti-abuse)
+ *
+ * The inner handler receives the authenticated tenant and must not
+ * re-authenticate.
  */
 export function withApiAuth(
     handler: (
@@ -21,29 +39,95 @@ export function withApiAuth(
         request: Request,
         context: { params: Promise<Record<string, string>> },
     ): Promise<Response> => {
-        const rateLimit = await checkPublicRateLimit(request);
-        if (rateLimit.blocked) {
-            return withRateLimitHeaders(
-                NextResponse.json(
-                    { error: "Too many requests, please try again later" },
-                    { status: 429 },
-                ),
-                rateLimit.headers,
-            );
-        }
+        const startedAt = Date.now();
+        const requestId =
+            request.headers.get("x-request-id") || crypto.randomUUID();
 
         const authentication = await authenticateRequest(request);
-        if (!authentication.ok) {
-            return withRateLimitHeaders(
-                authentication.response,
-                rateLimit.headers,
+
+        let decision: RateLimitDecision;
+        if (authentication.ok && authentication.auth.job) {
+            // Build machine request: apply the internal per-build policy so
+            // machine traffic is not throttled by the shared egress IP quota.
+            decision = await checkInternalRateLimit(
+                authentication.auth.job.buildId,
             );
+        } else {
+            decision = await checkPublicRateLimit(request);
         }
 
-        return withRateLimitHeaders(
-            await handler(request, authentication.auth, context),
-            rateLimit.headers,
-        );
+        if (decision.blocked) {
+            const response = buildRateLimitedResponse(decision);
+            logRequest({
+                requestId,
+                request,
+                statusCode: 429,
+                durationMs: Date.now() - startedAt,
+                rateLimitDecision: "blocked",
+                rateLimitKeyType: decision.keyType,
+                authUserId: authentication.ok
+                    ? authentication.auth.id
+                    : undefined,
+                outcome: "rate_limited",
+            });
+            return response;
+        }
+
+        if (!authentication.ok) {
+            const response = authentication.response;
+            logRequest({
+                requestId,
+                request,
+                statusCode: response.status,
+                durationMs: Date.now() - startedAt,
+                rateLimitDecision: "allowed",
+                rateLimitKeyType: decision.keyType,
+                outcome: "unauthorized",
+            });
+            return response;
+        }
+
+        try {
+            const response = await handler(
+                request,
+                authentication.auth,
+                context,
+            );
+            logRequest({
+                requestId,
+                request,
+                statusCode: response.status,
+                durationMs: Date.now() - startedAt,
+                rateLimitDecision: "allowed",
+                rateLimitKeyType: decision.keyType,
+                authUserId: authentication.auth.id,
+                outcome: "handled",
+            });
+            return response;
+        } catch (error) {
+            const status = errorStatus(error);
+            const message = errorMessage(error);
+            logRequest({
+                requestId,
+                request,
+                statusCode: status,
+                durationMs: Date.now() - startedAt,
+                rateLimitDecision: "allowed",
+                rateLimitKeyType: decision.keyType,
+                authUserId: authentication.auth.id,
+                outcome: "error",
+                error,
+            });
+            // Preserve a 4xx error thrown by a handler (e.g. HttpError) as-is;
+            // anything else becomes a sanitized 500.
+            if (status >= 400 && status <= 499) {
+                return NextResponse.json({ error: message }, { status });
+            }
+            return NextResponse.json(
+                { error: "Internal Server Error" },
+                { status: 500 },
+            );
+        }
     };
 }
 

@@ -65,7 +65,9 @@ export interface BuildResponse {
  */
 function iso(value: Date | string | null | undefined): string | null {
     if (!value) return null;
-    return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+    return value instanceof Date
+        ? value.toISOString()
+        : new Date(value).toISOString();
 }
 
 /** Shape returned to the dashboard / polling clients. */
