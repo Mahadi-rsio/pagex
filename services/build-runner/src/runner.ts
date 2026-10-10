@@ -149,8 +149,41 @@ export async function processJob(job: ClaimedJob, deps: RunnerDeps): Promise<voi
             timeoutMs: config.jobTimeoutMs,
             onOutput,
         });
+        // Legacy webpack-4 (Create React App) projects use the md4 hash, which
+        // OpenSSL 3 (Node >= 17) removed, producing:
+        //   error:0308010C:digital envelope routines::unsupported
+        // The standard CI workaround (used by Vercel/Netlify) is to enable the
+        // legacy OpenSSL provider for the build step. Retry once with it so
+        // modern builds stay untouched while old CRA projects still build.
+        if (build.code !== 0 && !build.timedOut) {
+            logSink.append(
+                "==> Retrying build with --openssl-legacy-provider\n",
+                stage,
+            );
+            const legacyEnv = {
+                ...buildEnv,
+                ...buildScriptEnv({
+                    passThrough: config.passThroughEnv,
+                    nodeEnv: "production",
+                    nodeOptions: "--openssl-legacy-provider",
+                }),
+            };
+            const retried = await run(
+                plan.buildCommand[0]!,
+                plan.buildCommand.slice(1),
+                {
+                    cwd: workspace,
+                    env: legacyEnv,
+                    timeoutMs: config.jobTimeoutMs,
+                    onOutput,
+                },
+            );
+            if (retried.timedOut) throw new Error("Build timed out");
+            if (retried.code !== 0) {
+                throw new Error(`Build failed (code ${retried.code})`);
+            }
+        }
         if (build.timedOut) throw new Error("Build timed out");
-        if (build.code !== 0) throw new Error(`Build failed (code ${build.code})`);
 
         const outputPath = path.join(workspace, plan.outputDir);
         if (!fs.existsSync(outputPath)) {

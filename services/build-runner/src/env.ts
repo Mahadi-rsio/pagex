@@ -29,6 +29,11 @@ export interface BuildEnvOptions {
      * install step. Defaults to "production" for build/deploy steps.
      */
     nodeEnv?: string | null;
+    /**
+     * Value for NODE_OPTIONS. Used to enable the OpenSSL legacy provider when
+     * retrying a build for legacy webpack-4 (CRA) projects on Node >= 17.
+     */
+    nodeOptions?: string;
 }
 
 /**
@@ -49,6 +54,9 @@ export function buildScriptEnv(
     env.CI = "true";
     if (options.nodeEnv !== null) {
         env.NODE_ENV = options.nodeEnv ?? "production";
+    }
+    if (options.nodeOptions) {
+        env.NODE_OPTIONS = options.nodeOptions;
     }
     // Never let npm/pnpm reach a user-level config that might carry a token.
     env.NPM_CONFIG_USERCONFIG = "/dev/null";
