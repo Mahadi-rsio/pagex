@@ -2,13 +2,41 @@
 
 ---
 
-## Cloud builds & BullMQ workers removed
+## Cloud builds — reintroduced as a shared Fly build machine
 
-- **BullMQ has been removed** from the API. There are no `build.worker` / `dlq.worker` processes and no build/worker queues.
-- **Cloud builds (git-repo → Docker build) are removed and postponed.** The `build-env`, `build-env-loader`, `build-worker`, and `docker-dind` Compose services, the `builds` API routes, and the seccomp profile have all been removed.
-- **CLI deploy is the only deploy path.** Clients call `/api/deploy/prepare|presign|commit`; the API uploads/validates content-addressed blobs and activates a manifest via the shared commit path below.
+The old **BullMQ in-compose build workers** are gone and were **not** brought
+back. Cloud builds now run on **one shared Fly.io Machine** that reuses the
+existing CLI deploy pipeline (see `services/build-runner/`):
 
-Historical notes: the ZIP upload worker and the sync worker (analytics) were also removed earlier.
+- **Authoritative state** is the `builds` table. The dashboard triggers
+  `POST /api/builds` → `createBuildJob` pins an immutable commit, inserts the
+  row (`status: queued`), and best-effort wakes the machine via the Fly
+  controller (`wakeBuildMachine`).
+- **The machine claims** one job at a time with `POST /api/builds/claim`
+  (machine-authenticated by `BUILD_MACHINE_TOKEN`, `FOR UPDATE SKIP LOCKED`),
+  clones at the pinned SHA, installs + builds with a **scrubbed environment**
+  (no job token / machine token / cloud creds), then deploys through the
+  existing `/api/deploy/prepare|presign|commit` path using a short-lived job
+  token (`pxb.<buildId>.<secret>`, only shown to the CLI child, never to build
+  scripts).
+- **Logs / heartbeats** stream to `POST /api/builds/[id]/logs|heartbeat`;
+  completion posts `POST /api/builds/[id]/complete`, and the server verifies the
+  referenced deployment was produced by that build before marking it `completed`.
+- **Wake / recovery:** an external **cron** should periodically call
+  `POST /api/internal/builds/controller` (machine-authenticated). That tick
+  reconciles stale worker leases (requeue/fail) **and** starts/stops the single
+  shared machine based on queued/active work. **No Cloudflare queue** is used —
+  the `builds` row *is* the queue, so a lost wake signal is recovered by the
+  next tick.
+- **CLI deploy remains the only upload path**; the machine simply invokes it.
+
+Environment: console needs `BUILD_MACHINE_TOKEN`, `FLY_API_TOKEN`,
+`FLY_APP_NAME`, `FLY_MACHINE_ID` (see `services/console/.env.example`); the
+machine needs `CONSOLE_URL` + `BUILD_MACHINE_TOKEN`
+(see `services/build-runner/README.md`).
+
+Historical notes: BullMQ, the `build-env`/`docker-dind` services, and the ZIP
+upload / sync (analytics) workers were removed earlier.
 
 ---
 

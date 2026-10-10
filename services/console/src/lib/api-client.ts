@@ -74,14 +74,20 @@ export interface ApiBuild {
     tenant_id: string;
     job_id: string | null;
     status: BuildStatus;
+    stage: string | null;
     repo_url: string;
     git_provider: "github" | "gitlab";
+    branch: string;
+    commit_sha: string | null;
+    commit_message: string | null;
     framework: string;
     build_command: string | null;
     output_dir: string | null;
     error: string | null;
     triggered_by: string;
+    deployment_id: string | null;
     created_at: string;
+    started_at: string | null;
     completed_at: string | null;
 }
 
@@ -226,6 +232,7 @@ export interface TriggerBuildInput {
     pageId: string;
     repoUrl: string;
     gitProvider: "github" | "gitlab";
+    branch?: string;
     gitToken?: string;
     framework: string;
     buildCommand?: string;

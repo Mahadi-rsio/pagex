@@ -37,20 +37,21 @@ const ENQUEUE_TIMEOUT_MS = 5_000;
  * a duplicate after a lost acknowledgement is safe. */
 const ENQUEUE_ATTEMPTS = 2;
 
-export interface QueueProducer {
-    enqueue(job: BackgroundJob): Promise<boolean>;
+export interface QueueProducer<T = BackgroundJob> {
+    enqueue(job: T): Promise<boolean>;
 }
 
 /**
  * Structural view of the Cloudflare Queue producer binding (`env.QUEUE.send`).
  * Application code depends on this shape rather than on Wrangler types.
  */
-export interface QueueBinding {
-    send(message: BackgroundJob): Promise<unknown>;
+export interface QueueBinding<T = BackgroundJob> {
+    send(message: T): Promise<unknown>;
 }
 
 /** Resolves the queue binding; `null` means "not available in this runtime". */
-export type QueueBindingResolver = () => Promise<QueueBinding | null>;
+export type QueueBindingResolver<T = BackgroundJob> =
+    () => Promise<QueueBinding<T> | null>;
 
 /**
  * Resolve `BACKGROUND_QUEUE` from the Cloudflare context.
@@ -114,15 +115,15 @@ function withTimeout(promise: Promise<unknown>, ms: number): Promise<void> {
  * (or `null`, for the missing-binding path).
  * The application uses the singleton `backgroundQueue` below.
  */
-export function createQueueProducer(
-    resolveBinding: QueueBindingResolver = resolveQueueBinding,
-): QueueProducer {
+export function createQueueProducer<T = BackgroundJob>(
+    resolveBinding: QueueBindingResolver<T> = resolveQueueBinding as unknown as QueueBindingResolver<T>,
+): QueueProducer<T> {
     return {
         async enqueue(job) {
             const binding = await resolveBinding();
             if (!binding) {
                 console.warn(
-                    `[queue] queue binding unavailable; dropped background job "${job.type}"`,
+                    `[queue] queue binding unavailable; dropped job "${(job as { type?: unknown }).type}"`,
                 );
                 return false;
             }
@@ -133,7 +134,7 @@ export function createQueueProducer(
                     return true;
                 } catch (err) {
                     console.error(
-                        `[queue] enqueue "${job.type}" failed (attempt ${attempt}/${ENQUEUE_ATTEMPTS}):`,
+                        `[queue] enqueue "${(job as { type?: unknown }).type}" failed (attempt ${attempt}/${ENQUEUE_ATTEMPTS}):`,
                         err,
                     );
                     if (attempt === ENQUEUE_ATTEMPTS) return false;

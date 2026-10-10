@@ -30,6 +30,7 @@ export function CreateProjectView() {
     const [isCreating, setIsCreating] = useState(false);
 
     const [repoUrl, setRepoUrl] = useState("");
+    const [branch, setBranch] = useState("");
     const [repoError, setRepoError] = useState("");
     const [isDeploying, setIsDeploying] = useState(false);
     const [showBuild, setShowBuild] = useState(false);
@@ -103,13 +104,13 @@ export function CreateProjectView() {
         setBuildError("");
         setShowBuild(true);
         try {
+            const trimmedBranch = branch.trim();
             const build = await apiClient.triggerBuild({
                 pageId: createdProjectId,
                 repoUrl: url,
                 gitProvider: "github",
-                framework: "vite",
-                buildCommand: "npm run build",
-                outputDir: "dist",
+                ...(trimmedBranch ? { branch: trimmedBranch } : {}),
+                framework: "auto",
             });
             setActiveBuildId(build.id);
         } catch (buildErr) {
@@ -216,6 +217,7 @@ export function CreateProjectView() {
                             showBuild={showBuild}
                             slugName={slugName}
                             repoUrl={repoUrl}
+                            branch={branch}
                             repoError={repoError}
                             buildError={buildError}
                             activeBuildId={activeBuildId}
@@ -224,6 +226,7 @@ export function CreateProjectView() {
                                 setRepoUrl(value);
                                 setRepoError("");
                             }}
+                            onBranchChange={setBranch}
                             onDeploy={handleCloudDeploy}
                             onBuildComplete={handleBuildComplete}
                             onViewProject={handleViewProject}

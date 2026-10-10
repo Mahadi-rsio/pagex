@@ -280,25 +280,37 @@ Never delete a blob unless it is proven unreferenced.
 
 ---
 
-# 4. ⛔ Cloud Build & Workers — REMOVED (POSTPONED)
+# 4. 🟢 Cloud Build — Reintroduced (Shared Fly Machine)
 
-> Cloud Build / BullMQ workers have been **removed** from the repository.
->
-> They are **not part of the core production-readiness milestone** and are
-> **postponed**. Do not re-add them without an explicit decision.
+> The original **BullMQ in-compose build workers** were removed. Cloud Build has
+> since been **reintroduced by explicit decision** as a *shared Fly.io build
+> machine* that reuses the existing CLI deploy pipeline — it is NOT the old
+> BullMQ design.
 
-Removed:
+Design (implemented):
 
-- [x] `bullmq` dependency and all queue code (`queue/jobs`, `queue/workers`)
-- [x] Build worker + DLQ worker processes
-- [x] `build.service.ts`, `build.controller.ts`, `build.routes.ts`, `build.validator.ts`
-- [x] `build-env`, `build-env-loader`, `build-worker`, `docker-dind` Compose services
-- [x] seccomp build profile and the `api-build-worker` image publish job
+- Console API + PostgreSQL (`builds`) are the authoritative job state.
+- Dashboard user picks a public GitHub repo (+ optional branch); the console
+  pins an immutable commit, records the `builds` row, then **wakes the shared
+  machine directly** via the Fly controller (best-effort).
+- The shared machine (`services/build-runner/`) claims one job at a time
+  (`FOR UPDATE SKIP LOCKED`), clones at the pinned commit, installs + builds with
+  a scrubbed environment, then deploys through the **existing** CLI
+  (`/api/deploy/prepare|presign|commit`) with a short-lived job token.
+- Build scripts run untrusted: no machine token, job token, or cloud
+  credentials ever reach them; logs are redacted + bounded.
+- **Wake / recovery:** `createBuildJob` → `wakeBuildMachine()` for the immediate
+  case, and a periodic **controller tick**
+  (`POST /api/internal/builds/controller`, machine-authenticated cron/supervisor)
+  reconciles stale leases *and* starts the machine whenever queued work is
+  pending. No Cloudflare queue is used — the `builds` row is the durable queue,
+  so a lost wake signal is recovered by the next tick.
 
-**CLI deploy is the only deploy path** (`/api/deploy/prepare|presign|commit`).
+Environment: `BUILD_MACHINE_TOKEN`, `FLY_API_TOKEN`, `FLY_APP_NAME`,
+`FLY_MACHINE_ID` (see `services/console/.env.example`); the machine itself needs
+`CONSOLE_URL` + `BUILD_MACHINE_TOKEN` (see `services/build-runner/README.md`).
 
-If Cloud Build is ever resumed, it must consume the existing blob/manifest
-deployment pipeline and must not require redesigning the core architecture.
+CLI deploy remains the only *upload* path; the machine invokes it.
 
 ---
 

@@ -145,7 +145,22 @@ export const pages = pgTable(
 );
 
 /**
- * `builds` — records of page build jobs and their status.
+ * `builds` — durable record of a shared remote build job.
+ *
+ * Lifecycle: `queued` → `active` (cloning/installing/building/deploying) →
+ * `completed` | `failed` | `cancelled`. The authoritative job state lives here;
+ * the Fly machine is a dumb worker that claims one row at a time via
+ * `POST /api/builds/claim`. The console wakes it directly on create and a
+ * periodic controller tick (`POST /api/internal/builds/controller`) is the
+ * backstop that starts it whenever queued work is pending.
+ *
+ * The machine never exposes long-lived secrets to project build scripts: the
+ * short-lived job token (see `token_hash`) is only handed to the deploy step,
+ * and is worthless once the build reaches a terminal status or expires.
+ *
+ * A build only becomes `completed` once the deployment is activated through the
+ * existing synchronous prepare/presign/commit path — a failed build leaves the
+ * previously active deployment untouched.
  */
 export const builds = pgTable(
     "builds",
@@ -154,26 +169,79 @@ export const builds = pgTable(
         page_id: uuid("page_id")
             .notNull()
             .references(() => pages.id, { onDelete: "cascade" }),
+        site_id: uuid("site_id").references(() => sites.id, {
+            onDelete: "set null",
+        }),
         tenant_id: text("tenant_id").notNull(),
         job_id: text("job_id"),
+        /** queued | active | completed | failed | cancelled */
         status: text("status").notNull().default("queued"),
+        /** cloning | installing | building | deploying | ready (detail for UI/logs) */
+        stage: text("stage"),
+
         repo_url: text("repo_url").notNull(),
         git_provider: text("git_provider").notNull(),
+        branch: text("branch").notNull().default("main"),
+        /** Immutable commit resolved at enqueue time; the runner checks this out. */
+        commit_sha: text("commit_sha"),
+        commit_message: text("commit_message"),
+
         framework: text("framework").notNull(),
         build_command: text("build_command").notNull().default("pnpm build"),
         output_dir: text("output_dir"),
+
+        /** Tenant user id that requested the build. */
+        requested_by: text("requested_by"),
         error: text("error"),
         triggered_by: text("triggered_by").notNull().default("cli"),
+
+        attempts: integer("attempts").notNull().default(0),
+        max_attempts: integer("max_attempts").notNull().default(2),
+
+        /** Bounded, redacted build output. Truncated past MAX_BUILD_LOG_BYTES. */
+        log: text("log").notNull().default(""),
+        log_bytes: integer("log_bytes").notNull().default(0),
+        log_truncated: boolean("log_truncated").notNull().default(false),
+
+        /** Deployment produced by this build (set on successful activation). */
+        deployment_id: uuid("deployment_id"),
+
+        /** SHA-256 hex of the job token secret; plaintext is never stored. */
+        token_hash: text("token_hash"),
+        token_expires_at: timestamp("token_expires_at", {
+            withTimezone: true,
+        }),
+
+        /** Worker lease: which machine claimed the job and until when. */
+        worker_id: text("worker_id"),
+        lease_expires_at: timestamp("lease_expires_at", { withTimezone: true }),
+        started_at: timestamp("started_at", { withTimezone: true }),
+        completed_at: timestamp("completed_at", { withTimezone: true }),
         created_at: timestamp("created_at", { withTimezone: true })
             .defaultNow()
             .notNull(),
-        completed_at: timestamp("completed_at", { withTimezone: true }),
+        updated_at: timestamp("updated_at", { withTimezone: true })
+            .defaultNow()
+            .notNull(),
     },
     (t) => ({
         buildsPageTenantStatusIdx: index("idx_builds_page_tenant_status").on(
             t.page_id,
             t.tenant_id,
             t.status,
+        ),
+        buildsPageCreatedIdx: index("idx_builds_page_created").on(
+            t.page_id,
+            t.created_at,
+        ),
+        // Claim/reconcile sweep: oldest queued, and stale active jobs by lease.
+        buildsStatusCreatedIdx: index("idx_builds_status_created").on(
+            t.status,
+            t.created_at,
+        ),
+        buildsLeaseIdx: index("idx_builds_lease").on(
+            t.status,
+            t.lease_expires_at,
         ),
     }),
 );

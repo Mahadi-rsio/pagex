@@ -89,6 +89,7 @@ export function OverviewTab({ project }: { project: Project }) {
                 pageId: project.id,
                 repoUrl: latestBuild.repo_url,
                 gitProvider: latestBuild.git_provider,
+                ...(latestBuild.branch ? { branch: latestBuild.branch } : {}),
                 framework: latestBuild.framework,
                 ...(latestBuild.build_command
                     ? { buildCommand: latestBuild.build_command }

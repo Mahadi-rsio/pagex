@@ -26,11 +26,25 @@ export const POST = withApiAuth(async (request, auth) => {
         );
     }
 
+    // A build job token may only deploy to the project it was issued for.
+    if (auth.job && auth.job.pageId !== validation.data.pageId) {
+        return NextResponse.json(
+            { error: "Build token is not valid for this project" },
+            { status: 403 },
+        );
+    }
+
     const { prepareDeploy } = await import(
         "@/features/deployments/deploy.service"
     );
     try {
-        return NextResponse.json(await prepareDeploy(validation.data, auth.id));
+        return NextResponse.json(
+            await prepareDeploy(
+                validation.data,
+                auth.id,
+                auth.job ? { buildId: auth.job.buildId } : undefined,
+            ),
+        );
     } catch (error) {
         console.error("[api/deploy/prepare] failed", {
             tenant_id: auth.id,

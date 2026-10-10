@@ -205,18 +205,36 @@ async function uploadRequiredBlobs(
     }
 }
 
+export interface DeployResult {
+    deploymentId?: string;
+    version?: number | string;
+    url?: string;
+}
+
 /**
  * Deploy build output via prepare → presign → PUT → commit.
  * CLI uploads original files only; compression runs server-side at commit.
+ *
+ * When `outputDir` is provided (build-machine mode), that directory is used
+ * verbatim instead of scanning `BUILD_DIRS`.
  */
-export async function deploy(projectPath: string, pageId: string, domain?: string) {
-    const buildPath = config.BUILD_DIRS
-        .map((d) => path.join(projectPath, d))
-        .find((p) => fs.existsSync(p));
+export async function deploy(
+    projectPath: string,
+    pageId: string,
+    domain?: string,
+    outputDir?: string,
+): Promise<DeployResult> {
+    const buildPath = outputDir
+        ? path.join(projectPath, outputDir)
+        : config.BUILD_DIRS
+              .map((d) => path.join(projectPath, d))
+              .find((p) => fs.existsSync(p));
 
-    if (!buildPath) {
+    if (!buildPath || !fs.existsSync(buildPath)) {
         throw new ConfigError(
-            `No build folder found (checked: ${config.BUILD_DIRS.join(", ")})`,
+            outputDir
+                ? `Build output directory not found: ${outputDir}`
+                : `No build folder found (checked: ${config.BUILD_DIRS.join(", ")})`,
         );
     }
 
@@ -293,4 +311,12 @@ export async function deploy(projectPath: string, pageId: string, domain?: strin
     }
 
     printCommitSummary(result, domain);
+
+    const deployResult: DeployResult = {};
+    if (result.deployment?.id) deployResult.deploymentId = result.deployment.id;
+    if (result.deployment?.version !== undefined) {
+        deployResult.version = result.deployment.version;
+    }
+    if (domain) deployResult.url = siteUrl(domain);
+    return deployResult;
 }

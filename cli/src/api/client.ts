@@ -32,7 +32,7 @@ export function createApiClient(): AxiosInstance {
 
     // Inject auth token on every request
     instance.interceptors.request.use(async (reqConfig) => {
-        const token = await jwtToken();
+        const token = authTokenOverride ?? (await jwtToken());
 
         reqConfig.headers = reqConfig.headers ?? {};
         reqConfig.headers["Authorization"] = `Bearer ${token}`;
@@ -82,3 +82,23 @@ export function createApiClient(): AxiosInstance {
 
 /** Singleton API client – import this in api sub-modules. */
 export const apiClient = createApiClient();
+
+// ---------------------------------------------------------------------------
+// Build-machine auth override
+// ---------------------------------------------------------------------------
+
+/**
+ * When the CLI runs inside the shared build machine no interactive session
+ * exists. `pagex deploy --token <job-token>` installs the short-lived job token
+ * here so every request authenticates as that one build, without touching the
+ * on-disk session or Better Auth.
+ */
+let authTokenOverride: string | null = null;
+
+export function setAuthTokenOverride(token: string | null): void {
+    authTokenOverride = token;
+}
+
+export function getAuthTokenOverride(): string | null {
+    return authTokenOverride;
+}

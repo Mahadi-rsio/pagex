@@ -121,23 +121,53 @@ percentiles are estimated from these buckets, not stored raw.
 
 ---
 
-### `builds` (legacy, unused)
-Cloud-build job records from the removed BullMQ/cloud-build stack. Retained so no migration is needed; no writer remains.
+### `builds`
+Shared remote build job records (see `docs/WORKERS.md` / `services/build-runner/`).
+The `builds` row **is** the queue — there is no Cloudflare queue for builds.
 
 ```sql
 id            UUID      PRIMARY KEY
 page_id       UUID      FK → pages(id) ON DELETE CASCADE
+site_id       UUID      FK → sites(id) ON DELETE SET NULL
 tenant_id     TEXT      NOT NULL
 job_id        TEXT      -- legacy BullMQ job ID (unused)
 status        TEXT      NOT NULL DEFAULT 'queued'
-              -- queued | running | completed | failed | cancelled
-repo_url / git_provider / framework / build_command / output_dir / error / triggered_by
-created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+              -- queued | active | completed | failed | cancelled
+stage         TEXT      -- cloning | installing | building | deploying | ready
+repo_url      TEXT      NOT NULL
+git_provider  TEXT      NOT NULL
+branch        TEXT      NOT NULL DEFAULT 'main'
+commit_sha    TEXT      -- immutable commit pinned at create time
+commit_message TEXT
+framework     TEXT      NOT NULL
+build_command TEXT      NOT NULL DEFAULT 'pnpm build'   -- 'auto' = detect
+output_dir    TEXT
+requested_by  TEXT      -- tenant user id
+error         TEXT
+triggered_by  TEXT      NOT NULL DEFAULT 'cli'
+attempts      INTEGER   NOT NULL DEFAULT 0
+max_attempts  INTEGER   NOT NULL DEFAULT 2
+log           TEXT      NOT NULL DEFAULT ''   -- bounded (256 KB) + redacted
+log_bytes     INTEGER   NOT NULL DEFAULT 0
+log_truncated BOOLEAN   NOT NULL DEFAULT false
+deployment_id UUID      -- deployment this build produced (no FK: avoids a cycle)
+token_hash    TEXT      -- SHA-256 of the job-token secret (plaintext never stored)
+token_expires_at TIMESTAMPTZ
+worker_id     TEXT      -- machine that claimed the job
+lease_expires_at TIMESTAMPTZ
+started_at    TIMESTAMPTZ
 completed_at  TIMESTAMPTZ
+created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 
 INDEX: idx_builds_page_tenant_status ON (page_id, tenant_id, status)
-CHECK: builds_status_check (status IN ('queued','running','completed','failed','cancelled'))
+INDEX: idx_builds_page_created      ON (page_id, created_at)
+INDEX: idx_builds_status_created    ON (status, created_at)      -- claim/reconcile
+INDEX: idx_builds_lease             ON (status, lease_expires_at)
 ```
+
+Claiming uses `UPDATE … WHERE id = (SELECT id … FOR UPDATE SKIP LOCKED) RETURNING *`
+so concurrent machines never take the same job.
 
 ---
 
@@ -261,6 +291,13 @@ applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 | `drizzle/0010_idempotency_status.sql` | idempotency_keys: status column + index (hand-written, no snapshot) |
 | `drizzle/0011_red_true_believers.sql` | `bandwidth_usage_hourly` + `service_metrics_hourly` tables |
 | `drizzle/0012_normal_vulcan.sql` | `usage_ingest_dedup` idempotency ledger table |
+
+API schema (`drizzle-api/`, generated with `pnpm db:generate:api`) is tracked
+separately:
+
+| File | Contents |
+|------|----------|
+| `drizzle-api/0002_glossy_vulcan.sql` | `builds`: shared remote build columns (stage, branch, commit_sha, log, token/lease, deployment_id) + claim/reconcile indexes |
 
 ```bash
 pnpm db:generate   # drizzle-kit generate (auth + API configs)

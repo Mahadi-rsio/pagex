@@ -1,0 +1,33 @@
+# Fly.io configuration for the shared PageX build machine.
+#
+# One shared machine, concurrency 1, no persistent volume — each job works in a
+# throwaway tmp workspace. Start it with `fly deploy`, then let the console
+# controller wake/stop it on demand.
+#
+# Set secrets (never bake into the image):
+#   fly secrets set CONSOLE_URL="https://console.example.com" \
+#                   BUILD_MACHINE_TOKEN="<same value as the console env>"
+#
+# The controller needs these console-side env vars to drive this machine:
+#   FLY_API_TOKEN, FLY_APP_NAME, FLY_MACHINE_ID (optional: FLY_API_HOST)
+
+app = "pagex-builder"
+primary_region = "iad"
+
+[build]
+  dockerfile = "services/build-runner/Dockerfile"
+
+[env]
+  BUILD_WORKSPACE_DIR = "/workspace"
+
+# No services: the machine only makes outbound calls to the console API.
+# It is started on demand and auto-stops when idle (see fly.controller.ts).
+
+[[vm]]
+  size = "performance-2x"
+  memory = "4gb"
+
+[deploy]
+  # The controller manages the lifecycle; don't keep a machine always running.
+  strategy = "immediate"
+  restart = { policy = "no" }

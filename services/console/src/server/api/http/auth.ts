@@ -1,8 +1,20 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { isBuildJobToken } from "@/features/builds/job-token.service";
+
+/** Scope attached when a request is authenticated with a build job token. */
+export interface BuildJobScope {
+    buildId: string;
+    pageId: string;
+}
 
 export interface AuthContext {
     id: string;
     name: string;
+    /**
+     * Present only for machine requests authenticated with a build job token.
+     * Deploy routes use it to pin the request to a single project.
+     */
+    job?: BuildJobScope;
 }
 
 type AuthResult =
@@ -36,10 +48,60 @@ export async function authenticateRequest(
     const [scheme, token, extra] = authorization?.trim().split(/\s+/) ?? [];
 
     if (scheme === "Bearer" && token && !extra) {
+        if (isBuildJobToken(token)) {
+            return verifyBuildJobToken(token);
+        }
         return verifyJwt(token, request);
     }
 
     return getSessionFromCookie(request);
+}
+
+/**
+ * Verify a build job token (`pxb.<buildId>.<secret>`).
+ *
+ * Resolves to the job's tenant and a `job` scope. The token only works while
+ * the build is `active` and unexpired, so a finished build's credential is
+ * dead. No user session/JWT is ever involved in the machine path.
+ */
+async function verifyBuildJobToken(token: string): Promise<AuthResult> {
+    try {
+        const { loadBuildTokenRecord } = await import(
+            "@/features/builds/build.store"
+        );
+        const { parseJobToken, verifyJobTokenAgainstRecord } = await import(
+            "@/features/builds/job-token.service"
+        );
+
+        const parts = parseJobToken(token);
+        if (!parts) return unauthorized();
+
+        const record = await loadBuildTokenRecord(parts.buildId);
+        const buildId = verifyJobTokenAgainstRecord(token, record);
+        if (!buildId || !record) return unauthorized();
+
+        return {
+            ok: true,
+            auth: {
+                id: record.tenant_id,
+                name: "build-machine",
+                job: { buildId, pageId: record.page_id },
+            },
+        };
+    } catch (error) {
+        console.error("Build job token verification failed:", error);
+        return unauthorized();
+    }
+}
+
+function unauthorized(): AuthResult {
+    return {
+        ok: false,
+        response: Response.json(
+            { error: "Invalid or expired token" },
+            { status: 401 },
+        ),
+    };
 }
 
 async function verifyJwt(token: string, request: Request): Promise<AuthResult> {

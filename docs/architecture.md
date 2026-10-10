@@ -22,7 +22,8 @@ This document provides a comprehensive overview of the PageX platform architectu
 │                                                                              │
 │ Vector reads Caddy logs and posts aggregates to the console ingest route.   │
 │ GC is enqueued to a Cloudflare queue drained by the Go worker.          │
-│ There are no build workers; deploys are fully synchronous.               │
+│ Remote builds run on one shared Fly machine; the deploy commit path      │
+│ (prepare/presign/commit) stays fully synchronous.                        │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -520,12 +521,16 @@ Client Request
 
 ### Background Processing
 
-**Decision:** Deploys are fully synchronous. The only async boundary is the
-Cloudflare Queue `pagex-background`, drained by the Go worker in
-`services/worker`, carrying cleanup only (`deployment_gc`, `page_delete`).
-BullMQ and the cloud-build worker/DLQ remain deleted; CLI deploy
-(`/api/deploy/prepare|presign|commit`) is the only deploy path.
-See `services/console/docs/queue.md`.
+**Decision:** The deploy commit path is fully synchronous. Async boundaries are:
+(1) the Cloudflare Queue `pagex-background`, drained by the Go worker in
+`services/worker`, carrying cleanup only (`deployment_gc`, `page_delete`); and
+(2) **remote builds**, which run on a single shared Fly.io machine
+(`services/build-runner/`) that claims `builds` rows and deploys through the
+same synchronous CLI commit path with a short-lived job token. The `builds`
+table is the queue; there is no build queue. BullMQ and the old cloud-build
+worker/DLQ remain deleted; CLI deploy (`/api/deploy/prepare|presign|commit`) is
+the only upload path.
+See `services/console/docs/queue.md` and `services/build-runner/README.md`.
 
 **Implementation:**
 - **Analytics / usage:** Vector aggregates Caddy access logs per site and hour and posts them to the console ingest endpoint; the native API applies them to `site_daily_stats`, `service_metrics_hourly`, and `bandwidth_usage_hourly` with idempotent dedup (no queue).
@@ -538,14 +543,14 @@ See `services/console/docs/queue.md`.
 **Rationale:**
 - **Correctness:** Prevent race conditions and data corruption at DB level
 - **Reliability:** Ensure exactly-one-active-deployment, no stale overwrites
-- **Observability:** DLQ captures failed builds with full context for debugging
+- **Observability:** `build_failures` rows capture failed builds with full context for debugging
 - **Idempotency:** Safe retries without duplicate deployments
 
 **Database Invariants (enforced by PostgreSQL):**
 - `UNIQUE(page_id, version)` — no duplicate versions per page
 - `UNIQUE(page_id) WHERE is_active = true` — exactly one active deployment per page (partial index)
 - `UNIQUE(tenant_id, page_id, idempotency_key)` — scoped idempotency keys
-- `CHECK builds.status IN ('queued','running','completed','failed','cancelled')`
+- `builds.status` is app-level (queued/active/completed/failed/cancelled); no DB CHECK constraint
 - `CHECK deployments.status IN ('pending','active','failed','superseded')`
 - `CHECK deployments.source IN ('build','upload')`
 - `CHECK active deployments require manifest` — `is_active` → all manifest fields NOT NULL

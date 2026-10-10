@@ -15,6 +15,13 @@
             "when": 1790520930000,
             "tag": "0001_pages_soft_delete",
             "breakpoints": true
+        },
+        {
+            "idx": 2,
+            "version": "7",
+            "when": 1791611625632,
+            "tag": "0002_glossy_vulcan",
+            "breakpoints": true
         }
     ]
 }

@@ -102,6 +102,12 @@ export interface DeployTokenPayload {
      * still rely on the Redis TTL as the source of truth.
      */
     expiresAt?: number;
+    /**
+     * When the deploy was initiated by a remote build job, the build id it
+     * belongs to. The resulting deployment is linked to the build (source
+     * "build"), which also satisfies the one-deployment-per-build constraint.
+     */
+    buildId?: string;
     fileManifest: Array<{
         path: string;
         hash: string;
@@ -826,6 +832,7 @@ export async function deployFromLocalDirectory(opts: {
 export async function prepareDeploy(
     input: PrepareDeployInput,
     tenantId: string,
+    opts?: { buildId?: string },
 ) {
     const { page, site } = await resolvePage(input.pageId, tenantId);
 
@@ -906,6 +913,7 @@ export async function prepareDeploy(
         subdomain: site.subdomain,
         baseVersion,
         expiresAt: Math.floor(Date.now() / 1000) + DEPLOY_TOKEN_TTL_SECONDS,
+        ...(opts?.buildId ? { buildId: opts.buildId } : {}),
         fileManifest: input.files.map((f: DeployFileInput) => ({
             path: f.path,
             hash: f.hash,
@@ -1119,10 +1127,21 @@ export async function presignDeploy(
     return { urls };
 }
 
-export async function commitDeploy(input: CommitDeployInput, tenantId: string) {
+export async function commitDeploy(
+    input: CommitDeployInput,
+    tenantId: string,
+    opts?: { expectedPageId?: string },
+) {
     const payload = await loadDeployToken(input.deploymentToken, tenantId);
+    if (opts?.expectedPageId && payload.pageId !== opts.expectedPageId) {
+        throw new HttpError(
+            "Deployment token is not valid for this project",
+            403,
+        );
+    }
     const lockHolder = input.deploymentToken;
     const idempotencyKey = input.idempotencyKey ?? input.deploymentToken;
+    const buildId = payload.buildId ?? null;
 
     return pageDeploymentLock.withLock(
         payload.pageId,
@@ -1148,8 +1167,8 @@ export async function commitDeploy(input: CommitDeployInput, tenantId: string) {
                 tenantId,
                 siteId: payload.siteId,
                 subdomain: payload.subdomain,
-                source: "upload",
-                buildId: null,
+                source: buildId ? "build" : "upload",
+                buildId,
                 fileManifest,
                 filesDeployed,
                 filesReused,

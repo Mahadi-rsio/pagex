@@ -30,7 +30,13 @@ export const POST = withApiAuth(async (request, auth) => {
         "@/features/deployments/deploy.service"
     );
     try {
-        return NextResponse.json(await commitDeploy(validation.data, auth.id));
+        return NextResponse.json(
+            await commitDeploy(
+                validation.data,
+                auth.id,
+                auth.job ? { expectedPageId: auth.job.pageId } : undefined,
+            ),
+        );
     } catch (error) {
         console.error("[api/deploy/commit] failed", {
             tenant_id: auth.id,

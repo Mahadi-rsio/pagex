@@ -18,11 +18,13 @@ type CloudDeployPanelProps = {
     showBuild: boolean;
     slugName: string;
     repoUrl: string;
+    branch: string;
     repoError: string;
     buildError: string;
     activeBuildId: string | null;
     isDeploying: boolean;
     onRepoUrlChange: (value: string) => void;
+    onBranchChange: (value: string) => void;
     onDeploy: () => void;
     onBuildComplete: () => void;
     onViewProject: () => void;
@@ -32,11 +34,13 @@ export function CloudDeployPanel({
     showBuild,
     slugName,
     repoUrl,
+    branch,
     repoError,
     buildError,
     activeBuildId,
     isDeploying,
     onRepoUrlChange,
+    onBranchChange,
     onDeploy,
     onBuildComplete,
     onViewProject,
@@ -126,6 +130,21 @@ export function CloudDeployPanel({
                 {repoError && (
                     <p className="text-xs text-destructive">{repoError}</p>
                 )}
+                <div className="flex items-center gap-2">
+                    <Input
+                        placeholder="main"
+                        value={branch}
+                        onChange={(e) => onBranchChange(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") onDeploy();
+                        }}
+                        className="h-9 font-mono text-sm"
+                        aria-label="Git branch"
+                    />
+                    <span className="text-xs text-muted-foreground">
+                        Branch (defaults to main)
+                    </span>
+                </div>
                 <p className="text-xs text-muted-foreground">
                     Paste a public GitHub repo URL. We clone it, run the build,
                     and deploy the output to your project domain.
