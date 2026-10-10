@@ -84,7 +84,12 @@ export async function runCliDeploy(inv: DeployInvocation): Promise<DeployOutcome
     });
 
     if (res.timedOut) throw new Error("Deploy step timed out");
-    if (res.code !== 0) throw new Error(`Deploy CLI exited with code ${res.code}`);
+    if (res.code !== 0) {
+        const tail = captured.trim().split(/\r?\n/).slice(-8).join("\n");
+        throw new Error(
+            `Deploy CLI exited with code ${res.code}${tail ? `:\n${tail}` : ""}`,
+        );
+    }
 
     const outcome = parseDeployResult(captured);
     if (!outcome) throw new Error("Deploy CLI did not report a deployment id");

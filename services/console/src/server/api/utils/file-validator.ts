@@ -115,6 +115,11 @@ const EXT_ALIASES: Record<string, readonly string[]> = {
     // SVGs often start with <?xml …> so file-type reports "xml"
     xml: ["xml", "svg", "xhtml"],
     svg: ["svg", "xml"],
+    // Many sites ship an actual ICO or a PNG misnamed as favicon.ico (and vice
+    // versa); browsers sniff content, so treat the two image containers as
+    // interchangeable on deploy.
+    ico: ["ico", "png"],
+    png: ["png", "ico"],
 };
 
 function extractExtension(filename: string): string {

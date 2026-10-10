@@ -5,7 +5,7 @@
 # Build from the REPOSITORY ROOT so the CLI can be included:
 #   docker build -f services/build-runner/Dockerfile -t pagex-build-runner .
 #
-# The image contains: Node 20 + npm, pnpm/yarn (via corepack), bun, git, the
+# The image contains: Node 24 + npm, pnpm/yarn (via corepack), bun, git, the
 # built PageX CLI, and the runner. It holds NO PageX/cloud credentials — those
 # are injected at runtime (BUILD_MACHINE_TOKEN, CONSOLE_URL) and never reach
 # project builds.
@@ -31,7 +31,9 @@ COPY services/build-runner/src ./src
 RUN npx tsc -p tsconfig.json
 
 # --- Stage 3: runtime ------------------------------------------------------
-FROM node:20-bookworm-slim AS runtime
+# Node 24 LTS: modern SSG/static frameworks (Astro 7+, Vite 7, Next 15+)
+# declare engines >=22.12, so a Node 20 runtime is not enough.
+FROM node:24-bookworm-slim AS runtime
 
 # git + the archive/binary helpers bun's installer needs.
 RUN apt-get update \
