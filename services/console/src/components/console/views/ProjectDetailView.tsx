@@ -2,7 +2,7 @@
 
 import { AlertCircle, ArrowLeft, ExternalLink } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import PageSpinner from "@/components/pageloader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
     const isLoading = useAppStore((s) => s.isLoading);
     const fetchProjects = useAppStore((s) => s.fetchProjects);
     const fetchedRef = useRef(false);
+    const [activeTab, setActiveTab] = useState("overview");
 
     useEffect(() => {
         if (!project && !fetchedRef.current) {
@@ -109,7 +110,12 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             </div>
 
             {/* Tabs */}
-            <Tabs defaultValue="overview" className="space-y-4">
+            <Tabs
+                defaultValue="overview"
+                value={activeTab}
+                onValueChange={setActiveTab}
+                className="space-y-4"
+            >
                 <div className="-mx-6 px-6 overflow-x-auto scrollbar-none overscroll-x-contain touch-pan-x">
                     <TabsList className="h-9 w-max min-w-full sm:min-w-0 p-1 bg-muted/50 border border-border justify-start">
                         {[
@@ -136,7 +142,10 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                 </div>
 
                 <TabsContent value="overview">
-                    <OverviewTab project={project} />
+                    <OverviewTab
+                        project={project}
+                        onGoToBuilds={() => setActiveTab("builds")}
+                    />
                 </TabsContent>
                 <TabsContent value="domains">
                     <DomainsTab project={project} />

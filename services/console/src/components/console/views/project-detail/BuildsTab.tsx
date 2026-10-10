@@ -25,6 +25,7 @@ import { formatRelativeTime } from "@/lib/utils";
 import type { Project } from "@/store/useAppStore";
 
 import { LatestCommitCard } from "./LatestCommitCard";
+import { TriggerBuildCard } from "./TriggerBuildCard";
 import {
     buildStatusConfig,
     fetchLatestGithubCommit,
@@ -187,12 +188,14 @@ export function BuildsTab({ project }: { project: Project }) {
         try {
             const list = await apiClient.getBuilds(project.id);
             setBuilds(list);
+            return list;
         } catch (loadError) {
             toast.error(
                 loadError instanceof Error
                     ? loadError.message
                     : "Failed to load builds",
             );
+            return [];
         } finally {
             setLoading(false);
         }
@@ -229,12 +232,28 @@ export function BuildsTab({ project }: { project: Project }) {
         setSelectedBuildId((prev) => (prev === buildId ? null : buildId));
     };
 
+    const handleBuildCreated = async () => {
+        const list = await loadBuilds();
+        const newest = list[0];
+        if (newest) setSelectedBuildId(newest.id);
+    };
+
+    const latestBuild = builds[0] ?? null;
+
     return (
         <div className="space-y-4">
             <LatestCommitCard
                 commit={latestCommit}
                 repoUrl={commitRepoUrl}
                 loading={commitLoading}
+            />
+
+            <TriggerBuildCard
+                project={project}
+                defaultRepoUrl={latestBuild?.repo_url}
+                defaultBranch={latestBuild?.branch}
+                defaultFramework={latestBuild?.framework}
+                onBuildCreated={handleBuildCreated}
             />
 
             <Card>
@@ -254,8 +273,7 @@ export function BuildsTab({ project }: { project: Project }) {
                         </div>
                     ) : builds.length === 0 ? (
                         <p className="py-8 text-center text-sm text-muted-foreground">
-                            No builds yet. Trigger a cloud build from the
-                            Overview tab.
+                            No builds yet. Trigger your first cloud build above.
                         </p>
                     ) : (
                         <div className="space-y-2">

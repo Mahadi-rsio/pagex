@@ -7,6 +7,7 @@ import {
     GitBranch,
     GitCommitHorizontal,
     Globe,
+    Rocket,
     Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -25,7 +26,13 @@ import {
     statusConfig,
 } from "./utils";
 
-export function OverviewTab({ project }: { project: Project }) {
+export function OverviewTab({
+    project,
+    onGoToBuilds,
+}: {
+    project: Project;
+    onGoToBuilds?: () => void;
+}) {
     const status =
         statusConfig[project.status as keyof typeof statusConfig] ||
         statusConfig.inactive;
@@ -193,15 +200,21 @@ export function OverviewTab({ project }: { project: Project }) {
                         <Button
                             size="sm"
                             className="gap-2 shrink-0"
-                            onClick={handleRedeploy}
-                            disabled={!latestBuild || isRedeploying}
+                            onClick={
+                                latestBuild ? handleRedeploy : onGoToBuilds
+                            }
+                            disabled={
+                                (!latestBuild && !onGoToBuilds) || isRedeploying
+                            }
                         >
                             {isRedeploying ? (
                                 <Spinner size="inline" />
-                            ) : (
+                            ) : latestBuild ? (
                                 <Zap className="size-3.5" />
+                            ) : (
+                                <Rocket className="size-3.5" />
                             )}
-                            Redeploy
+                            {latestBuild ? "Redeploy" : "New build"}
                         </Button>
                     </div>
                 </CardContent>
