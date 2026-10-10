@@ -1,19 +1,19 @@
 "use client";
 
-import { useAppStore } from "@/store/useAppStore";
+import { toast } from "sonner";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
+    CardDescription,
     CardHeader,
     CardTitle,
-    CardDescription,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getInitials } from "@/lib/utils";
-import { toast } from "sonner";
+import { useAppStore } from "@/store/useAppStore";
 
 export function SettingsView() {
     const { user } = useAppStore();

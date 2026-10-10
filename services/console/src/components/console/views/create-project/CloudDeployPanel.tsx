@@ -1,16 +1,16 @@
 "use client";
 
+import { CheckCircle2, Cloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
-import { Input } from "@/components/ui/input";
 import {
     Card,
     CardContent,
+    CardDescription,
     CardHeader,
     CardTitle,
-    CardDescription,
 } from "@/components/ui/card";
-import { CheckCircle2, Cloud } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { GithubIcon } from "./GithubIcon";
 import { LiveBuildTerminal } from "./LiveBuildTerminal";
 

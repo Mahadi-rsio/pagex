@@ -15,10 +15,7 @@ export const maxDuration = 300;
 export const GET = withApiAuth(async (_request, auth, context) => {
     const { siteId } = await context.params;
     if (!UUID_RE.test(siteId)) {
-        return NextResponse.json(
-            { error: "Invalid site id" },
-            { status: 400 },
-        );
+        return NextResponse.json({ error: "Invalid site id" }, { status: 400 });
     }
 
     const { getSiteUsage } = await import("@/features/usage/usage.service");

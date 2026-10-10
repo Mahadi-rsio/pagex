@@ -1,14 +1,14 @@
 "use client";
 
+import { HardDrive } from "lucide-react";
 import {
     Card,
     CardContent,
+    CardDescription,
     CardHeader,
     CardTitle,
-    CardDescription,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { HardDrive } from "lucide-react";
 
 export function StorageView() {
     const used = 0;

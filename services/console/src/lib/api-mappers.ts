@@ -1,5 +1,5 @@
 import type { Project } from "@/store/useAppStore";
-import type { ApiPage, ApiBuild, ApiDeployment } from "./api-client";
+import type { ApiBuild, ApiDeployment, ApiPage } from "./api-client";
 
 /**
  * Map API Page response to Console Project model

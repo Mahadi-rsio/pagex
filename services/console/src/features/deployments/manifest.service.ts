@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
+import {
+    DEPLOYMENT_MANIFEST_VERSION,
+    MANIFEST_REDIS_TTL_SECONDS,
+} from "@/server/api/constants/index";
 import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import {
     activeDeploymentMappingKey,
@@ -14,18 +18,14 @@ import {
     getManifestObject,
     manifestObjectKey,
     putManifestIfAbsent,
-} from "@/server/api/infrastructure/storage/minio";
+} from "@/server/api/infrastructure/storage/r2";
 import { HttpError } from "@/server/api/utils/http-error";
 import {
-    DEPLOYMENT_MANIFEST_VERSION,
-    MANIFEST_REDIS_TTL_SECONDS,
-} from "@/server/api/constants/index";
-import {
+    type DeploymentManifest,
     normalizeBlobHashForStorage,
     normalizeManifestPath,
     serializeManifest,
     validateDeploymentManifest,
-    type DeploymentManifest,
 } from "@/server/api/utils/manifest-validation";
 
 export type { DeploymentManifest };
@@ -86,7 +86,7 @@ export function manifestRedisKey(deploymentId: string): string {
 }
 
 /**
- * Cache a manifest in Redis. Best-effort: the manifest object in MinIO and the
+ * Cache a manifest in Redis. Best-effort: the manifest object in R2 and the
  * deployment row in PostgreSQL are authoritative, and a Redis outage must not
  * fail an already-committed deploy/rollback.
  */
@@ -102,7 +102,7 @@ export async function cacheManifestInRedis(
         );
     } catch (err) {
         console.error(
-            `[routing] manifest cache write failed for ${deploymentId}; MinIO/Postgres remain authoritative`,
+            `[routing] manifest cache write failed for ${deploymentId}; R2/Postgres remain authoritative`,
             err,
         );
     }
@@ -154,7 +154,7 @@ export async function clearDeploymentRuntimeCache(
 }
 
 /**
- * Generate, validate, persist manifest to MinIO, and record metadata on deployment.
+ * Generate, validate, persist manifest to R2, and record metadata on deployment.
  * Idempotent: if manifest_key is already set, returns existing metadata.
  */
 export async function generateAndPersistManifest(

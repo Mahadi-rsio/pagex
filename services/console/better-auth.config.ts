@@ -1,18 +1,11 @@
-// auth-config.ts — শুধু CLI generate-এর জন্য, runtime-এ ব্যবহার হবে না
+// auth-config.ts — CLI generate only; not used at runtime
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import {
-    bearer,
-    jwt,
-    deviceAuthorization,
-    emailOTP,
-    phoneNumber,
-    openAPI,
-} from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
+import { bearer, deviceAuthorization, jwt, openAPI } from "better-auth/plugins";
 import * as schema from "@/modules/auth/schemas/auth.schema";
 
-// CLI-র জন্য dummy/placeholder values দিয়ে sync export
+// CLI placeholder values for schema generation
 export const auth = betterAuth({
     secret: "placeholder",
     baseURL: "http://localhost:3000",
@@ -38,7 +31,6 @@ export const auth = betterAuth({
     plugins: [
         bearer(),
         openAPI(),
-        phoneNumber({ sendOTP: async () => {} }),
         jwt({
             jwt: {
                 expirationTime: "15m",
@@ -48,7 +40,6 @@ export const auth = betterAuth({
             },
         }),
         deviceAuthorization({ schema: {} }),
-        emailOTP({ sendVerificationOTP: async () => {} }),
         nextCookies(),
     ],
 });

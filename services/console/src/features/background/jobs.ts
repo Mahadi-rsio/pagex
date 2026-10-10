@@ -1,8 +1,8 @@
-import { enqueueBackgroundJob } from "@/server/api/queues/cloudflare-queue";
 import {
     DEPLOYMENT_GC_JOB,
     PAGE_DELETE_JOB,
 } from "@/server/api/queues/background-job";
+import { enqueueBackgroundJob } from "@/server/api/queues/cloudflare-queue";
 
 /**
  * The two background cleanup jobs the console produces. Both are fired only

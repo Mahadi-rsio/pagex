@@ -2,20 +2,11 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
+import { bearer, deviceAuthorization, jwt, openAPI } from "better-auth/plugins";
 import { headers } from "next/headers";
 import { getDb } from "@/db";
-import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import * as schema from "@/modules/auth/schemas/auth.schema";
-
-import {
-    openAPI,
-    bearer,
-    jwt,
-    deviceAuthorization,
-    emailOTP,
-    phoneNumber,
-} from "better-auth/plugins";
-import { sendEmail, getOtpEmailHtml } from "./email";
+import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 
 /** Atomic INCR with TTL set only on first create (rate-limit windows). */
 const INCREMENT_SCRIPT = `
@@ -53,31 +44,6 @@ const redisSecondaryStorage = {
     },
 };
 
-async function sendOtpPhone({
-    phone,
-    otp,
-    token,
-}: {
-    phone: string;
-    otp: string;
-    token: string;
-}) {
-    const response = await fetch("https://dnotify.net/api/v1/send-sms", {
-        method: "POST",
-        headers: {
-            Authorization: "Bearer " + token,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-            mobile: phone,
-            message: `Your Otp is ${otp}.Dont Share this otp to anyone.`,
-        }),
-    });
-
-    const data = await response.json();
-    console.log(data);
-}
-
 async function getAuth() {
     const db = await getDb();
 
@@ -102,6 +68,8 @@ async function getAuth() {
         // Sessions, rate limits, and short-lived auth data go to Redis.
         secondaryStorage: redisSecondaryStorage,
         emailAndPassword: {
+            // Password + OAuth only. Email delivery and phone OTP are disabled —
+            // there is no email or SMS provider in this deployment.
             enabled: process.env.ENABLE_EMAIL_PASSWORD !== "false",
         },
         socialProviders: {
@@ -119,16 +87,6 @@ async function getAuth() {
         plugins: [
             bearer(),
             openAPI(),
-            phoneNumber({
-                sendOTP: async ({ phoneNumber, code }) => {
-                    if (!process.env.SMS_TOKEN) return;
-                    await sendOtpPhone({
-                        phone: phoneNumber,
-                        otp: code,
-                        token: process.env.SMS_TOKEN,
-                    });
-                },
-            }),
             jwt({
                 jwt: {
                     expirationTime: "20m",
@@ -142,41 +100,6 @@ async function getAuth() {
             }),
             deviceAuthorization({
                 schema: {},
-            }),
-            emailOTP({
-                async sendVerificationOTP({ email, otp, type }) {
-                    if (type === "email-verification") {
-                        const smtpHost = process.env.SMTP_HOST;
-                        const smtpPort = process.env.SMTP_PORT;
-                        const sender = process.env.SENDER;
-                        const smtpPassword = process.env.BREVO_API_KEY;
-
-                        if (
-                            !smtpHost ||
-                            !smtpPort ||
-                            !sender ||
-                            !smtpPassword
-                        ) {
-                            return;
-                        }
-
-                        await sendEmail(
-                            {
-                                to: email,
-                                from: '"Cloudisy" <team@cloudisy.com>',
-                                subject: "Verify Your Email",
-                                text: "Your Otp is " + otp,
-                                html: getOtpEmailHtml(otp),
-                            },
-                            {
-                                host: smtpHost,
-                                port: Number(smtpPort),
-                                user: sender,
-                                pass: smtpPassword,
-                            },
-                        );
-                    }
-                },
             }),
             nextCookies(),
         ],

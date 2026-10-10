@@ -1,33 +1,23 @@
 "use client";
 
+import { Activity, FileText, HardDrive, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import type { Project } from "@/store/useAppStore";
-import { formatRelativeTime } from "@/lib/utils";
-import { Spinner } from "@/components/ui/spinner";
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-    CardDescription,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-    apiClient,
-    type ApiUsage,
-} from "@/lib/api-client";
-import {
-    HardDrive,
-    Activity,
-    RefreshCw,
-    FileText,
-} from "lucide-react";
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
+import { type ApiUsage, apiClient } from "@/lib/api-client";
+import { formatRelativeTime } from "@/lib/utils";
+import type { Project } from "@/store/useAppStore";
 
 import { CombinedUsageBar } from "./CombinedUsageBar";
-import {
-    formatBytes,
-} from "./utils";
+import { formatBytes } from "./utils";
 
 export function UsageTab({ project }: { project: Project }) {
     const [usage, setUsage] = useState<ApiUsage | null>(null);
@@ -268,4 +258,3 @@ export function UsageTab({ project }: { project: Project }) {
         </div>
     );
 }
-

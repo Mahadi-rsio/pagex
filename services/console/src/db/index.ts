@@ -1,98 +1,118 @@
-import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import * as schema from "./schema";
 
-type Database = PostgresJsDatabase<typeof schema>;
+export type Database = NodePgDatabase<typeof schema>;
 
 const globalForDb = globalThis as unknown as {
-    client?: postgres.Sql;
+    pool?: Pool;
+    poolConnectionString?: string;
 };
 
-function createClient(): postgres.Sql {
+function resolveConnectionString(): string {
+    try {
+        const { env } = getCloudflareContext();
+        const hyperdrive = (env as CloudflareEnv | undefined)?.HYPERDRIVE;
+        if (hyperdrive?.connectionString) {
+            return hyperdrive.connectionString;
+        }
+    } catch {
+        // Outside a Workers request (migrate scripts, plain Node tooling).
+    }
+
     const url = process.env.DATABASE_URL;
     if (!url) {
         throw new Error("DATABASE_URL environment variable is required");
     }
+    return url;
+}
 
-    const client = postgres(url, {
-        // Neon exposes a PgBouncer-compatible pooled endpoint, which does not
-        // support prepared statements. `DATABASE_URL` should point at that
-        // pooled host; run migrations against Neon's direct (unpooled) endpoint
-        // by overriding DATABASE_URL for that single `pnpm db:migrate` run if
-        // the pooled endpoint ever blocks on the DDL lock.
-        prepare: false,
-        // Serverless functions are short-lived, so keep the pool small and
-        // recycle idle connections rather than holding them open.
+function createPool(connectionString: string): Pool {
+    // Hyperdrive owns the origin pool — keep the Worker-side pool small.
+    // Do not set `prepare: false`; Hyperdrive docs warn that disabling
+    // prepared statements can cause hangs under transaction pooling.
+    // `maxUses: 1` avoids reusing a TCP socket across isolated requests
+    // (OpenNext Hyperdrive guidance).
+    const pool = new Pool({
+        connectionString,
         max: Number(process.env.DATABASE_POOL_MAX ?? 5),
-        idle_timeout: 20,
-        connect_timeout: 10,
+        maxUses: 1,
     });
+    // pg-pool has no default error listener: an idle-client socket error would
+    // otherwise be rethrown through EventEmitter and surface as an
+    // unhandledRejection. With `maxUses: 1` every connection is closed right
+    // after its query, which races with pg-cloudflare's read loop
+    // (`CloudflareSocket._listen`) and rejects with this expected teardown
+    // error — ignore it, but keep logging any real idle-connection failure.
+    pool.on("error", (err) => {
+        if (
+            err instanceof Error &&
+            err.message === "This socket has been closed."
+        ) {
+            return;
+        }
+        console.error("postgres pool error", err);
+    });
+    return pool;
+}
 
-    if (process.env.NODE_ENV !== "production") {
-        globalForDb.client = client;
+export function getPool(): Pool {
+    const connectionString = resolveConnectionString();
+    if (
+        globalForDb.pool &&
+        globalForDb.poolConnectionString === connectionString
+    ) {
+        return globalForDb.pool;
     }
 
-    return client;
+    const pool = createPool(connectionString);
+    globalForDb.pool = pool;
+    globalForDb.poolConnectionString = connectionString;
+    return pool;
+}
+
+let database: Database | undefined;
+
+function getDatabase(): Database {
+    return (database ??= drizzle(getPool(), { schema }));
 }
 
 /**
- * Connection is created on first use rather than at import time so that module
- * evaluation stays side-effect free. `next build` imports this module while
- * collecting page data, where no database is reachable.
+ * Lazily-initialised node-postgres pool (Hyperdrive in Workers, DATABASE_URL locally).
  */
-function getClient(): postgres.Sql {
-    return (globalForDb.client ??= createClient());
-}
-
-/**
- * Lazily-initialised postgres-js client, also used as a tagged template.
- *
- * A Proxy over a non-callable target cannot be invoked, so the target here is a
- * callable function (the `apply` trap forwards to the real client). Property
- * access (`dbClient.foo`) is forwarded through the `get` trap. This keeps the
- * connection lazy while preserving both usage patterns.
- */
-export const dbClient = new Proxy(
-    function dbClientPlaceholder() {
-        throw new Error("dbClient must be accessed via a property or tag");
-    } as unknown as postgres.Sql,
-    {
-        get(_target, prop) {
-            const client = getClient() as unknown as Record<
-                string | symbol,
-                unknown
-            >;
-            const value = client[prop];
-            return typeof value === "function" ? value.bind(client) : value;
-        },
-        apply(_target, thisArg, argArray) {
-            const client = getClient() as unknown as (
-                ...args: unknown[]
-            ) => unknown;
-            return Reflect.apply(client, thisArg, argArray);
-        },
+export const dbClient: Pool = new Proxy({} as Pool, {
+    get(_target, prop) {
+        const pool = getPool();
+        const value = (pool as unknown as Record<string | symbol, unknown>)[
+            prop
+        ];
+        return typeof value === "function" ? value.bind(pool) : value;
     },
-);
-
-let database: Database | null = null;
+});
 
 /** Lazily-initialised Drizzle query builder bound to the shared schema. */
 export const db: Database = new Proxy({} as Database, {
     get(_target, prop) {
-        database ??= drizzle(getClient(), { schema });
-        const value = (database as unknown as Record<string | symbol, unknown>)[
+        const instance = getDatabase();
+        const value = (instance as unknown as Record<string | symbol, unknown>)[
             prop
         ];
-        return typeof value === "function" ? value.bind(database) : value;
+        return typeof value === "function" ? value.bind(instance) : value;
     },
 });
 
-export async function getDb() {
+export async function getDb(): Promise<Database> {
     return db;
 }
 
 export async function checkDatabaseConnection() {
-    await getClient()`SELECT 1`;
+    const client = await getPool().connect();
+    try {
+        await client.query("SELECT 1");
+    } finally {
+        client.release();
+    }
 }
 
 export * from "./schema";

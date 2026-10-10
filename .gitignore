@@ -14,6 +14,7 @@ out/
 build/
 .turbo/
 .open-next/
+.wrangler/
 .vercel/
 
 # Local knowledge graph / tooling cache (never commit)
@@ -36,6 +37,8 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.dev.vars
+**/.dev.vars
 !*.env.example
 
 # Logs
@@ -80,6 +83,7 @@ infrastructure/certs/
 *.test.ts
 *.spec.ts
 !services/console/tests/*.test.ts
+!cleanup-worker/tests/*.test.ts
 
 # Scratch / ad-hoc scripts with credentials
 /test.js

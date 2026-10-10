@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import {
-    withApiAuth,
-    readJsonBody,
-    errorStatus,
+    errorDetails,
     errorMessage,
+    errorStatus,
+    readJsonBody,
+    withApiAuth,
 } from "@/server/api/http/guard";
 
 export const runtime = "nodejs";
@@ -29,9 +30,17 @@ export const POST = withApiAuth(async (request, auth) => {
         "@/features/deployments/deploy.service"
     );
     try {
-        return NextResponse.json(await presignDeploy(validation.data, auth.id));
+        const origin = new URL(request.url).origin;
+        return NextResponse.json(
+            await presignDeploy(validation.data, auth.id, origin),
+        );
     } catch (error) {
-        console.error("deploy.presign failed:", error);
+        console.error("[api/deploy/presign] failed", {
+            tenant_id: auth.id,
+            hash_count: validation.data.hashes.length,
+            has_deployment_token: Boolean(validation.data.deploymentToken),
+            error: errorDetails(error),
+        });
         return NextResponse.json(
             { error: errorMessage(error) },
             { status: errorStatus(error) },

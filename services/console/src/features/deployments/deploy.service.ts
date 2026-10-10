@@ -6,21 +6,7 @@ import { brotliCompress, gzip } from "node:zlib";
 import { and, desc, eq, gt, inArray, ne } from "drizzle-orm";
 import { lookup } from "mime-types";
 import pLimit from "p-limit";
-import { db } from "@/server/api/infrastructure/db/db";
-import {
-    blobTreeEntries,
-    blobs,
-    deployments,
-    idempotencyKeys,
-    pages,
-    sites,
-} from "@/server/api/infrastructure/db/schema";
-import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
-import {
-    blobObjectKey,
-    getStorageConfig,
-    objectMetaForPath,
-} from "@/server/api/infrastructure/storage/minio";
+import { enqueueDeploymentGC } from "@/features/background/jobs";
 import {
     BLOB_IO_CONCURRENCY,
     DEPLOY_LOCK_COMMIT_TTL_SECONDS,
@@ -28,24 +14,40 @@ import {
     DEPLOY_TOKEN_TTL_SECONDS,
     MAX_DEPLOY_FILE_SIZE,
     MAX_FILE_SIZE,
-    PRESIGN_EXPIRY_SECONDS,
 } from "@/server/api/constants/index";
-import { enqueueDeploymentGC } from "@/features/background/jobs";
+import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
+import { db } from "@/server/api/infrastructure/db/db";
 import {
-    cacheManifestInRedis,
-    generateAndPersistManifest,
-    incrementSiteVersion,
-    setActiveDeploymentCache,
-} from "./manifest.service";
+    blobs,
+    blobTreeEntries,
+    deployments,
+    idempotencyKeys,
+    pages,
+    sites,
+} from "@/server/api/infrastructure/db/schema";
+import {
+    blobObjectKey,
+    getObjectBuffer,
+    objectExists,
+    objectMetaForPath,
+    putObject,
+} from "@/server/api/infrastructure/storage/r2";
 import { validateManifest } from "@/server/api/utils/deployment-validator";
 import { validateFile } from "@/server/api/utils/file-validator";
 import { HttpError } from "@/server/api/utils/http-error";
 import { withLivePage } from "@/server/api/utils/page-visibility";
+import { buildBlobUploadUrl } from "./blob-upload-url";
+import type {
+    CommitDeployInput,
+    DeployFileInput,
+    PrepareDeployInput,
+    PresignDeployInput,
+} from "./deploy.validator";
 import {
     DEPLOYMENT_IN_PROGRESS_MESSAGE,
-    STALE_DEPLOYMENT_MESSAGE,
     newLockHolder,
     pageDeploymentLock,
+    STALE_DEPLOYMENT_MESSAGE,
 } from "./deployment-lock.service";
 import {
     checkAndReserveIdempotencyKey,
@@ -53,12 +55,12 @@ import {
     failIdempotencyKey,
     findCompletedIdempotencyByKey,
 } from "./idempotency.service";
-import type {
-    CommitDeployInput,
-    DeployFileInput,
-    PrepareDeployInput,
-    PresignDeployInput,
-} from "./deploy.validator";
+import {
+    cacheManifestInRedis,
+    generateAndPersistManifest,
+    incrementSiteVersion,
+    setActiveDeploymentCache,
+} from "./manifest.service";
 
 const brotliCompressAsync = promisify(brotliCompress);
 const gzipAsync = promisify(gzip);
@@ -94,6 +96,12 @@ export interface DeployTokenPayload {
     subdomain: string;
     /** Max `deployments.version` for the page when the lock was taken. */
     baseVersion: number;
+    /**
+     * Unix seconds at which the token stops being valid. Present on tokens
+     * issued after this field was introduced; absent on older tokens, which
+     * still rely on the Redis TTL as the source of truth.
+     */
+    expiresAt?: number;
     fileManifest: Array<{
         path: string;
         hash: string;
@@ -156,18 +164,15 @@ async function loadDeployToken(
     return payload;
 }
 
-async function objectExists(key: string): Promise<boolean> {
-    const { client, bucket } = getStorageConfig();
-    try {
-        await client.statObject(bucket, key);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
 /**
  * Upload a blob from a local buffer if it is not already in the store.
+ *
+ * The R2 object is the source of truth for existence — never the `blobs` row.
+ * Background GC and project purge delete R2 objects before their `blobs` rows
+ * (and can crash in between), and a bucket can be swapped out underneath the
+ * DB, so a row may survive its object. Re-putting whenever the object is
+ * missing repairs that drift instead of shipping a tree that references a
+ * blob that cannot be read at serve time.
  */
 export async function storeBlobFromBuffer(
     hash: string,
@@ -175,21 +180,12 @@ export async function storeBlobFromBuffer(
     contentType = "application/octet-stream",
     contentEncoding?: string,
 ): Promise<"deployed" | "reused"> {
-    const [existing] = await db
-        .select()
-        .from(blobs)
-        .where(eq(blobs.hash, hash))
-        .limit(1);
-    if (existing) return "reused";
-
     const key = blobObjectKey(hash);
-    if (!(await objectExists(key))) {
-        const { client, bucket } = getStorageConfig();
-        await client.putObject(
-            bucket,
+    const exists = await objectExists(key);
+    if (!exists) {
+        await putObject(
             key,
             body,
-            body.length,
             objectMetaForPath(key, contentType, contentEncoding),
         );
     }
@@ -198,21 +194,39 @@ export async function storeBlobFromBuffer(
         .insert(blobs)
         .values({ hash, size: body.length })
         .onConflictDoNothing();
-    return "deployed";
+    return exists ? "reused" : "deployed";
 }
 
 async function readBlobBuffer(hash: string): Promise<Buffer> {
-    const { client, bucket } = getStorageConfig();
-    try {
-        const stream = await client.getObject(bucket, blobObjectKey(hash));
-        const chunks: Buffer[] = [];
-        for await (const chunk of stream) {
-            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        }
-        return Buffer.concat(chunks);
-    } catch {
+    const body = await getObjectBuffer(blobObjectKey(hash));
+    if (!body) {
         throw new HttpError(`Missing blob object for hash ${hash}`, 400);
     }
+    return body;
+}
+
+/**
+ * Filter a set of blob hashes down to those whose R2 object actually exists.
+ *
+ * The `blobs` table alone is not evidence that a blob can be served: GC and
+ * project purge delete R2 objects before their rows, and storage can be
+ * swapped independently of the DB. Prepare/presign must only treat a hash as
+ * reusable when the object is physically present, otherwise the client skips
+ * the upload and commit fails with "Missing blob object".
+ */
+async function hashesExistingInR2(hashes: string[]): Promise<Set<string>> {
+    const limit = pLimit(BLOB_IO_CONCURRENCY);
+    const present = new Set<string>();
+    await Promise.all(
+        hashes.map((hash) =>
+            limit(async () => {
+                if (await objectExists(blobObjectKey(hash))) {
+                    present.add(hash);
+                }
+            }),
+        ),
+    );
+    return present;
 }
 
 interface FileVariant {
@@ -520,7 +534,7 @@ export interface BlobManifestFile {
 
 /**
  * Shared commit path for CLI and cloud builds:
- * blobs already in MinIO → write tree → Redis map → activate.
+ * blobs already in R2 → write tree → Redis map → activate.
  * No tenant/ copy — Caddy serves directly from blobs/{hash}.
  */
 export async function commitBlobTreeDeploy(opts: {
@@ -858,7 +872,10 @@ export async function prepareDeploy(
               .from(blobs)
               .where(inArray(blobs.hash, hashes))
         : [];
-    const existingSet = new Set(existing.map((b) => b.hash));
+    // A `blobs` row is not proof the object exists in R2 (GC deletes objects
+    // before rows, and storage can be swapped independently). Only hashes whose
+    // object is actually present may be treated as reusable.
+    const existingSet = await hashesExistingInR2(existing.map((b) => b.hash));
 
     const uploadRequired: Array<{ path: string; hash: string; size: number }> =
         [];
@@ -888,6 +905,7 @@ export async function prepareDeploy(
         siteId: page.site_id,
         subdomain: site.subdomain,
         baseVersion,
+        expiresAt: Math.floor(Date.now() / 1000) + DEPLOY_TOKEN_TTL_SECONDS,
         fileManifest: input.files.map((f: DeployFileInput) => ({
             path: f.path,
             hash: f.hash,
@@ -1040,11 +1058,23 @@ export async function prepareDeploy(
     };
 }
 
+/**
+ * Return Worker-mediated upload URLs for missing blobs.
+ *
+ * R2 Worker bindings do not issue S3-style presigned PUTs. Clients still
+ * receive `{ hash, url, method: "PUT" }` and upload with a bare PUT; the URL
+ * embeds the short-lived deployment token and is served by `/api/deploy/blob`.
+ *
+ * `origin` is the origin of the incoming API request (e.g.
+ * `https://pagex-console.rsioex.workers.dev`). Deriving the upload base from
+ * the request — rather than `PUBLIC_URL`/`BETTER_AUTH_URL` — keeps the URL
+ * reachable from whatever host the client actually called.
+ */
 export async function presignDeploy(
     input: PresignDeployInput,
     tenantId: string,
+    origin: string,
 ) {
-    const { client, bucket } = getStorageConfig();
     const payload = await loadDeployToken(input.deploymentToken, tenantId);
     const manifestHashes = new Set(payload.fileManifest.map((f) => f.hash));
 
@@ -1054,7 +1084,17 @@ export async function presignDeploy(
               .from(blobs)
               .where(inArray(blobs.hash, input.hashes))
         : [];
-    const existingSet = new Set(existing.map((b) => b.hash));
+    // Same DB/R2-drift guard as prepare: a hash whose row exists but whose R2
+    // object is gone must still get an upload URL, or commit will fail.
+    const existingSet = await hashesExistingInR2(existing.map((b) => b.hash));
+
+    const baseUrl = origin.replace(/\/+$/, "");
+    if (!/^https?:\/\//i.test(baseUrl)) {
+        throw new HttpError(
+            "Unable to resolve a public origin for blob uploads",
+            500,
+        );
+    }
 
     const urls: Array<{ hash: string; url: string; method: "PUT" }> = [];
 
@@ -1069,12 +1109,11 @@ export async function presignDeploy(
             continue;
         }
 
-        const url = await client.presignedPutObject(
-            bucket,
-            blobObjectKey(hash),
-            PRESIGN_EXPIRY_SECONDS,
-        );
-        urls.push({ hash, url, method: "PUT" });
+        urls.push({
+            hash,
+            url: buildBlobUploadUrl(baseUrl, input.deploymentToken, hash),
+            method: "PUT",
+        });
     }
 
     return { urls };

@@ -1,30 +1,22 @@
 "use client";
 
+import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import type { Project } from "@/store/useAppStore";
-import { Spinner } from "@/components/ui/spinner";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
+    CardDescription,
     CardHeader,
     CardTitle,
-    CardDescription,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import {
-    apiClient,
-} from "@/lib/api-client";
 import { Tree, type TreeViewElement } from "@/components/ui/file-tree";
-import { toast } from "sonner";
-import {
-    RefreshCw,
-} from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { apiClient } from "@/lib/api-client";
+import type { Project } from "@/store/useAppStore";
 
-import {
-    formatBytes,
-    pathsToTreeElements,
-    topLevelExpandedIds,
-} from "./utils";
+import { formatBytes, pathsToTreeElements, topLevelExpandedIds } from "./utils";
 
 export function FilesTab({ project }: { project: Project }) {
     const [loading, setLoading] = useState(true);
@@ -123,4 +115,3 @@ export function FilesTab({ project }: { project: Project }) {
         </div>
     );
 }
-

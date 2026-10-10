@@ -1,22 +1,22 @@
+import { and, desc, eq, ne } from "drizzle-orm";
+import { enqueueDeploymentGC } from "@/features/background/jobs";
 import { db } from "@/server/api/infrastructure/db/db";
 import {
-    blobTreeEntries,
     blobs,
+    blobTreeEntries,
     deployments,
 } from "@/server/api/infrastructure/db/schema";
-import { and, eq, ne, desc } from "drizzle-orm";
 import { HttpError } from "@/server/api/utils/http-error";
+import {
+    DEPLOY_LOCK_COMMIT_TTL_SECONDS,
+    pageDeploymentLock,
+} from "./deployment-lock.service";
 import {
     cacheManifestInRedis,
     generateAndPersistManifest,
     incrementSiteVersion,
     setActiveDeploymentCache,
 } from "./manifest.service";
-import { enqueueDeploymentGC } from "@/features/background/jobs";
-import {
-    DEPLOY_LOCK_COMMIT_TTL_SECONDS,
-    pageDeploymentLock,
-} from "./deployment-lock.service";
 
 export async function rollbackToDeployment(
     deploymentId: string,

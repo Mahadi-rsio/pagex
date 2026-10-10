@@ -1,0 +1,6 @@
+# Secrets for local `wrangler dev` (gitignored). Copy to `.dev.vars`.
+# Redis cache cleanup (best-effort; optional — skipped when unset)
+UPSTASH_REDIS_REST_URL=https://...
+UPSTASH_REDIS_REST_TOKEN=...
+# Optional; defaults to "px"
+REDIS_KEY_PREFIX=px

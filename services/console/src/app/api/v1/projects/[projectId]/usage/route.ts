@@ -21,9 +21,7 @@ export const GET = withApiAuth(async (_request, auth, context) => {
         );
     }
 
-    const { getProjectUsage } = await import(
-        "@/features/usage/usage.service"
-    );
+    const { getProjectUsage } = await import("@/features/usage/usage.service");
     try {
         const usage = await getProjectUsage(projectId, auth.id);
         if (!usage) {

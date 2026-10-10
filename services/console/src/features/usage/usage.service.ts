@@ -1,17 +1,11 @@
 import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { getPlan, type PlanId } from "@/server/api/constants/pricing";
 import { db } from "@/server/api/infrastructure/db/db";
 import {
     bandwidthUsageHourly,
     pages,
     serviceMetricsHourly,
 } from "@/server/api/infrastructure/db/schema";
-import { getPlan, type PlanId } from "@/server/api/constants/pricing";
-import {
-    buildUsageResponse,
-    currentUsageWindow,
-    type UsageResponse,
-    type UsageWindow,
-} from "@/server/api/utils/usage";
 import {
     buildMetricsResponse,
     emptyMetricsInput,
@@ -20,6 +14,12 @@ import {
     type MetricsWindow,
 } from "@/server/api/utils/metrics";
 import { withLivePage } from "@/server/api/utils/page-visibility";
+import {
+    buildUsageResponse,
+    currentUsageWindow,
+    type UsageResponse,
+    type UsageWindow,
+} from "@/server/api/utils/usage";
 
 /**
  * Usage / metrics read model.

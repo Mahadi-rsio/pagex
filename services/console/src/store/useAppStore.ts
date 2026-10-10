@@ -1,10 +1,10 @@
 import { create } from "zustand";
+import type { ApiPage } from "@/lib/api-client";
 import { apiClient } from "@/lib/api-client";
 import {
     mapApiPagesToProjects,
     mapProjectToCreatePageInput,
 } from "@/lib/api-mappers";
-import type { ApiPage } from "@/lib/api-client";
 
 export interface Project {
     id: string;

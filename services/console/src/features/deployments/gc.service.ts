@@ -2,18 +2,18 @@ import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
 import { DEPLOYMENT_RETENTION } from "@/server/api/constants/index";
 import { db } from "@/server/api/infrastructure/db/db";
 import {
-    blobTreeEntries,
     blobs,
+    blobTreeEntries,
     deployments,
 } from "@/server/api/infrastructure/db/schema";
 import {
     deleteBlobObjects,
     deleteManifestObjects,
-} from "@/server/api/infrastructure/storage/minio";
+} from "@/server/api/infrastructure/storage/r2";
 
 /**
  * Background GC: drop inactive deployments beyond retention and delete
- * truly orphaned MinIO blobs. Safe to fire-and-forget — never await at call site.
+ * truly orphaned R2 blobs. Safe to fire-and-forget — never await at call site.
  *
  * @param pageId - page whose deployment history to prune
  * @param _siteId - retained for call-site symmetry / future use (blobs are global)
@@ -75,7 +75,7 @@ export async function runDeploymentGC(
             .where(inArray(blobs.hash, orphanedHashes));
         const sizeByHash = new Map(sizeRows.map((r) => [r.hash, r.size]));
 
-        // Step 4 — MinIO first; only successfully deleted hashes proceed to blobs DELETE
+        // Step 4 — R2 first; only successfully deleted hashes proceed to blobs DELETE
         deletedHashes = await deleteBlobObjects(orphanedHashes);
         for (const hash of deletedHashes) {
             bytesFreed += sizeByHash.get(hash) ?? 0;
@@ -90,7 +90,7 @@ export async function runDeploymentGC(
         );
     }
 
-    // Step 5 — DB transaction: tree → deployments → blobs (successful MinIO only)
+    // Step 5 — DB transaction: tree → deployments → blobs (successful R2 only)
     await db.transaction(async (tx) => {
         await tx
             .delete(blobTreeEntries)

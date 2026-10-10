@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import type { Project } from "@/store/useAppStore";
-import { formatRelativeTime } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
-import { apiClient, type ApiUsage } from "@/lib/api-client";
 import { Activity, HardDrive, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
+import { type ApiUsage, apiClient } from "@/lib/api-client";
+import { formatRelativeTime } from "@/lib/utils";
+import type { Project } from "@/store/useAppStore";
 import { CombinedUsageBar } from "./CombinedUsageBar";
 import { formatBytes } from "./utils";
 

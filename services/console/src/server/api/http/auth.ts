@@ -42,10 +42,7 @@ export async function authenticateRequest(
     return getSessionFromCookie(request);
 }
 
-async function verifyJwt(
-    token: string,
-    request: Request,
-): Promise<AuthResult> {
+async function verifyJwt(token: string, request: Request): Promise<AuthResult> {
     try {
         const jwksUrl =
             process.env.AUTH_JWKS_URL ||
@@ -82,9 +79,7 @@ async function verifyJwt(
 }
 
 async function getSessionFromCookie(request: Request): Promise<AuthResult> {
-    const { getAuthInstance } = await import(
-        "@/modules/auth/utils/auth-utils"
-    );
+    const { getAuthInstance } = await import("@/modules/auth/utils/auth-utils");
 
     try {
         const auth = await getAuthInstance();

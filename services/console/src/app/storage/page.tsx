@@ -1,7 +1,7 @@
 "use client";
 
-import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { LazyStoragePage } from "@/components/console/ConsolePageWrappers";
+import { ConsoleShell } from "@/components/console/ConsoleShell";
 
 export default function StoragePage() {
     return (

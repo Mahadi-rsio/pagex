@@ -1,29 +1,24 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { AlertCircle, ArrowLeft, ExternalLink } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useAppStore } from "@/store/useAppStore";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useEffect, useRef } from "react";
 import PageSpinner from "@/components/pageloader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-    ArrowLeft,
-    ExternalLink,
-    AlertCircle,
-} from "lucide-react";
-
-import { statusConfig } from "./project-detail/utils";
-import { OverviewTab } from "./project-detail/OverviewTab";
-import { DomainsTab } from "./project-detail/DomainsTab";
-import { DeployTab } from "./project-detail/DeployTab";
-import { BuildsTab } from "./project-detail/BuildsTab";
-import { FilesTab } from "./project-detail/FilesTab";
-import { EnvTab } from "./project-detail/EnvTab";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAppStore } from "@/store/useAppStore";
 import { AnalyticsTab } from "./project-detail/AnalyticsTab";
+import { BuildsTab } from "./project-detail/BuildsTab";
+import { DeployTab } from "./project-detail/DeployTab";
+import { DomainsTab } from "./project-detail/DomainsTab";
+import { EnvTab } from "./project-detail/EnvTab";
+import { FilesTab } from "./project-detail/FilesTab";
+import { OverviewTab } from "./project-detail/OverviewTab";
 import { PerformanceTab } from "./project-detail/PerformanceTab";
-import { UsageTab } from "./project-detail/UsageTab";
 import { SettingsTab } from "./project-detail/SettingsTab";
+import { UsageTab } from "./project-detail/UsageTab";
+import { statusConfig } from "./project-detail/utils";
 
 export function ProjectDetailView({ projectId }: { projectId: string }) {
     const router = useRouter();

@@ -2,8 +2,8 @@
 
 import { useEffect } from "react";
 import { toast } from "sonner";
-import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { LazyDashboardPage } from "@/components/console/ConsolePageWrappers";
+import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { apiClient } from "@/lib/api-client";
 
 export default function HomePage() {

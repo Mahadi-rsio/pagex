@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import {
-    withApiAuth,
-    readJsonBody,
-    errorStatus,
+    errorDetails,
     errorMessage,
+    errorStatus,
+    readJsonBody,
+    withApiAuth,
 } from "@/server/api/http/guard";
 
 export const runtime = "nodejs";
@@ -29,11 +30,14 @@ export const POST = withApiAuth(async (request, auth) => {
         "@/features/deployments/deploy.service"
     );
     try {
-        return NextResponse.json(
-            await commitDeploy(validation.data, auth.id),
-        );
+        return NextResponse.json(await commitDeploy(validation.data, auth.id));
     } catch (error) {
-        console.error("deploy.commit failed:", error);
+        console.error("[api/deploy/commit] failed", {
+            tenant_id: auth.id,
+            idempotency_key: validation.data.idempotencyKey ?? null,
+            has_deployment_token: Boolean(validation.data.deploymentToken),
+            error: errorDetails(error),
+        });
         return NextResponse.json(
             { error: errorMessage(error) },
             { status: errorStatus(error) },

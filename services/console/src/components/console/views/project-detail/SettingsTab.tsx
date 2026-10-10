@@ -1,18 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useAppStore } from "@/store/useAppStore";
-import type { Project } from "@/store/useAppStore";
-import { Spinner } from "@/components/ui/spinner";
+import { useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
+    CardDescription,
     CardHeader,
     CardTitle,
-    CardDescription,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -23,8 +22,9 @@ import {
     SheetHeader,
     SheetTitle,
 } from "@/components/ui/sheet";
-import { toast } from "sonner";
-import { Trash2 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import type { Project } from "@/store/useAppStore";
+import { useAppStore } from "@/store/useAppStore";
 
 export function SettingsTab({ project }: { project: Project }) {
     const { deleteProject } = useAppStore();

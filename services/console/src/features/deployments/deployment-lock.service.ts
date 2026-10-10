@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import {
     DEPLOY_LOCK_COMMIT_TTL_SECONDS,
     DEPLOY_LOCK_HEARTBEAT_MS,
 } from "@/server/api/constants/index";
+import { redis, redisKey } from "@/server/api/infrastructure/cache/redis";
 import { HttpError } from "@/server/api/utils/http-error";
 
 export const DEPLOYMENT_IN_PROGRESS_MESSAGE =

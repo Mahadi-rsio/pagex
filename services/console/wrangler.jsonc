@@ -1,0 +1,60 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "pagex-console",
+	"main": ".open-next/worker.js",
+	"compatibility_date": "2026-10-08",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"services": [
+		{
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "pagex-console"
+		}
+	],
+	"r2_buckets": [
+		{
+			"bucket_name": "pagex-blobs-dev",
+			"binding": "BLOBS",
+			"remote": true
+		}
+	],
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "0ac41863f821462ba90a1bb5d9ad81d3"
+		}
+	],
+	"queues": {
+		"producers": [
+			{
+				"binding": "BACKGROUND_QUEUE",
+				"queue": "pagex-background"
+			}
+		]
+	},
+	"images": {
+		"binding": "IMAGES"
+	},
+	"observability": {
+		"logs": {
+			"enabled": true,
+			"head_sampling_rate": 1,
+			"invocation_logs": true,
+			"persist": true
+		},
+		"traces": {
+			"enabled": false,
+			"head_sampling_rate": 1,
+			"persist": true
+		},
+		"issue_detection": {
+			"enabled": false
+		}
+	}
+}

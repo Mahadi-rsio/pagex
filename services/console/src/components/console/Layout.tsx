@@ -1,9 +1,15 @@
 "use client";
 
+import {
+    ChevronUp,
+    CreditCard,
+    FolderKanban,
+    LayoutDashboard,
+    LogOut,
+    Settings,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAppStore } from "@/store/useAppStore";
-import { authClient } from "@/modules/auth/utils/auth-client";
 import { AppBar } from "@/components/console/AppBar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -13,14 +19,8 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { getInitials } from "@/lib/utils";
-import {
-    LayoutDashboard,
-    FolderKanban,
-    CreditCard,
-    Settings,
-    LogOut,
-    ChevronUp,
-} from "lucide-react";
+import { authClient } from "@/modules/auth/utils/auth-client";
+import { useAppStore } from "@/store/useAppStore";
 
 interface LayoutProps {
     children: React.ReactNode;

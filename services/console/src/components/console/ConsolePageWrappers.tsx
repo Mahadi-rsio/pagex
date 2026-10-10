@@ -1,9 +1,9 @@
 "use client";
 
-import { Suspense, lazy } from "react";
+import { lazy, Suspense } from "react";
 import { DashboardSkeleton } from "@/components/console/skeletons/DashboardSkeleton";
-import { ProjectsSkeleton } from "@/components/console/skeletons/ProjectsSkeleton";
 import { ProjectDetailSkeleton } from "@/components/console/skeletons/ProjectDetailSkeleton";
+import { ProjectsSkeleton } from "@/components/console/skeletons/ProjectsSkeleton";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const DashboardView = lazy(() =>

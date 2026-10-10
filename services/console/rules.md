@@ -20,7 +20,7 @@
 
 - Public `/api/*` requests enter through `src/app/api/[...path]/route.ts` and are handled by `src/server/api/http/dispatcher.ts`.
 - Extend dispatcher matching and execution when adding an endpoint.
-- Services in `src/server/api/services/` own business logic and PostgreSQL, Redis, and MinIO access.
+- Feature services under `src/features/` own business logic and PostgreSQL, Redis, and R2 (`BLOBS`) access.
 - Validate request data with Zod under `src/server/api/validators/`.
 - Use `HttpError` when a service must choose an HTTP status.
 - Scope every protected database query to the authenticated tenant ID.

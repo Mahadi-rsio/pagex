@@ -1,16 +1,16 @@
 # Project Context: Next.js Console and Native API
 
-PageX's console is a Next.js 16 monolith with PostgreSQL, Redis, MinIO, Drizzle ORM, and Better Auth. The former Express API is now served by native App Router handlers in the same application.
+PageX's console is a Next.js 16 monolith with PostgreSQL (Neon via Hyperdrive), Redis (Upstash), R2 object storage, Drizzle ORM, and Better Auth. It deploys to Cloudflare Workers through OpenNext.
 
 ## Stack
 
 - Next.js 16 App Router and React 19
 - TypeScript in strict mode
 - Tailwind CSS v4 and shadcn/ui
-- PostgreSQL with Drizzle ORM
+- PostgreSQL with Drizzle ORM (`pg` + Hyperdrive in Workers)
 - Redis with Upstash (`@upstash/redis`, REST protocol)
-- MinIO with the S3 client
-- Better Auth with JWT/JWKS
+- Cloudflare R2 via the native `BLOBS` Worker binding
+- Better Auth with JWT/JWKS (password + OAuth only; no email or phone OTP)
 - Zod validation
 - Biome 2 formatting
 - Caddy for the console reverse proxy and tenant `static_s3` serving
@@ -19,6 +19,8 @@ PageX's console is a Next.js 16 monolith with PostgreSQL, Redis, MinIO, Drizzle 
 
 ```text
 services/console/
+├── wrangler.jsonc             # Worker bindings (BLOBS, HYPERDRIVE, BACKGROUND_QUEUE)
+├── open-next.config.ts        # OpenNext Cloudflare adapter
 ├── drizzle.config.ts          # Auth migration config
 ├── drizzle.api.config.ts      # API migration config
 ├── drizzle/                   # Auth migration history
@@ -27,40 +29,36 @@ services/console/
 ├── tests/                     # API utility tests
 └── src/
     ├── app/                   # Next.js pages and native route handlers
-    │   ├── api/[...path]/     # Public API entry
+    │   ├── api/               # Public API routes (incl. deploy/blob)
     │   ├── api/auth/[...all]/ # Better Auth
     │   ├── api/health/        # Console health
-    │   ├── api/proxy/[...path]/# Browser API compatibility proxy
-    │   ├── health/            # Top-level health alias
     │   ├── internal/usage/    # Token-authenticated usage ingest
-    │   └── v1/check-domain/   # Domain check
+    │   └── ...
     ├── db/                    # Pool, migration runner, schema exports
+    ├── features/              # Domain services (projects, deployments, …)
     ├── lib/                   # Shared client/server utilities
     ├── modules/
     │   ├── api/schemas/       # API Drizzle schema
     │   └── auth/              # Better Auth module
     └── server/api/
         ├── constants/         # API limits and pricing
-        ├── http/              # Dispatcher, JWT auth, rate limits
-        ├── infrastructure/    # DB, Redis, MinIO
-        ├── services/          # Business logic
-        ├── utils/             # Validation, metrics, usage, errors
-        └── validators/        # Zod request schemas
+        ├── http/              # Auth guard, rate limits
+        ├── infrastructure/    # DB, Redis, R2
+        └── ...
 ```
 
 ## Request Flow
 
-Public `/api/*` requests enter through `src/app/api/[...path]/route.ts`. The dispatcher matches the route, applies Redis rate limiting, verifies the Better Auth JWT through JOSE/JWKS, validates input, and calls a service. Services own PostgreSQL, Redis, and MinIO operations.
+Public `/api/*` requests are native App Router handlers under `src/app/api/`, wrapped with `withApiAuth`. Services own PostgreSQL, Redis, and R2 operations.
 
 `/internal/usage/ingest` uses constant-time validation of `USAGE_INGEST_TOKEN` and bypasses public rate limiting. The Better Auth route remains under `/api/auth/*`.
 
 ## Production Model
 
-- `next build` produces the Node.js standalone application by default.
-- Root Caddy reverse-proxies the console host to `{$CONSOLE_UPSTREAM}` (the Vercel origin).
-- Tenant sites are served by the blob server's `static_s3` Caddy plugin.
-- `src/instrumentation.ts` runs auth migrations, API migrations, and conditional bucket initialization in the Node.js runtime.
-- The API migration bootstrap records existing pushed API schemas in the original Drizzle migration history before applying new migrations.
+- `pnpm run build:cloudflare` produces the OpenNext Worker (`.open-next/`).
+- Root Caddy reverse-proxies the console host to `{$CONSOLE_UPSTREAM}` (the Worker origin).
+- Tenant sites are served by the blob server's `static_s3` Caddy plugin (same `blobs/` / `manifests/` key layout).
+- `src/instrumentation.ts` never migrates on Workers cold starts; migrations run via `pnpm db:migrate` or an opt-in Node admin process (`RUN_STARTUP_TASKS=1`).
 
 ## Database
 
@@ -68,8 +66,6 @@ Schemas are defined in `src/modules/[module]/schemas/` and aggregated through `s
 
 - Auth uses `drizzle.config.ts`, `drizzle/`, and `drizzle.__drizzle_migrations_console`.
 - API uses `drizzle.api.config.ts`, `drizzle-api/`, and `drizzle.__drizzle_migrations`.
-- Fresh databases run auth migrations first and API migrations second.
-- Existing databases retain independent migration histories.
 
 After a schema change:
 
@@ -81,19 +77,20 @@ pnpm run db:migrate
 ## Environment
 
 - Client-visible values use `NEXT_PUBLIC_*`; `PUBLIC_URL` is explicitly mapped in `next.config.ts`.
-- `BETTER_AUTH_SECRET`, `DATABASE_URL` (Neon), and `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` configure the Node runtime.
-- `MINIO_ENDPOINT`, `MINIO_PORT`, `MINIO_USE_SSL`, `MINIO_BUCKET`, `S3_ACCESS_KEY`, and `S3_SECRET_KEY` configure lazy storage access.
+- Workers: `HYPERDRIVE` + `BLOBS` bindings; Upstash REST credentials as secrets / `.dev.vars`.
+- Local CLI / migrations: `DATABASE_URL` (Neon).
 - `BASE_DOMAIN` is used for page domain allocation and validation.
 - `USAGE_INGEST_TOKEN` authenticates internal usage ingestion.
-- `AUTH_JWKS_URL` can override request-relative JWKS discovery.
-- `RUN_STARTUP_TASKS=1` opts a Vercel deploy into running migrations and bucket provisioning; cold starts skip both otherwise.
+- Email and SMS delivery are not configured (no SMTP / Brevo / email OTP / phone OTP).
 
 ## Commands
 
 ```bash
 pnpm run dev
-pnpm run build
+pnpm run build:cloudflare
+pnpm run preview
 pnpm run test
 pnpm run lint
-pnpm exec tsc --noEmit
+pnpm run typecheck
+pnpm run cf-typegen
 ```

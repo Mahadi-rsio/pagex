@@ -368,13 +368,16 @@ export class ApiClient {
                     return null;
                 }
 
-                const data = await res.json();
+                const data = (await res.json()) as {
+                    token?: string;
+                    [key: string]: unknown;
+                };
                 log.token(
                     "Token endpoint response payload keys:",
                     Object.keys(data),
                 );
 
-                if (data?.token) {
+                if (data.token) {
                     cachedToken = data.token;
                     cachedTokenExpiry = Date.now() + TOKEN_TTL_MS;
                     log.token(
@@ -498,7 +501,10 @@ export class ApiClient {
 
     private async handleResponse<T>(response: Response): Promise<T> {
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
+            const errorData = (await response.json().catch(() => ({}))) as {
+                error?: string;
+                message?: string;
+            };
             const errorMessage =
                 errorData.error || errorData.message || "Unknown error";
             log.error(
@@ -614,7 +620,9 @@ export class ApiClient {
         const response = await this.openBuildLogStream(buildId);
 
         if (!response.ok || !response.body) {
-            const errorData = await response.json().catch(() => ({}));
+            const errorData = (await response.json().catch(() => ({}))) as {
+                error?: string;
+            };
             handlers.onError?.({
                 type: "error",
                 message:
@@ -667,7 +675,7 @@ export class ApiClient {
     }
 
     /**
-     * Get MinIO presigned PUT URLs for blob hashes that need uploading.
+     * Get Worker-mediated PUT URLs for blob hashes that need uploading.
      */
     async presignDeploy(data: {
         deploymentToken: string;
@@ -681,7 +689,7 @@ export class ApiClient {
     }
 
     /**
-     * Upload a raw file body to a presigned MinIO URL (no auth header needed).
+     * Upload a raw file body to a deploy blob URL (token embedded in query).
      */
     async uploadBlob(
         url: string,
@@ -794,7 +802,7 @@ function parseSseStream(
                         return;
                     }
                     buffer += decoder.decode(value, { stream: true });
-                    let boundary = buffer.lastIndexOf("\n\n");
+                    const boundary = buffer.lastIndexOf("\n\n");
                     if (boundary === -1) continue;
                     const chunk = buffer.slice(0, boundary);
                     buffer = buffer.slice(boundary);

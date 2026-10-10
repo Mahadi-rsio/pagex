@@ -1,34 +1,27 @@
 "use client";
 
+import { MoreHorizontal, RefreshCw, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import type { Project } from "@/store/useAppStore";
-import { formatRelativeTime } from "@/lib/utils";
-import { Spinner } from "@/components/ui/spinner";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
+    CardDescription,
     CardHeader,
     CardTitle,
-    CardDescription,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-    apiClient,
-    type ApiDeployment,
-} from "@/lib/api-client";
-import { toast } from "sonner";
-import {
-    RefreshCw,
-    RotateCcw,
-    MoreHorizontal,
-} from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { type ApiDeployment, apiClient } from "@/lib/api-client";
+import { formatRelativeTime } from "@/lib/utils";
+import type { Project } from "@/store/useAppStore";
 
 export function DeployTab({ project }: { project: Project }) {
     const [deployments, setDeployments] = useState<ApiDeployment[]>([]);
@@ -197,4 +190,3 @@ export function DeployTab({ project }: { project: Project }) {
         </div>
     );
 }
-

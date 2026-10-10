@@ -15,10 +15,7 @@ export const maxDuration = 300;
 export const GET = withApiAuth(async (request, auth, context) => {
     const { siteId } = await context.params;
     if (!UUID_RE.test(siteId)) {
-        return NextResponse.json(
-            { error: "Invalid site id" },
-            { status: 400 },
-        );
+        return NextResponse.json({ error: "Invalid site id" }, { status: 400 });
     }
 
     const url = new URL(request.url);
@@ -30,11 +27,10 @@ export const GET = withApiAuth(async (request, auth, context) => {
     if (from !== null) query.from = from;
     if (to !== null) query.to = to;
 
-    const [{ getSiteMetrics }, { resolveMetricsWindow }] =
-        await Promise.all([
-            import("@/features/usage/usage.service"),
-            import("@/server/api/utils/metrics"),
-        ]);
+    const [{ getSiteMetrics }, { resolveMetricsWindow }] = await Promise.all([
+        import("@/features/usage/usage.service"),
+        import("@/server/api/utils/metrics"),
+    ]);
     const metricsWindow = resolveMetricsWindow(query);
     try {
         const metrics = await getSiteMetrics(siteId, auth.id, metricsWindow);
