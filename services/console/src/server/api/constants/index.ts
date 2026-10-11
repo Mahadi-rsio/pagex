@@ -1,7 +1,10 @@
 export const TOP_LEVEL_DOMAIN = process.env.BASE_DOMAIN || "localhost";
-export const MAX_FILE_SIZE = 250 * 1024 * 1024;
-/** Max size for a single file in a content-addressed deploy */
-export const MAX_DEPLOY_FILE_SIZE = 50 * 1024 * 1024;
+/** Max number of source files per deploy (before .br/.gz variant expansion). */
+export const MAX_DEPLOY_FILE_COUNT = 200;
+/** Max size for a single file in a content-addressed deploy (5 MB) */
+export const MAX_DEPLOY_FILE_SIZE = 5 * 1024 * 1024;
+/** Total deploy size cap (200 files × 5 MB = 1000 MB) */
+export const MAX_FILE_SIZE = MAX_DEPLOY_FILE_COUNT * MAX_DEPLOY_FILE_SIZE;
 /** Redis TTL for deploy:token:{token} (10 minutes) */
 export const DEPLOY_TOKEN_TTL_SECONDS = 10 * 60;
 /** Presigned PUT URL lifetime (matches deploy token window) */

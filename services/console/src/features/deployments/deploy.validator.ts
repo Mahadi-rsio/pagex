@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_DEPLOY_FILE_COUNT } from "@/server/api/constants/index";
 
 const sha256Hex = z
     .string()
@@ -28,13 +29,13 @@ const idempotencyKeySchema = z
 
 export const prepareDeploySchema = z.object({
     pageId: z.string().min(1),
-    files: z.array(deployFileSchema).min(1).max(10_000),
+    files: z.array(deployFileSchema).min(1).max(MAX_DEPLOY_FILE_COUNT),
     idempotencyKey: idempotencyKeySchema.optional(),
 });
 
 export const presignDeploySchema = z.object({
     deploymentToken: z.string().min(1),
-    hashes: z.array(sha256Hex).min(1).max(10_000),
+    hashes: z.array(sha256Hex).min(1).max(MAX_DEPLOY_FILE_COUNT),
 });
 
 export const commitDeploySchema = z.object({

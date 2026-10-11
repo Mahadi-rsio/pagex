@@ -120,6 +120,17 @@ const EXT_ALIASES: Record<string, readonly string[]> = {
     // interchangeable on deploy.
     ico: ["ico", "png"],
     png: ["png", "ico"],
+    // Video containers whose detected ext differs from the common filename ext.
+    // file-type reports both WebM and Matroska as `mkv`, Windows Media as
+    // `asf`, and ISO-BMFF as `mp4`/`mov`, so accept the family members.
+    mkv: ["mkv", "webm"],
+    webm: ["webm", "mkv"],
+    asf: ["asf", "wmv"],
+    wmv: ["wmv", "asf"],
+    mov: ["mov", "qt"],
+    qt: ["qt", "mov"],
+    mp4: ["mp4", "m4v"],
+    m4v: ["m4v", "mp4"],
 };
 
 function extractExtension(filename: string): string {

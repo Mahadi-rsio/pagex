@@ -150,7 +150,7 @@ Validate the file manifest, check which blobs already exist, issue a 10-minute d
 | `pageId` | Page UUID **or** `project_name` |
 | `files[].path` | Relative POSIX path (no `..`, no leading `/`) |
 | `files[].hash` | Lowercase SHA256 hex |
-| `files[].size` | Bytes; per-file max 50 MB; total max 250 MB |
+| `files[].size` | Bytes; per-file max 5 MB; max 200 files; total max 1000 MB |
 | `files[].magicBytes` | Base64 of the first 16 bytes (extension + MIME checks) |
 
 **Response `200`:**

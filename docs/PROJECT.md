@@ -77,8 +77,9 @@ cleanup (`deployment_gc`, `page_delete`). It is never in the deploy request path
 | Constant | Value | Usage |
 |----------|-------|-------|
 | `TOP_LEVEL_DOMAIN` | `'localhost'` | Domain suffix for new pages |
-| `MAX_FILE_SIZE` | 250 MB | Total deploy size cap (prepare) |
-| `MAX_DEPLOY_FILE_SIZE` | 50 MB | Per-file magic-byte path (validator also enforces 10 MB) |
+| `MAX_DEPLOY_FILE_COUNT` | 200 | Max source files per deploy (before `.br`/`.gz` expansion) |
+| `MAX_DEPLOY_FILE_SIZE` | 5 MB | Per-file size cap (magic-byte + upload path) |
+| `MAX_FILE_SIZE` | 1000 MB | Total deploy size cap (200 files × 5 MB) |
 | `DEPLOY_TOKEN_TTL_SECONDS` | 10 min | `deploy:token:*` |
 | `PRESIGN_EXPIRY_SECONDS` | 10 min | Presigned PUT lifetime |
 | `DEPLOYMENT_RETENTION` | **10** | Keep this many **inactive** deployments; GC deletes the rest |

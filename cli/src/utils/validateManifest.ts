@@ -1,32 +1,28 @@
 import path from "path";
 import { ConfigError } from "./errors.js";
 
-/** Max number of files in a single deploy (client fail-fast). */
-export const MAX_DEPLOY_FILES = 100;
+/**
+ * Max number of source files in a single deploy (client fail-fast).
+ * Counted before server-side Brotli/Gzip variant expansion, so at most this
+ * many files can be uploaded/deployed.
+ */
+export const MAX_DEPLOY_FILES = 200;
 
-/** Max size of a single file in bytes (50 MB — matches server). */
-export const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+/** Max size of a single file in bytes (5 MB — matches server). */
+export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
-/** Max total deploy size in bytes (250 MB — matches server). */
-export const MAX_TOTAL_SIZE_BYTES = 250 * 1024 * 1024;
+/** Max total deploy size in bytes (200 files × 5 MB = 1000 MB — matches server). */
+export const MAX_TOTAL_SIZE_BYTES = MAX_DEPLOY_FILES * MAX_FILE_SIZE_BYTES;
 
 /**
  * Extensions blocked by the deploy API.
  * Also block .env basename; server rejects env files and MIME mismatches.
+ * Images, video, PDF, and other documents/media are allowed (see server
+ * file-validator for the magic-byte allow rules).
  */
 export const BLOCKED_EXTENSIONS = new Set([
     // Env / secrets
     ".env",
-    // PDF
-    ".pdf",
-    // Video
-    ".mp4",
-    ".mkv",
-    ".avi",
-    ".mov",
-    ".webm",
-    ".flv",
-    ".wmv",
     // Executable
     ".exe",
     ".bat",
@@ -79,7 +75,7 @@ export function validateManifest(files: ManifestEntry[]): void {
     const totalSize = files.reduce((sum, f) => sum + f.size, 0);
     if (totalSize > MAX_TOTAL_SIZE_BYTES) {
         throw new ConfigError(
-            `Deploy exceeds 250 MB total limit (${formatSizeMb(totalSize)} MB)`,
+            `Deploy exceeds ${formatSizeMb(MAX_TOTAL_SIZE_BYTES)} MB total limit (${formatSizeMb(totalSize)} MB)`,
         );
     }
 
@@ -111,7 +107,7 @@ export function validateManifest(files: ManifestEntry[]): void {
 
         if (file.size > MAX_FILE_SIZE_BYTES) {
             throw new ConfigError(
-                `File '${filePath}' exceeds 50 MB limit (${formatSizeMb(file.size)} MB)`,
+                `File '${filePath}' exceeds ${formatSizeMb(MAX_FILE_SIZE_BYTES)} MB limit (${formatSizeMb(file.size)} MB)`,
             );
         }
 

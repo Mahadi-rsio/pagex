@@ -1,20 +1,20 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import {
+    MAX_DEPLOY_FILE_COUNT,
+    MAX_DEPLOY_FILE_SIZE,
+} from "@/server/api/constants/index";
 
-const MAX_FILE_COUNT = 100;
-const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_FILE_COUNT = MAX_DEPLOY_FILE_COUNT;
+const MAX_SINGLE_FILE_BYTES = MAX_DEPLOY_FILE_SIZE;
 
+/**
+ * Extensions blocked by the deploy API. Images, video, PDF, and other
+ * document/media files are allowed; only executables, archives, env files, and
+ * other non-servable artifacts are rejected here (magic-byte checks in
+ * file-validator add a second layer).
+ */
 const BLOCKED_EXTENSIONS = new Set([
-    // PDF
-    ".pdf",
-    // Video
-    ".mp4",
-    ".mkv",
-    ".avi",
-    ".mov",
-    ".webm",
-    ".flv",
-    ".wmv",
     // Executable
     ".exe",
     ".bat",
@@ -59,7 +59,7 @@ export function validateManifest(files: ManifestFile[]): ValidationResult {
     if (files.length > MAX_FILE_COUNT) {
         return {
             valid: false,
-            error: `Deploy exceeds 100 file limit (found ${files.length} files)`,
+            error: `Deploy exceeds ${MAX_FILE_COUNT} file limit (found ${files.length} files)`,
         };
     }
 
@@ -67,7 +67,7 @@ export function validateManifest(files: ManifestFile[]): ValidationResult {
         if (file.size > MAX_SINGLE_FILE_BYTES) {
             return {
                 valid: false,
-                error: `File '${file.path}' exceeds 10 MB limit (${formatSizeMb(file.size)} MB)`,
+                error: `File '${file.path}' exceeds ${formatSizeMb(MAX_SINGLE_FILE_BYTES)} MB limit (${formatSizeMb(file.size)} MB)`,
             };
         }
 
