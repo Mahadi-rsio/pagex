@@ -39,7 +39,7 @@ The console serves both the UI and native API. Next.js handles `/api/*`, `/healt
 
 ## Run with Docker
 
-Docker runs only the blob-server and Vector. The repository Compose file is `docker-compose.yml`; the production file (`docker-compose.prod.yml`) pulls the GHCR blob-server image and has no build stages. The console is hosted on Vercel, not in Docker.
+Docker runs only the blob-server (including the in-process usage tracker). The repository Compose file is `docker-compose.yml`; the production file (`docker-compose.prod.yml`) pulls the GHCR blob-server image and has no build stages. The console is hosted on Vercel, not in Docker.
 
 ```bash
 docker compose --env-file .env up -d
@@ -125,5 +125,5 @@ PAGEX_REGISTRY=<registry> pnpm docker:prod
 - Never await deployment GC from commit or rollback.
 - Never store live blobs under `tenant/`; use `blobs/{sha256}`.
 - Use `deploy:lock:{pageId}` for per-page deployment serialization.
-- Do not add database credentials to Vector.
+- Do not add database credentials to the usage tracker.
 - Do not introduce queue/build workers; deployment is synchronous.

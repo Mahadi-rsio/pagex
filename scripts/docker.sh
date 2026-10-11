@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PageX Docker Compose helper.
-# Runs the blob-server (Caddy) + Vector pipeline only. The console is hosted on
+# Runs the blob-server (Caddy + static_s3) only. The console is hosted on
 # Vercel; Postgres is Neon and Redis is Upstash, so there is no db/redis here.
 set -euo pipefail
 

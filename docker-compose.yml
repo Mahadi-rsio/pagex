@@ -1,9 +1,10 @@
 # ============================================================================
 # PageX — local Docker Compose
 #
-# Docker runs the blob-server (Caddy + static_s3) and the Vector access-log
-# pipeline only. The console runs on Vercel (serverless) and the datastore is
-# managed: Neon (Postgres) + Upstash (Redis). Nothing here runs the console.
+# Docker runs the blob-server (Caddy + static_s3) only. The console runs on
+# Vercel (serverless) and the datastore is managed: Neon (Postgres) + Upstash
+# (Redis). Nothing here runs the console. Usage/metrics aggregation is done
+# in-process by the static_s3 plugin's usage tracker (no Vector container).
 #
 # Usage (from repo root):
 #   cp .env.example .env     # first run, then fill in required values
@@ -18,7 +19,10 @@ services:
   # ============================================================================
   blob-server:
     container_name: caddy
-    image: ghcr.io/mahadi-rsio/pagex/blob-server:latest
+    image: ghcr.io/mahadi-rsio/pagex/blob-server:${PAGEX_VERSION:-latest}
+    build:
+      context: ./services/blob-server
+      dockerfile: Dockerfile
     ports:
       - "80:80"
       - "443:443"
@@ -48,30 +52,17 @@ services:
       - MAX_CACHE_SIZE=${MAX_CACHE_SIZE:-512KiB}
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
       - TLS_CFG=${TLS_CFG:-tls-off}
+      # In-process usage tracker (replaces the removed Vector container). The
+      # plugin tails its own access log and POSTs usage to the console ingest
+      # endpoint. Only starts when USAGE_INGEST_TOKEN is set.
+      - USAGE_INGEST_TOKEN=${USAGE_INGEST_TOKEN:-}
+      - USAGE_API_URL=${USAGE_API_URL:-http://localhost:3000/internal/usage/ingest}
+      - USAGE_LOG_PATH=${USAGE_LOG_PATH:-/var/log/caddy/access.log}
+      - USAGE_LOG_DIR=${USAGE_LOG_DIR:-/var/log/caddy}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./services/blob-server/tls:/etc/caddy/tls:ro
       - caddy_logs:/var/log/caddy
-    restart: unless-stopped
-    networks:
-      - pagex
-
-  # ============================================================================
-  # Vector — access-log aggregation → console usage ingest
-  # ============================================================================
-  vector:
-    container_name: vector
-    image: timberio/vector:0.46.1-alpine
-    command: ["--config", "/etc/vector/vector.yaml"]
-    volumes:
-      - ./services/blob-server/vector/vector.yaml:/etc/vector/vector.yaml:ro
-      - caddy_logs:/var/log/caddy
-      - vector_data:/var/lib/vector
-    environment:
-      - USAGE_INGEST_TOKEN=${USAGE_INGEST_TOKEN}
-      - USAGE_API_URL=${USAGE_API_URL:-http://localhost:3000/internal/usage/ingest}
-    depends_on:
-      - blob-server
     restart: unless-stopped
     networks:
       - pagex
@@ -86,7 +77,6 @@ services:
 
 volumes:
   caddy_logs:
-  vector_data:
 
 networks:
   pagex:

@@ -47,7 +47,7 @@ pagex/
 │   └── blob-server/                # Go Caddy static_s3 plugin
 ├── packages/                       # @pagex/{config,types,utils}
 ├── cli/                            # `pagex` CLI — init/deploy/status
-├── docker-compose.yml              # blob-server + vector only
+├── docker-compose.yml              # blob-server only
 ├── docker-compose.prod.yml         # GHCR images, no build
 ├── Caddyfile                       # reverse proxy + static_s3
 ├── docs/
@@ -63,7 +63,7 @@ pagex/
 | Console UI/API | `services/console/src/app/` | `console` |
 | Migrations | `src/db/migrate.ts` | run at console startup |
 | Blob server | `cmd/caddy` (Go) | `blob-server` |
-| Vector | `vector.yaml` | `vector` (aggregates access logs → console ingest) |
+| Usage tracker | in-process in the `static_s3` Go plugin | `blob-server` (tails access log → console ingest) |
 | Worker | `services/worker` (Go) | `worker` (drains the Cloudflare cleanup queue) |
 
 No build workers — cloud builds / BullMQ were removed, and CLI blob deploy replaced ZIP uploads.
@@ -125,7 +125,7 @@ Blob objects may carry `Content-Type` and `Content-Encoding` (`br` / `gzip`) for
 | `deploy:token:{token}` | JSON | 10 min | prepareDeploy |
 | `db_cache:{domain}` | JSON | 15 min | page.service |
 
-Usage/metrics aggregation is handled by **Vector → console ingest** (Postgres); no analytics counters live in Redis. Blob-server resolves tenant routing as **LRU → Redis → PostgreSQL**, backfilling Redis and the LRU on a miss; PostgreSQL stays authoritative. Redis keys are namespaced by `REDIS_KEY_PREFIX` (default `px`).
+Usage/metrics aggregation is handled by the **in-process usage tracker → console ingest** (Postgres); no analytics counters live in Redis. Blob-server resolves tenant routing as **LRU → Redis → PostgreSQL**, backfilling Redis and the LRU on a miss; PostgreSQL stays authoritative. Redis keys are namespaced by `REDIS_KEY_PREFIX` (default `px`).
 
 Redis is Upstash (REST) and Postgres is Neon, so neither needs a Compose hostname or a local remap.
 

@@ -396,9 +396,13 @@ static_s3 {
 └── README.md          # Project documentation
 ```
 
-Usage metrics are not tracked in-process; Caddy emits JSON access logs (with
-`site_id` / `deployment_id` / `cache_hit` via `ExtraLogFields`) that Vector
-aggregates and posts to the API. See `vector/README.md`.
+Usage metrics are tracked **in-process** by the usage tracker inside the `static_s3`
+plugin. It tails Caddy's JSON access log (`/var/log/caddy/access.log`, with
+`site_id` / `deployment_id` / `cache_hit` via `ExtraLogFields`), aggregates per
+site + hour, and POSTs pre-aggregated records to `POST /internal/usage/ingest`
+(bearer `USAGE_INGEST_TOKEN`). It runs inside the Caddy container, checkpoints at
+`/var/log/caddy/.usage-checkpoint`, and is started only when `USAGE_INGEST_TOKEN`
+is set. See `docs/API.md` for the ingest endpoint.
 
 ---
 

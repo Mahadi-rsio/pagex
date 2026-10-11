@@ -1,6 +1,6 @@
 # PageX — Multi-Tenant Static Site Hosting Platform
 
-A pnpm monorepo for hosting multi-tenant static sites with content-addressed blob storage, deployment manifests, automatic compression/optimization, instant deployments, and a Vector-powered usage/metrics pipeline.
+A pnpm monorepo for hosting multi-tenant static sites with content-addressed blob storage, deployment manifests, automatic compression/optimization, instant deployments, and an in-process usage/metrics pipeline.
 
 ---
 
@@ -18,7 +18,7 @@ pagex/
 │   └── blob-server/                # Go Caddy server + static_s3 plugin
 ├── packages/                       # @pagex/{config,types,utils} workspace packages
 ├── cli/                            # `pagex` CLI — init / deploy / status
-├── docker-compose.yml              # dev stack (blob-server, vector only)
+├── docker-compose.yml              # dev stack (blob-server only)
 ├── docker-compose.prod.yml         # production (GHCR images, no build sections)
 ├── Caddyfile                       # reverse proxy + static_s3 site serving + console :3080
 ├── .env.example                    # env template (copy to .env)
@@ -30,23 +30,22 @@ pagex/
 
 ## Architecture & Data Flow
 
-PageX combines a Next.js control panel and native management API (hosted on Vercel), a custom Caddy blob-serving plugin written in Go, and managed infrastructure (Neon Postgres, Upstash Redis, MinIO/S3). Vector aggregates access logs into usage/metrics, which the console API persists.
+PageX combines a Next.js control panel and native management API (hosted on Vercel), a custom Caddy blob-serving plugin written in Go, and managed infrastructure (Neon Postgres, Upstash Redis, MinIO/S3). The blob-server's in-process usage tracker (in the `static_s3` Go plugin) aggregates access logs into usage/metrics, which the console API persists.
 
 ```
 ┌──────────────────────────────┐
 │ Console (Next.js)            │
 │ UI, Better Auth, native API  │ :3000
-└───────┬──────────────┬───────┘
-        │              │
-        │              │ access logs (caddy_logs)
-┌───────▼──────┐  ┌────▼─────┐
-│ Blob Server  │  │ Vector   │
-│ Caddy + Go   │  │ aggregate│
-└───────┬──────┘  └────┬─────┘
-        │              │
-        │    POST /internal/usage/ingest
-        │              │
-┌───────▼──────────────▼──────┐
+└──────────┬───────────────────┘
+           │
+           │      POST /internal/usage/ingest
+┌──────────▼───────────────────┐
+│ Blob Server                  │
+│ Caddy + Go (static_s3)       │
+│ in-process usage tracker     │
+└──────────┬───────────────────┘
+           │
+┌──────────▼───────────────────┐
 │ Managed Infrastructure       │
 │ Neon, Upstash, MinIO/S3      │
 └──────────────────────────────┘
@@ -61,8 +60,7 @@ PageX combines a Next.js control panel and native management API (hosted on Verc
 
 ### Metrics & usage pipeline
 
-- **Caddy** writes JSON access logs (with `site_id`, `deployment_id`, `cache_hit`, `from_manifest`) to the shared `/var/log/caddy` volume (`caddy_logs`).
-- **Vector** reads those logs, aggregates per site + hour in ~30s windows, and POSTs pre-aggregated records to `POST /internal/usage/ingest` (bearer-token auth via `USAGE_INGEST_TOKEN`).
+- **Blob-server usage tracker** (in the `static_s3` Go plugin) tails Caddy's JSON access log (`/var/log/caddy/access.log`, with `site_id`, `deployment_id`, `cache_hit`, `from_manifest`), aggregates per site + hour, and POSTs pre-aggregated records to `POST /internal/usage/ingest` (bearer-token auth via `USAGE_INGEST_TOKEN`). It runs inside the Caddy container (checkpoint at `/var/log/caddy/.usage-checkpoint`); it starts only when `USAGE_INGEST_TOKEN` is set.
 - **Console API** applies each record transactionally into `bandwidth_usage_hourly` (billing), `service_metrics_hourly` (operational), and `site_daily_stats` (rollup), with idempotent dedup via the `usage_ingest_dedup` table (deterministic `ingest_id`).
 
 **Billing:** only **bandwidth** is metered, in decimal GB (1 GB = 1,000,000,000 bytes). **Requests are unlimited and never billed/quota-checked.**
@@ -77,7 +75,7 @@ See [`docs/`](docs/) for full detail.
 
 - **Node.js 20.9+** and **pnpm** (8+) — monorepo package manager
 - **Go 1.20+** — blob-server (Caddy plugin)
-- **Docker & Docker Compose** — only for the blob-server + Vector log pipeline
+- **Docker & Docker Compose** — only for the blob-server + in-process usage tracker
 - **External services** — Neon Postgres, Upstash Redis, and MinIO/S3 (no local containers)
 
 ### Quick start (local dev)
@@ -95,14 +93,15 @@ pnpm dev:blob-server       # Go Caddy `go run ./cmd/caddy` (serves tenant sites)
 There is no local Postgres or Redis to run; migrations and bucket provisioning
 happen on console startup (gated by `RUN_STARTUP_TASKS` on Vercel).
 
-### Docker (blob-server + log pipeline)
+### Docker (blob-server + usage tracker)
 
-`docker-compose.yml` runs **only** the blob-server (Caddy + `static_s3`) and
-Vector — use it when you need the site-serving and log-aggregation path locally:
+`docker-compose.yml` runs **only** the blob-server (Caddy + `static_s3`, which
+includes the in-process usage tracker) — use it when you need the site-serving
+and usage/metrics path locally:
 
 ```bash
 cp .env.example .env
-docker compose up -d       # blob-server, vector
+docker compose up -d       # blob-server
 ```
 
 ---
@@ -119,7 +118,7 @@ Strictly required to run anything against infra (see `.env.example` for the full
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST credentials |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | MinIO/S3 credentials |
 | `MINIO_ENDPOINT_URL` | MinIO/S3 endpoint (must include scheme) + `MINIO_BUCKET` |
-| `USAGE_INGEST_TOKEN` | Shared secret for the Vector → console ingest endpoint |
+| `USAGE_INGEST_TOKEN` | Shared secret for the usage tracker → console ingest endpoint |
 
 Optional: `TLS_CFG` (tls-off locally, tls-on in prod, needs `CLOUDFLARE_API_TOKEN`), `REDIRECT_TO_S3`/`PRESIGN_REDIRECT` (direct S3 downloads), SMTP + OAuth keys.
 
@@ -139,7 +138,7 @@ pnpm db:generate / db:migrate    # auth and API Drizzle migrations
 
 ### Production
 
-`docker-compose.prod.yml` has **no `build:` sections** — it pulls the versioned blob-server image from GHCR (`ghcr.io/mahadi-rsio/pagex/blob-server`) and the upstream Vector image. The console is deployed separately to Vercel. Only the blob-server image is published, by `.github/workflows/blob-server-publish.yml` on `blob-server/v*` tags.
+`docker-compose.prod.yml` has **no `build:` sections** — it pulls the versioned blob-server image from GHCR (`ghcr.io/mahadi-rsio/pagex/blob-server`). The console is deployed separately to Vercel. Only the blob-server image is published, by `.github/workflows/blob-server-publish.yml` on `blob-server/v*` tags.
 
 ```bash
 pnpm docker:prod                              # pull latest + up

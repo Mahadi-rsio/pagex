@@ -1,10 +1,12 @@
 # ============================================================================
 # PageX — Production Docker Compose
 #
-# Docker runs the blob-server (Caddy + static_s3) and the Vector access-log
-# pipeline only. The console runs on Vercel (serverless); Postgres is Neon and
-# Redis is Upstash. This file contains NO `build:` sections, so
-# `docker compose -f docker-compose.prod.yml up -d` never builds locally.
+# Docker runs the blob-server (Caddy + static_s3) and the cleanup worker only.
+# The console runs on Vercel (serverless); Postgres is Neon and Redis is
+# Upstash. Usage/metrics aggregation is done in-process by the static_s3
+# plugin's usage tracker (no Vector container). This file contains NO `build:`
+# sections, so `docker compose -f docker-compose.prod.yml up -d` never builds
+# locally.
 #
 # The blob-server image is published on blob-server/v* tags:
 #   blob-server/v1.6.0
@@ -57,26 +59,13 @@ services:
       - MAX_CACHE_SIZE=${MAX_CACHE_SIZE:-512KiB}
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
       - TLS_CFG=${TLS_CFG:-tls-off}
-    restart: unless-stopped
-    networks:
-      - pagex
-
-  # ============================================================================
-  # Vector — access-log aggregation → console usage ingest
-  # ============================================================================
-  vector:
-    image: timberio/vector:0.46.1-alpine
-    container_name: vector
-    command: ["--config", "/etc/vector/vector.yaml"]
-    volumes:
-      - ./services/blob-server/vector/vector.yaml:/etc/vector/vector.yaml:ro
-      - caddy_logs:/var/log/caddy
-      - vector_data:/var/lib/vector
-    environment:
+      # In-process usage tracker (replaces the removed Vector container). The
+      # plugin tails its own access log and POSTs usage to the console ingest
+      # endpoint. Required in production to track billable bandwidth.
       - USAGE_INGEST_TOKEN=${USAGE_INGEST_TOKEN:?USAGE_INGEST_TOKEN is required}
       - USAGE_API_URL=${USAGE_API_URL:?USAGE_API_URL (console ingest URL) is required}
-    depends_on:
-      - blob-server
+      - USAGE_LOG_PATH=${USAGE_LOG_PATH:-/var/log/caddy/access.log}
+      - USAGE_LOG_DIR=${USAGE_LOG_DIR:-/var/log/caddy}
     restart: unless-stopped
     networks:
       - pagex
@@ -132,7 +121,6 @@ services:
 
 volumes:
   caddy_logs:
-  vector_data:
 
 networks:
   pagex:

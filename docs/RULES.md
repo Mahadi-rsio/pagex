@@ -156,4 +156,4 @@ Never hardcode bucket names or copy live objects into `tenant/{siteId}/`.
 - Do not delete MinIO blobs except through GC after cross-checking references.
 - Do not run simultaneous deployments for one page; use `deploy:lock:{pageId}`.
 - Do not edit applied migrations.
-- Do not give Vector PostgreSQL credentials; Vector only posts to `/internal/usage/ingest`.
+- Do not give the usage tracker PostgreSQL credentials; the in-process tracker only posts to `/internal/usage/ingest`.

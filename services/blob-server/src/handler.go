@@ -61,8 +61,8 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 		}
 
 		// Latency is captured by Caddy itself in the access log as "duration";
-		// Vector computes latency percentiles from it, so we don't need our own
-		// per-request clock here.
+		// the in-process usage tracker computes latency percentiles from it, so
+		// we don't need our own per-request clock here.
 
 		encKey := requestEncodingKey(r, urlPath)
 
@@ -175,8 +175,8 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 
 // addLogFields attaches per-request multi-tenant context to Caddy's structured
 // access log. Caddy emits these fields at the top level of each JSON log line,
-// which Vector consumes downstream for usage/metrics aggregation. This is
-// best-effort and never blocks the request.
+// which the in-process usage tracker consumes downstream for usage/metrics
+// aggregation. This is best-effort and never blocks the request.
 func (p *StaticPlugin) addLogFields(r *http.Request, siteID, deploymentID string, cacheHit bool, fromManifest bool) {
 	extra, ok := r.Context().Value(caddyhttp.ExtraLogFieldsCtxKey).(*caddyhttp.ExtraLogFields)
 	if !ok {

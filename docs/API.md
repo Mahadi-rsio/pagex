@@ -21,7 +21,7 @@ No auth required.
 ## Internal — Usage Ingest
 
 ### `POST /internal/usage/ingest`
-**Internal-only** endpoint used by the Vector service to push pre-aggregated hourly usage records. The native route reads raw JSON/NDJSON and bypasses the public rate limiter.
+**Internal-only** endpoint used by the blob-server's in-process usage tracker to push pre-aggregated hourly usage records. The native route reads raw JSON/NDJSON and bypasses the public rate limiter.
 
 **Auth:** Bearer token compared constant-time against `USAGE_INGEST_TOKEN` (NOT the public JWT `authMiddleware`).
 - `401` if the token is missing or wrong.

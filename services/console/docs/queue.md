@@ -234,7 +234,7 @@ withLivePage(...)
 Applied to deployment resolution, page lookup by domain, page listing, and the
 usage/metrics read paths.
 
-**Usage ingest is deliberately NOT filtered.** Vector batches access logs, so a
+**Usage ingest is deliberately NOT filtered.** The blob-server's in-process usage tracker batches access logs, so a
 request served just before a delete arrives in a later batch. `resolveTenantId`
 looks up the site regardless of `deleted_at` so late usage still lands against
 the right tenant instead of being silently dropped.
