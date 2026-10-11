@@ -98,7 +98,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                 </div>
                 {project.domain && (
                     <a
-                        href={`http://${project.domain}`}
+                        href={`https://${project.domain}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors border border-border rounded-none px-3 py-2"
