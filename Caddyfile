@@ -1,5 +1,4 @@
 {
-	auto_https off
 	order static_s3 before respond
 	admin 0.0.0.0:2019
 }

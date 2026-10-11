@@ -42,12 +42,15 @@ export async function createPage(
         return { message: "token is not valid" };
     }
 
-    // Subdomain format: {project_name}.{random_number} — always unique,
-    // so projects never squat a bare slug. Random suffix is digits-only.
+    // Subdomain format: {project_name}-{random_number} — always unique, so
+    // projects never squat a bare slug. Random suffix is digits-only.
+    // Single-label (dash separator, not a dot) so tenant hosts stay one level
+    // under the base domain and are covered by a `*.{base}` wildcard TLS cert
+    // (Cloudflare Universal SSL / Let's Encrypt) without per-tenant certificates.
     const subdomainSuffix = customAlphabet("0123456789", 4);
     let subdomain = "";
     for (let attempt = 0; attempt < 5; attempt++) {
-        const candidate = `${project_name.toLowerCase()}.${subdomainSuffix()}`;
+        const candidate = `${project_name.toLowerCase()}-${subdomainSuffix()}`;
         const existing = await db
             .select({ id: sites.id })
             .from(sites)
