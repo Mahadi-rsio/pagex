@@ -224,7 +224,7 @@ export function DomainsTab({ project }: { project: Project }) {
                                     <Globe className="size-4 shrink-0 text-muted-foreground" />
                                     <div className="min-w-0 flex-1">
                                         <a
-                                            href={`https://${d.domain}`}
+                                            href={`http://${d.domain}`}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground hover:underline"

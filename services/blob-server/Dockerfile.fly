@@ -1,0 +1,47 @@
+# PageX blob-server — custom Caddy with static_s3 plugin, Fly.io variant.
+#
+# Same custom-Caddy build as Dockerfile, but bakes in the tenant-serving
+# Caddyfile + TLS configs so no external volume is required on Fly. The app
+# entrypoint is the stock Caddy image command (caddy run --config
+# /etc/caddy/Caddyfile).
+#
+# Build from repo root so the root Caddyfile is in context:
+#   docker build -f services/blob-server/Dockerfile.fly -t <img> .
+
+# ============================================================================
+# Stage 1: Build custom Caddy binary
+# ============================================================================
+FROM caddy:2.11.4-builder AS builder
+
+WORKDIR /src
+
+# Cache Go modules independently of source changes
+COPY services/blob-server/go.mod services/blob-server/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+# Plugin sources + custom main that blank-imports the plugin
+COPY services/blob-server/src/ ./src/
+COPY services/blob-server/cmd/ ./cmd/
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -v \
+      -tags=nobadger,nomysql,nopgx \
+      -ldflags="-s -w -X github.com/caddyserver/caddy/v2.CustomVersion=v2.11.4-pagex" \
+      -trimpath \
+      -o /usr/bin/caddy \
+      ./cmd/caddy
+
+# ============================================================================
+# Stage 2: Runtime image
+# ============================================================================
+FROM caddy:2.11.4-alpine
+
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+COPY services/blob-server/tls/tls-off.conf services/blob-server/tls/tls-on.conf /etc/caddy/tls/
+
+# Tenant-serving Caddyfile (root of the monorepo). Bake it in so the machine
+# needs no mounted volume. Env placeholders are resolved at runtime by Caddy.
+# The build context is the monorepo root, so COPY paths are root-relative.
+COPY Caddyfile /etc/caddy/Caddyfile

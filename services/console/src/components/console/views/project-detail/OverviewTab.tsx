@@ -140,7 +140,7 @@ export function OverviewTab({
                         </div>
                         {project.domain && (
                             <a
-                                href={`https://${project.domain}`}
+                                href={`http://${project.domain}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="flex items-center gap-1.5 text-xs text-primary hover:underline"
