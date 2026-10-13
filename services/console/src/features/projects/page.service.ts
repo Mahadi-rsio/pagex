@@ -208,12 +208,34 @@ export async function getPageUsage(domain: string) {
             ORDER BY requests DESC
             LIMIT 1
         `)) as unknown as {
-        rows: Array<{ hour: Date; requests: number }>;
-    }
+            rows: Array<{ hour: string; requests: string }>;
+        }
     ).rows;
 
-    const totalRequests = aggRow?.requests ?? 0;
-    const totalBandwidth = aggRow?.bytes ?? 0;
+    // db.execute returns pg's text-format rows (no type parsers) — every
+    // value is a string, so normalize numeric/date columns here.
+    const agg = aggRow
+        ? {
+              requests: Number(aggRow.requests),
+              bytes: Number(aggRow.bytes),
+              s2xx: Number(aggRow.s2xx),
+              s3xx: Number(aggRow.s3xx),
+              s4xx: Number(aggRow.s4xx),
+              s5xx: Number(aggRow.s5xx),
+              cacheHits: Number(aggRow.cacheHits),
+          }
+        : {
+              requests: 0,
+              bytes: 0,
+              s2xx: 0,
+              s3xx: 0,
+              s4xx: 0,
+              s5xx: 0,
+              cacheHits: 0,
+          };
+
+    const totalRequests = agg.requests;
+    const totalBandwidth = agg.bytes;
     const storage = await getActiveDeploymentStorage(page.id);
 
     return {
@@ -246,16 +268,16 @@ export async function getPageUsage(domain: string) {
             unique_ips: 0,
         },
         status_codes: {
-            "2xx": aggRow?.s2xx ?? 0,
-            "3xx": aggRow?.s3xx ?? 0,
-            "4xx": aggRow?.s4xx ?? 0,
-            "5xx": aggRow?.s5xx ?? 0,
+            "2xx": agg.s2xx,
+            "3xx": agg.s3xx,
+            "4xx": agg.s4xx,
+            "5xx": agg.s5xx,
         },
         peak: {
             hour: peakRow
-                ? peakRow.hour.toISOString().slice(11, 13) + ":00"
+                ? new Date(peakRow.hour).toISOString().slice(11, 13) + ":00"
                 : null,
-            requests: peakRow?.requests ?? 0,
+            requests: peakRow ? Number(peakRow.requests) : 0,
         },
     };
 }

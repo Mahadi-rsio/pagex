@@ -101,11 +101,14 @@ async function sumBandwidthFromDb(
     const result = (await db.execute(sql`
         SELECT coalesce(sum("bytes"), 0)::bigint AS bytes
         FROM usage_hourly
-        WHERE host IN (${sql.join(domains.map((d) => sql`${d}`), sql`, `)})
+        WHERE host IN (${sql.join(
+            domains.map((d) => sql`${d}`),
+            sql`, `,
+        )})
           AND hour >= ${window.start}
           AND hour < ${window.end}
-    `)) as unknown as { rows: Array<{ bytes: number }> };
-    return result.rows[0]?.bytes ?? 0;
+    `)) as unknown as { rows: Array<{ bytes: string }> };
+    return Number(result.rows[0]?.bytes ?? 0);
 }
 
 export async function getSiteUsage(
@@ -198,26 +201,26 @@ export async function getSiteMetrics(
           AND hour < ${window.end}
     `)) as unknown as {
         rows: Array<{
-            requests: number;
-            s2xx: number;
-            s3xx: number;
-            s4xx: number;
-            s5xx: number;
-            bytes: number;
-            cacheHits: number;
+            requests: string;
+            s2xx: string;
+            s3xx: string;
+            s4xx: string;
+            s5xx: string;
+            bytes: string;
+            cache_hits: string;
         }>;
     };
 
     const row = result.rows[0];
     const input: MetricsInput = row
         ? {
-              requests: row.requests,
-              status2xx: row.s2xx,
-              status3xx: row.s3xx,
-              status4xx: row.s4xx,
-              status5xx: row.s5xx,
-              bytes: row.bytes,
-              cacheHits: row.cacheHits,
+              requests: Number(row.requests),
+              status2xx: Number(row.s2xx),
+              status3xx: Number(row.s3xx),
+              status4xx: Number(row.s4xx),
+              status5xx: Number(row.s5xx),
+              bytes: Number(row.bytes),
+              cacheHits: Number(row.cache_hits),
               cacheMisses: 0,
               latencySumMs: 0,
               latencyLe50: 0,
