@@ -1,11 +1,7 @@
-import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getPlan, type PlanId } from "@/server/api/constants/pricing";
 import { db } from "@/server/api/infrastructure/db/db";
-import {
-    bandwidthUsageHourly,
-    pages,
-    serviceMetricsHourly,
-} from "@/server/api/infrastructure/db/schema";
+import { pages } from "@/server/api/infrastructure/db/schema";
 import {
     buildMetricsResponse,
     emptyMetricsInput,
@@ -24,11 +20,11 @@ import {
 /**
  * Usage / metrics read model.
  *
- * Usage (bandwidth, billing/quota) comes from `bandwidth_usage_hourly`.
- * Metrics (requests/status/latency/cache) come from `service_metrics_hourly`.
- * Both are written by the internal ingest endpoint (fed by Vector from Caddy
- * access logs). Every lookup is tenant-scoped: a site or project that does not
- * belong to the caller is treated as not found.
+ * Bandwidth and metrics come from `usage_hourly`, written by the service/logs
+ * pipeline (Cloudflare Logpush http_requests → R2 → one-shot Fly worker,
+ * aggregated per host per UTC hour). Counts are keyed by request host, so every
+ * lookup resolves the tenant page's `domain` first. A site or project that does
+ * not belong to the caller is treated as not found.
  */
 
 const PLAN_RANK: Record<PlanId, number> = { free: 0, paid: 1 };
@@ -98,27 +94,18 @@ function highestPlan(plans: string[]): PlanId {
 }
 
 async function sumBandwidthFromDb(
-    siteIds: string[],
-    tenantId: string,
+    domains: string[],
     window: UsageWindow,
 ): Promise<number> {
-    if (siteIds.length === 0) return 0;
-    const [row] = await db
-        .select({
-            bytes: sql<number>`coalesce(sum(${bandwidthUsageHourly.bytes}), 0)::bigint`.mapWith(
-                Number,
-            ),
-        })
-        .from(bandwidthUsageHourly)
-        .where(
-            and(
-                eq(bandwidthUsageHourly.tenantId, tenantId),
-                inArray(bandwidthUsageHourly.siteId, siteIds),
-                gte(bandwidthUsageHourly.bucket, window.start),
-                lt(bandwidthUsageHourly.bucket, window.end),
-            ),
-        );
-    return row?.bytes ?? 0;
+    if (domains.length === 0) return 0;
+    const result = (await db.execute(sql`
+        SELECT coalesce(sum("bytes"), 0)::bigint AS bytes
+        FROM usage_hourly
+        WHERE host IN (${sql.join(domains.map((d) => sql`${d}`), sql`, `)})
+          AND hour >= ${window.start}
+          AND hour < ${window.end}
+    `)) as unknown as { rows: Array<{ bytes: number }> };
+    return result.rows[0]?.bytes ?? 0;
 }
 
 export async function getSiteUsage(
@@ -130,7 +117,7 @@ export async function getSiteUsage(
     if (!page) return null;
 
     const window = currentUsageWindow(now);
-    const dbBytes = await sumBandwidthFromDb([page.siteId], tenantId, window);
+    const dbBytes = await sumBandwidthFromDb([page.domain], window);
     return buildUsageResponse(page.plan, dbBytes, window);
 }
 
@@ -143,7 +130,7 @@ export async function getProjectUsage(
     if (!page) return null;
 
     const window = currentUsageWindow(now);
-    const dbBytes = await sumBandwidthFromDb([page.siteId], tenantId, window);
+    const dbBytes = await sumBandwidthFromDb([page.domain], window);
     return buildUsageResponse(page.plan, dbBytes, window);
 }
 
@@ -153,10 +140,10 @@ export async function getAccountUsage(
 ): Promise<UsageResponse> {
     const tenantPages = await listTenantPages(tenantId);
     const window = currentUsageWindow(now);
-    const siteIds = tenantPages.map((p) => p.siteId);
+    const domains = tenantPages.map((p) => p.domain);
     const plan = highestPlan(tenantPages.map((p) => p.plan));
 
-    const dbBytes = await sumBandwidthFromDb(siteIds, tenantId, window);
+    const dbBytes = await sumBandwidthFromDb(domains, window);
     return buildUsageResponse(plan, dbBytes, window);
 }
 
@@ -174,10 +161,10 @@ export async function getAccountQuota(
 ): Promise<AccountQuota> {
     const tenantPages = await listTenantPages(tenantId);
     const window = currentUsageWindow(now);
-    const siteIds = tenantPages.map((p) => p.siteId);
+    const domains = tenantPages.map((p) => p.domain);
     const plan = highestPlan(tenantPages.map((p) => p.plan));
 
-    const dbBytes = await sumBandwidthFromDb(siteIds, tenantId, window);
+    const dbBytes = await sumBandwidthFromDb(domains, window);
     const usage = buildUsageResponse(plan, dbBytes, window);
     return {
         plan: usage.plan,
@@ -196,77 +183,50 @@ export async function getSiteMetrics(
     const page = await findPageBySite(siteId, tenantId);
     if (!page) return null;
 
-    const [row] = await db
-        .select({
-            requests:
-                sql<number>`coalesce(sum(${serviceMetricsHourly.requests}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            status2xx:
-                sql<number>`coalesce(sum(${serviceMetricsHourly.status2xx}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            status3xx:
-                sql<number>`coalesce(sum(${serviceMetricsHourly.status3xx}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            status4xx:
-                sql<number>`coalesce(sum(${serviceMetricsHourly.status4xx}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            status5xx:
-                sql<number>`coalesce(sum(${serviceMetricsHourly.status5xx}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            bytes: sql<number>`coalesce(sum(${serviceMetricsHourly.bytes}), 0)::bigint`.mapWith(
-                Number,
-            ),
-            cacheHits:
-                sql<number>`coalesce(sum(${serviceMetricsHourly.cacheHits}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            cacheMisses:
-                sql<number>`coalesce(sum(${serviceMetricsHourly.cacheMisses}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            latencySumMs:
-                sql<number>`coalesce(sum(${serviceMetricsHourly.latencySumMs}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            latencyLe50:
-                sql<number>`coalesce(sum(${serviceMetricsHourly.latencyLe50}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            latencyLe100:
-                sql<number>`coalesce(sum(${serviceMetricsHourly.latencyLe100}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            latencyLe250:
-                sql<number>`coalesce(sum(${serviceMetricsHourly.latencyLe250}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            latencyLe500:
-                sql<number>`coalesce(sum(${serviceMetricsHourly.latencyLe500}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            latencyLe1000:
-                sql<number>`coalesce(sum(${serviceMetricsHourly.latencyLe1000}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            latencyLe2500:
-                sql<number>`coalesce(sum(${serviceMetricsHourly.latencyLe2500}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-        })
-        .from(serviceMetricsHourly)
-        .where(
-            and(
-                eq(serviceMetricsHourly.siteId, page.siteId),
-                gte(serviceMetricsHourly.bucket, window.start),
-                lt(serviceMetricsHourly.bucket, window.end),
-            ),
-        );
+    const result = (await db.execute(sql`
+        SELECT
+            coalesce(sum("requests"), 0)::bigint AS requests,
+            coalesce(sum("s2xx"), 0)::bigint AS s2xx,
+            coalesce(sum("s3xx"), 0)::bigint AS s3xx,
+            coalesce(sum("s4xx"), 0)::bigint AS s4xx,
+            coalesce(sum("s5xx"), 0)::bigint AS s5xx,
+            coalesce(sum("bytes"), 0)::bigint AS bytes,
+            coalesce(sum("cache_hits"), 0)::bigint AS cache_hits
+        FROM usage_hourly
+        WHERE host = ${page.domain}
+          AND hour >= ${window.start}
+          AND hour < ${window.end}
+    `)) as unknown as {
+        rows: Array<{
+            requests: number;
+            s2xx: number;
+            s3xx: number;
+            s4xx: number;
+            s5xx: number;
+            bytes: number;
+            cacheHits: number;
+        }>;
+    };
 
-    const input: MetricsInput = row ?? emptyMetricsInput();
+    const row = result.rows[0];
+    const input: MetricsInput = row
+        ? {
+              requests: row.requests,
+              status2xx: row.s2xx,
+              status3xx: row.s3xx,
+              status4xx: row.s4xx,
+              status5xx: row.s5xx,
+              bytes: row.bytes,
+              cacheHits: row.cacheHits,
+              cacheMisses: 0,
+              latencySumMs: 0,
+              latencyLe50: 0,
+              latencyLe100: 0,
+              latencyLe250: 0,
+              latencyLe500: 0,
+              latencyLe1000: 0,
+              latencyLe2500: 0,
+          }
+        : emptyMetricsInput();
     return buildMetricsResponse(input);
 }

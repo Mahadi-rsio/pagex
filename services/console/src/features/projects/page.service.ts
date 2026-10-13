@@ -16,7 +16,6 @@ import {
     blobTreeEntries,
     deployments,
     pages,
-    siteDailyStats,
     sites,
 } from "@/server/api/infrastructure/db/schema";
 import { withLivePage } from "@/server/api/utils/page-visibility";
@@ -118,101 +117,6 @@ function formatBytes(bytes: number): string {
     return `${(bytes / 1024 ** 3).toFixed(3)} GB`;
 }
 
-function utcDateString(offsetDays = 0): string {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() + offsetDays);
-    return d.toISOString().slice(0, 10);
-}
-
-async function readLiveSiteStats(siteId: string) {
-    // Blob-server analytics keys: stats:{site_id}:{YYYY-MM-DD}
-    const dates = [utcDateString(0), utcDateString(-1)];
-    let requests = 0;
-    let bandwidth = 0;
-    let bots = 0;
-    let humans = 0;
-
-    const statusCodes = {
-        "2xx": 0,
-        "3xx": 0,
-        "4xx": 0,
-        "5xx": 0,
-    };
-    let uniqueIps = 0;
-    const hourCounts: Record<string, number> = {};
-
-    for (const day of dates) {
-        const key = `stats:${siteId}:${day}`;
-        const vals = await redis.hgetall<Record<string, string | number>>(
-            redisKey(key),
-        );
-        if (!vals || Object.keys(vals).length === 0) continue;
-        const field = (name: string) => String(vals[name] ?? "0") || "0";
-        requests += parseInt(field("requests"), 10) || 0;
-        bandwidth += parseInt(field("bandwidth"), 10) || 0;
-        bots += parseInt(field("bots"), 10) || 0;
-        humans += parseInt(field("humans"), 10) || 0;
-        for (const code of Object.keys(statusCodes) as Array<
-            keyof typeof statusCodes
-        >) {
-            statusCodes[code] += parseInt(field(`requests_${code}`), 10) || 0;
-        }
-    }
-
-    // Unique visitors: HyperLogLog at uniq:{site_id}:{date}
-    const uniqKeys = dates.map((day) => redisKey(`uniq:${siteId}:${day}`));
-    if (uniqKeys.length > 0) {
-        const [firstUniqKey, ...restUniqKeys] = uniqKeys as [
-            string,
-            ...string[],
-        ];
-        uniqueIps =
-            Number(await redis.pfcount(firstUniqKey, ...restUniqKeys)) || 0;
-    }
-
-    // Peak-hour slots: plain counters at peak:{site_id}:{date:HH}
-    const peakKeys: string[] = [];
-    for (const day of dates) {
-        for (let h = 0; h < 24; h++) {
-            peakKeys.push(
-                `peak:${siteId}:${day}:${String(h).padStart(2, "0")}`,
-            );
-        }
-    }
-    if (peakKeys.length > 0) {
-        const counts = await redis.mget<string[]>(
-            peakKeys.map((key) => redisKey(key)),
-        );
-        peakKeys.forEach((key, i) => {
-            const count = parseInt(String(counts[i] ?? "0"), 10) || 0;
-            if (count > 0) {
-                const hour = key.split(":").pop()!;
-                hourCounts[hour] = (hourCounts[hour] || 0) + count;
-            }
-        });
-    }
-
-    let peakHour: string | null = null;
-    let peakHourRequests = 0;
-    for (const [hour, count] of Object.entries(hourCounts)) {
-        if (count > peakHourRequests) {
-            peakHourRequests = count;
-            peakHour = hour;
-        }
-    }
-
-    return {
-        requests,
-        bandwidth,
-        bots,
-        humans,
-        statusCodes,
-        uniqueIps,
-        peakHour,
-        peakHourRequests,
-    };
-}
-
 async function getActiveDeploymentStorage(pageId: string) {
     const [active] = await db
         .select({ id: deployments.id })
@@ -249,9 +153,10 @@ async function getActiveDeploymentStorage(pageId: string) {
 }
 
 /**
- * Usage from the blob-server analytics pipeline:
- * - Live: Redis `stats:{site_id}:{date}` (pending 5-min flush)
- * - Flushed: PostgreSQL `site_daily_stats`
+ * Usage from the service/logs pipeline: Cloudflare Logpush http_requests →
+ * R2 logs-raw → one-shot Fly worker aggregates hourly into
+ * `usage_hourly` / `country_hourly` (keyed by request host). No live Redis
+ * stats exist anymore; the pipeline refreshes every ~25 minutes.
  */
 export async function getPageUsage(domain: string) {
     const [page] = await db
@@ -270,83 +175,59 @@ export async function getPageUsage(domain: string) {
     const requestLimit = Number(page.request_limit) || 100_000;
     const bandwidthLimit = Number(page.bandwidth_limit) || 2147483648;
 
-    const [flushedRow] = await db
-        .select({
-            requests:
-                sql<number>`coalesce(sum(${siteDailyStats.requests}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            bandwidth:
-                sql<number>`coalesce(sum(${siteDailyStats.bandwidth}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            requests2xx:
-                sql<number>`coalesce(sum(${siteDailyStats.requests2xx}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            requests3xx:
-                sql<number>`coalesce(sum(${siteDailyStats.requests3xx}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            requests4xx:
-                sql<number>`coalesce(sum(${siteDailyStats.requests4xx}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            requests5xx:
-                sql<number>`coalesce(sum(${siteDailyStats.requests5xx}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-            bots: sql<number>`coalesce(sum(${siteDailyStats.bots}), 0)::bigint`.mapWith(
-                Number,
-            ),
-            humans: sql<number>`coalesce(sum(${siteDailyStats.humans}), 0)::bigint`.mapWith(
-                Number,
-            ),
-            uniqueIps:
-                sql<number>`coalesce(max(${siteDailyStats.uniqueIps}), 0)::bigint`.mapWith(
-                    Number,
-                ),
-        })
-        .from(siteDailyStats)
-        .where(eq(siteDailyStats.siteId, page.site_id));
-
-    const flushedRequests = flushedRow?.requests ?? 0;
-    const flushedBandwidth = flushedRow?.bandwidth ?? 0;
-    const live = await readLiveSiteStats(page.site_id);
-
-    const totalRequests = flushedRequests + live.requests;
-    const totalBandwidth = flushedBandwidth + live.bandwidth;
-    const storage = await getActiveDeploymentStorage(page.id);
-
-    const [peakRow] = await db
-        .select({
-            hour: siteDailyStats.peakHour,
-            requests: siteDailyStats.peakHourRequests,
-        })
-        .from(siteDailyStats)
-        .where(eq(siteDailyStats.siteId, page.site_id))
-        .orderBy(sql`${siteDailyStats.peakHourRequests} desc`)
-        .limit(1);
-
-    let peakHour = live.peakHour;
-    let peakHourRequests = live.peakHourRequests;
-    if ((peakRow?.requests ?? 0) > peakHourRequests) {
-        peakHourRequests = peakRow!.requests;
-        peakHour = peakRow!.hour;
+    interface UsageRow {
+        requests: number;
+        bytes: number;
+        s2xx: number;
+        s3xx: number;
+        s4xx: number;
+        s5xx: number;
+        cacheHits: number;
     }
+
+    const [aggRow] = (
+        (await db.execute(sql`
+            SELECT
+                coalesce(sum("requests"), 0)::bigint AS requests,
+                coalesce(sum("bytes"), 0)::bigint AS bytes,
+                coalesce(sum("s2xx"), 0)::bigint AS s2xx,
+                coalesce(sum("s3xx"), 0)::bigint AS s3xx,
+                coalesce(sum("s4xx"), 0)::bigint AS s4xx,
+                coalesce(sum("s5xx"), 0)::bigint AS s5xx,
+                coalesce(sum("cache_hits"), 0)::bigint AS cache_hits
+            FROM usage_hourly
+            WHERE host = ${domain}
+        `)) as unknown as { rows: UsageRow[] }
+    ).rows;
+
+    const [peakRow] = (
+        (await db.execute(sql`
+            SELECT hour, requests
+            FROM usage_hourly
+            WHERE host = ${domain}
+            ORDER BY requests DESC
+            LIMIT 1
+        `)) as unknown as {
+        rows: Array<{ hour: Date; requests: number }>;
+    }
+    ).rows;
+
+    const totalRequests = aggRow?.requests ?? 0;
+    const totalBandwidth = aggRow?.bytes ?? 0;
+    const storage = await getActiveDeploymentStorage(page.id);
 
     return {
         requests: {
             used: totalRequests,
             limit: requestLimit,
-            flushed: flushedRequests,
-            live: live.requests,
+            flushed: totalRequests,
+            live: 0,
         },
         bandwidth: {
             used_bytes: totalBandwidth,
             used_gb: (totalBandwidth / 1024 ** 3).toFixed(6),
-            flushed_bytes: flushedBandwidth,
-            live_bytes: live.bandwidth,
+            flushed_bytes: totalBandwidth,
+            live_bytes: 0,
             limit_bytes: bandwidthLimit,
             limit: formatBytes(bandwidthLimit),
         },
@@ -356,23 +237,25 @@ export async function getPageUsage(domain: string) {
             file_count: storage.fileCount,
         },
         sync: {
-            pending_flush: live.requests > 0 || live.bandwidth > 0,
-            interval_seconds: 300,
+            pending_flush: false,
+            interval_seconds: 1500,
         },
         traffic: {
-            bots: (flushedRow?.bots ?? 0) + live.bots,
-            humans: (flushedRow?.humans ?? 0) + live.humans,
-            unique_ips: Math.max(flushedRow?.uniqueIps ?? 0, live.uniqueIps),
+            bots: 0,
+            humans: 0,
+            unique_ips: 0,
         },
         status_codes: {
-            "2xx": (flushedRow?.requests2xx ?? 0) + live.statusCodes["2xx"],
-            "3xx": (flushedRow?.requests3xx ?? 0) + live.statusCodes["3xx"],
-            "4xx": (flushedRow?.requests4xx ?? 0) + live.statusCodes["4xx"],
-            "5xx": (flushedRow?.requests5xx ?? 0) + live.statusCodes["5xx"],
+            "2xx": aggRow?.s2xx ?? 0,
+            "3xx": aggRow?.s3xx ?? 0,
+            "4xx": aggRow?.s4xx ?? 0,
+            "5xx": aggRow?.s5xx ?? 0,
         },
         peak: {
-            hour: peakHour,
-            requests: peakHourRequests,
+            hour: peakRow
+                ? peakRow.hour.toISOString().slice(11, 13) + ":00"
+                : null,
+            requests: peakRow?.requests ?? 0,
         },
     };
 }
