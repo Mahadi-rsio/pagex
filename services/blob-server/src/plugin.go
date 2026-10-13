@@ -70,7 +70,6 @@ type StaticPlugin struct {
 	store           resolutionStore
 	routing         routingKV
 	logger          *zap.Logger
-	usage           *usageTracker
 }
 
 func (StaticPlugin) CaddyModule() caddy.ModuleInfo {
@@ -226,20 +225,12 @@ func (p *StaticPlugin) Provision(ctx caddy.Context) error {
 		}
 	}
 
-	// In-process usage tracker (replaces the removed Vector pipeline). Enabled
-	// only when USAGE_INGEST_TOKEN is set; reads Caddy's access log and POSTs
-	// per-site+hour usage aggregates to the console ingest endpoint. The tracker
-	// is process-wide: all static_s3 instances share a single tailer so multiple
-	// site blocks never double-count or fight over the access log.
-	p.usage = acquireUsageTracker(p.logger)
-
 	return nil
 }
 
 // Cleanup implements caddy.CleanerUpper and is called by Caddy on reload or
-// shutdown. It closes the PostgreSQL connection and stops the usage tracker.
+// shutdown. It closes the PostgreSQL connection.
 func (p *StaticPlugin) Cleanup() error {
-	releaseUsageTracker(p.usage)
 	if p.db != nil {
 		p.db.Close()
 	}

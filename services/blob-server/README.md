@@ -388,7 +388,7 @@ static_s3 {
 ├── src/
 │   ├── cache.go       # LRU cache implementation with TTL
 │   ├── cache_test.go  # LRU cache unit tests
-│   ├── handler.go     # Core middleware, blob resolution, multi-tenant routing, streaming, access-log fields
+│   ├── handler.go     # Core middleware, blob resolution, multi-tenant routing, streaming
 │   ├── plugin.go      # Caddy registration, configuration parser, PostgreSQL setup
 │   ├── plugin_test.go # Plugin & parser unit tests
 │   ├── manifest.go    # Deployment manifest load (LRU → MinIO, single-flight)
@@ -396,13 +396,7 @@ static_s3 {
 └── README.md          # Project documentation
 ```
 
-Usage metrics are tracked **in-process** by the usage tracker inside the `static_s3`
-plugin. It tails Caddy's JSON access log (`/var/log/caddy/access.log`, with
-`site_id` / `deployment_id` / `cache_hit` via `ExtraLogFields`), aggregates per
-site + hour, and POSTs pre-aggregated records to `POST /internal/usage/ingest`
-(bearer `USAGE_INGEST_TOKEN`). It runs inside the Caddy container, checkpoints at
-`/var/log/caddy/.usage-checkpoint`, and is started only when `USAGE_INGEST_TOKEN`
-is set. See `docs/API.md` for the ingest endpoint.
+Usage metering no longer runs inside the blob-server. The console's `POST /internal/usage/ingest` endpoint accepts pre-aggregated hourly usage records; see `docs/API.md`.
 
 ---
 

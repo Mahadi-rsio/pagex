@@ -1,0 +1,18 @@
+{
+    "name": "@pagex/logs-cron",
+    "version": "0.1.0",
+    "private": true,
+    "description": "Cloudflare Cron Worker that starts the PageX logs processing machine on a schedule.",
+    "type": "module",
+    "scripts": {
+        "dev": "wrangler dev",
+        "typecheck": "tsc --noEmit",
+        "deploy": "wrangler deploy",
+        "lint": "biome format --write"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "^2.2.4",
+        "typescript": "^5.9.3",
+        "wrangler": "^4.148.0"
+    }
+}

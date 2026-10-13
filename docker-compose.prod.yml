@@ -3,10 +3,8 @@
 #
 # Docker runs the blob-server (Caddy + static_s3) and the cleanup worker only.
 # The console runs on Vercel (serverless); Postgres is Neon and Redis is
-# Upstash. Usage/metrics aggregation is done in-process by the static_s3
-# plugin's usage tracker (no Vector container). This file contains NO `build:`
-# sections, so `docker compose -f docker-compose.prod.yml up -d` never builds
-# locally.
+# Upstash. This file contains NO `build:` sections, so
+# `docker compose -f docker-compose.prod.yml up -d` never builds locally.
 #
 # The blob-server image is published on blob-server/v* tags:
 #   blob-server/v1.6.0
@@ -33,7 +31,6 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./services/blob-server/tls:/etc/caddy/tls:ro
-      - caddy_logs:/var/log/caddy
     environment:
       - S3_ACCESS_KEY=${S3_ACCESS_KEY}
       - S3_SECRET_KEY=${S3_SECRET_KEY}
@@ -59,13 +56,6 @@ services:
       - MAX_CACHE_SIZE=${MAX_CACHE_SIZE:-512KiB}
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
       - TLS_CFG=${TLS_CFG:-tls-off}
-      # In-process usage tracker (replaces the removed Vector container). The
-      # plugin tails its own access log and POSTs usage to the console ingest
-      # endpoint. Required in production to track billable bandwidth.
-      - USAGE_INGEST_TOKEN=${USAGE_INGEST_TOKEN:?USAGE_INGEST_TOKEN is required}
-      - USAGE_API_URL=${USAGE_API_URL:?USAGE_API_URL (console ingest URL) is required}
-      - USAGE_LOG_PATH=${USAGE_LOG_PATH:-/var/log/caddy/access.log}
-      - USAGE_LOG_DIR=${USAGE_LOG_DIR:-/var/log/caddy}
     restart: unless-stopped
     networks:
       - pagex
@@ -118,9 +108,6 @@ services:
     restart: unless-stopped
     networks:
       - pagex
-
-volumes:
-  caddy_logs:
 
 networks:
   pagex:

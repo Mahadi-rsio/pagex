@@ -95,7 +95,7 @@ Where Context7 is least helpful: the custom Go `static_s3` Caddy plugin and inte
 
 ## Docker scope
 
-Docker runs **only** the blob-server (Caddy + `static_s3`, including the in-process usage tracker). There is no console, Postgres, or Redis container:
+Docker runs **only** the blob-server (Caddy + `static_s3`). There is no console, Postgres, or Redis container:
 
 - The console is a Next.js app hosted on **Cloudflare Workers** (OpenNext + Wrangler). Object storage uses the R2 binding `BLOBS`; Postgres goes through Hyperdrive (`HYPERDRIVE`).
 - Postgres is **Neon** — Workers use Hyperdrive; CLI/migrations use `DATABASE_URL` (no `DB`/`DIRECT_DB`/`NEXT_WEB_DATABASE_URL` variants).

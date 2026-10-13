@@ -20,8 +20,7 @@ This document provides a comprehensive overview of the PageX platform architectu
 │                         ▼                                                   │
 │ PostgreSQL · Redis · MinIO/S3                                                │
 │                                                                              │
-│ The blob-server's in-process usage tracker reads Caddy logs and posts       │
-│ aggregates to the console ingest route.                                      │
+│ Usage aggregates are pushed to the console ingest route.                     │
 │ GC is enqueued to a Cloudflare queue drained by the Go worker.          │
 │ Remote builds run on one shared Fly machine; the deploy commit path      │
 │ (prepare/presign/commit) stays fully synchronous.                        │
@@ -534,7 +533,7 @@ the only upload path.
 See `services/console/docs/queue.md` and `services/build-runner/README.md`.
 
 **Implementation:**
-- **Analytics / usage:** The blob-server's in-process usage tracker tails Caddy access logs, aggregates per site and hour, and posts them to the console ingest endpoint; the native API applies them to `site_daily_stats`, `service_metrics_hourly`, and `bandwidth_usage_hourly` with idempotent dedup (no queue).
+- **Analytics / usage:** Pre-aggregated hourly usage records are pushed to the console ingest endpoint; the native API applies them to `site_daily_stats`, `service_metrics_hourly`, and `bandwidth_usage_hourly` with idempotent dedup (no queue).
 - **GC:** Enqueued to `pagex-background` after deploy/rollback and drained by the Go worker. A queue outage delays cleanup but cannot fail the committed deploy
 
 ### Deployment Safety (Production Hardening)
@@ -583,9 +582,9 @@ pending
 - `failIdempotencyKey()` — deletes reservation on failure
 - Request hash verification prevents silent corruption
 
-**Usage-ingest idempotency (usage tracker → console API):**
-- The in-process tracker computes a deterministic `ingest_id` per site+hour-bucket+counters; the API claims it in `usage_ingest_dedup` (`INSERT … ON CONFLICT DO NOTHING`) so retried HTTP POSTs or a tracker replay can never double-count.
-- **No tracker→Postgres sink.** The API owns the schema; the tracker only POSTs pre-aggregated records to `POST /internal/usage/ingest` (bearer token `USAGE_INGEST_TOKEN`).
+**Usage-ingest idempotency (usage pipeline → console API):**
+- The producer computes a deterministic `ingest_id` per site+hour-bucket+counters; the API claims it in `usage_ingest_dedup` (`INSERT … ON CONFLICT DO NOTHING`) so retried HTTP POSTs or a producer replay can never double-count.
+- **No producer→Postgres sink.** The API owns the schema; the producer only POSTs pre-aggregated records to `POST /internal/usage/ingest` (bearer token `USAGE_INGEST_TOKEN`).
 
 ### Caching Strategy
 
@@ -736,10 +735,10 @@ See [Development Guide](development.md) for detailed file structure and conventi
 
 | Metric | Source | Purpose |
 |--------|--------|---------|
-| Request Count | Caddy access logs → in-process usage tracker → console API | Traffic monitoring |
-| Bandwidth | Caddy access logs → in-process usage tracker → console API | Billing usage |
-| Response Time | Caddy access logs → in-process usage tracker → console API | Performance monitoring |
-| Cache Hit Rate | Caddy `cache_hit` flag → in-process usage tracker → console API | Cache efficiency |
+| Request Count | usage pipeline → console API | Traffic monitoring |
+| Bandwidth | usage pipeline → console API | Billing usage |
+| Response Time | usage pipeline → console API | Performance monitoring |
+| Cache Hit Rate | usage pipeline → console API | Cache efficiency |
 | Database Queries | PostgreSQL | Query performance |
 
 ### Logging

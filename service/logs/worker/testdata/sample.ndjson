@@ -1,0 +1,7 @@
+{"RayID":"a1","EdgeStartTimestamp":"2026-10-13T10:07:01Z","ClientRequestHost":"foo.cloudisy.top","ClientRequestPath":"/","ClientRequestMethod":"GET","EdgeResponseStatus":200,"EdgeResponseBytes":100,"ClientCountry":"US","CacheCacheStatus":"hit"}
+{"RayID":"a2","EdgeStartTimestamp":"2026-10-13T10:59:59Z","ClientRequestHost":"foo.cloudisy.top","ClientRequestPath":"/about","ClientRequestMethod":"GET","EdgeResponseStatus":301,"EdgeResponseBytes":50,"ClientCountry":"US","CacheCacheStatus":"miss"}
+{"RayID":"a3","EdgeStartTimestamp":"2026-10-13T11:00:00Z","ClientRequestHost":"foo.cloudisy.top","ClientRequestPath":"/missing","ClientRequestMethod":"GET","EdgeResponseStatus":404,"EdgeResponseBytes":10,"ClientCountry":"DE","CacheCacheStatus":"dynamic"}
+{"RayID":"a4","EdgeStartTimestamp":"2026-10-13T10:15:00Z","ClientRequestHost":"bar.cloudisy.top","ClientRequestPath":"/","ClientRequestMethod":"GET","EdgeResponseStatus":500,"EdgeResponseBytes":20,"ClientCountry":"CA","CacheCacheStatus":"hit"}
+{"RayID":"a5","EdgeStartTimestamp":"2026-10-13T10:30:00Z","ClientRequestHost":"BAR.cloudisy.top","ClientRequestPath":"/x","ClientRequestMethod":"POST","EdgeResponseStatus":200,"EdgeResponseBytes":30,"ClientCountry":"ca","CacheCacheStatus":"stream_hit"}
+{"RayID":"a6","EdgeStartTimestamp":"2026-10-13T10:30:00Z","ClientRequestHost":"evil.example.com","ClientRequestPath":"/","ClientRequestMethod":"GET","EdgeResponseStatus":200,"EdgeResponseBytes":999,"ClientCountry":"US","CacheCacheStatus":"hit"}
+this is not json

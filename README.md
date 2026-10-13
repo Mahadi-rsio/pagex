@@ -1,6 +1,6 @@
 # PageX — Multi-Tenant Static Site Hosting Platform
 
-A pnpm monorepo for hosting multi-tenant static sites with content-addressed blob storage, deployment manifests, automatic compression/optimization, instant deployments, and an in-process usage/metrics pipeline.
+A pnpm monorepo for hosting multi-tenant static sites with content-addressed blob storage, deployment manifests, automatic compression/optimization, instant deployments, and a usage/metrics pipeline.
 
 ---
 
@@ -30,7 +30,7 @@ pagex/
 
 ## Architecture & Data Flow
 
-PageX combines a Next.js control panel and native management API (hosted on Vercel), a custom Caddy blob-serving plugin written in Go, and managed infrastructure (Neon Postgres, Upstash Redis, MinIO/S3). The blob-server's in-process usage tracker (in the `static_s3` Go plugin) aggregates access logs into usage/metrics, which the console API persists.
+PageX combines a Next.js control panel and native management API (hosted on Vercel), a custom Caddy blob-serving plugin written in Go, and managed infrastructure (Neon Postgres, Upstash Redis, MinIO/S3). Pre-aggregated hourly usage records are pushed to the console's internal usage-ingest endpoint, which the console API persists.
 
 ```
 ┌──────────────────────────────┐
@@ -42,7 +42,6 @@ PageX combines a Next.js control panel and native management API (hosted on Verc
 ┌──────────▼───────────────────┐
 │ Blob Server                  │
 │ Caddy + Go (static_s3)       │
-│ in-process usage tracker     │
 └──────────┬───────────────────┘
            │
 ┌──────────▼───────────────────┐
@@ -60,7 +59,7 @@ PageX combines a Next.js control panel and native management API (hosted on Verc
 
 ### Metrics & usage pipeline
 
-- **Blob-server usage tracker** (in the `static_s3` Go plugin) tails Caddy's JSON access log (`/var/log/caddy/access.log`, with `site_id`, `deployment_id`, `cache_hit`, `from_manifest`), aggregates per site + hour, and POSTs pre-aggregated records to `POST /internal/usage/ingest` (bearer-token auth via `USAGE_INGEST_TOKEN`). It runs inside the Caddy container (checkpoint at `/var/log/caddy/.usage-checkpoint`); it starts only when `USAGE_INGEST_TOKEN` is set.
+- **Usage ingestion:** the blob-server's in-process metering was removed. Pre-aggregated usage is now produced by the usage pipeline and POSTed to `POST /internal/usage/ingest` (bearer-token auth via `USAGE_INGEST_TOKEN`).
 - **Console API** applies each record transactionally into `bandwidth_usage_hourly` (billing), `service_metrics_hourly` (operational), and `site_daily_stats` (rollup), with idempotent dedup via the `usage_ingest_dedup` table (deterministic `ingest_id`).
 
 **Billing:** only **bandwidth** is metered, in decimal GB (1 GB = 1,000,000,000 bytes). **Requests are unlimited and never billed/quota-checked.**
@@ -75,7 +74,7 @@ See [`docs/`](docs/) for full detail.
 
 - **Node.js 20.9+** and **pnpm** (8+) — monorepo package manager
 - **Go 1.20+** — blob-server (Caddy plugin)
-- **Docker & Docker Compose** — only for the blob-server + in-process usage tracker
+- **Docker & Docker Compose** — only for the blob-server
 - **External services** — Neon Postgres, Upstash Redis, and MinIO/S3 (no local containers)
 
 ### Quick start (local dev)
@@ -93,11 +92,10 @@ pnpm dev:blob-server       # Go Caddy `go run ./cmd/caddy` (serves tenant sites)
 There is no local Postgres or Redis to run; migrations and bucket provisioning
 happen on console startup (gated by `RUN_STARTUP_TASKS` on Vercel).
 
-### Docker (blob-server + usage tracker)
+### Docker (blob-server)
 
-`docker-compose.yml` runs **only** the blob-server (Caddy + `static_s3`, which
-includes the in-process usage tracker) — use it when you need the site-serving
-and usage/metrics path locally:
+`docker-compose.yml` runs **only** the blob-server (Caddy + `static_s3`) — use it
+when you need the site-serving and usage/metrics path locally:
 
 ```bash
 cp .env.example .env
@@ -118,7 +116,7 @@ Strictly required to run anything against infra (see `.env.example` for the full
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST credentials |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | MinIO/S3 credentials |
 | `MINIO_ENDPOINT_URL` | MinIO/S3 endpoint (must include scheme) + `MINIO_BUCKET` |
-| `USAGE_INGEST_TOKEN` | Shared secret for the usage tracker → console ingest endpoint |
+| `USAGE_INGEST_TOKEN` | Shared secret for the console's internal usage ingest endpoint |
 
 Optional: `TLS_CFG` (tls-off locally, tls-on in prod, needs `CLOUDFLARE_API_TOKEN`), `REDIRECT_TO_S3`/`PRESIGN_REDIRECT` (direct S3 downloads), SMTP + OAuth keys.
 

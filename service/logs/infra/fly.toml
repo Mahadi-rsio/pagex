@@ -1,0 +1,28 @@
+# Fly.io app config for the PageX logs worker.
+#
+# This is a one-shot task machine: it has no HTTP service and exits when its
+# run is done. The Cloudflare cron worker starts it on a schedule via the
+# Machines API, so it must be created/updated with a restart policy of `no`
+# (infra/setup.sh does this) to stop Fly from looping it.
+#
+# Deploy from service/logs with:
+#   flyctl deploy --app pagex-logs --dockerfile worker/Dockerfile
+#
+# Secrets (set with `flyctl secrets set`, never here): DATABASE_URL,
+# R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, CF_ACCOUNT_ID,
+# CF_QUEUE_ID, CF_QUEUE_API_TOKEN.
+app = "pagex-logs"
+primary_region = "sin"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+[env]
+  R2_LOGS_BUCKET = "logs-raw"
+  R2_PREFIX = "raw/"
+  LOGS_HOST_SUFFIX = ".cloudisy.top"
+  LOGS_DRAIN_BATCH = "100"
+  LOGS_DRAIN_MAX = "10"
+  LOGS_MAX_FILES = "200"
+  LOGS_SCAN_DAYS = "2"

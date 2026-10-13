@@ -56,13 +56,8 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		if siteID == "" {
-			p.addLogFields(r, siteID, "", false, false)
 			return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("tenant %q not found", subdomain))
 		}
-
-		// Latency is captured by Caddy itself in the access log as "duration";
-		// the in-process usage tracker computes latency percentiles from it, so
-		// we don't need our own per-request clock here.
 
 		encKey := requestEncodingKey(r, urlPath)
 
@@ -74,7 +69,6 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		if deploymentID == "" {
-			p.addLogFields(r, siteID, "", false, false)
 			return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("no active deployment for site %q", subdomain))
 		}
 
@@ -85,26 +79,21 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 		rec := caddyhttp.NewResponseRecorder(w, nil, nil)
 
 		// Path / encoding LRU cache (deployment-scoped)
-		cacheHit := false
 		if p.cacheTTL > 0 && p.cache != nil {
 			if item, ok := p.cache.Get(negKey); ok && !item.Exists {
-				p.addLogFields(r, siteID, deploymentID, true, false)
 				return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("cached 404 for path: %s", urlPath))
 			}
 			if item, ok := p.cache.Get(cacheKey); ok {
 				if !item.Exists {
-					p.addLogFields(r, siteID, deploymentID, true, false)
 					return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("cached 404 for path: %s", urlPath))
 				}
 				// Path-resolution hit → skip manifest lookup, go to MinIO (or memory)
 				if item.BlobHash != "" {
-					hit, err := p.serveBlob(rec, r, item.BlobHash, item.FilePath, item.ContentEncoding, bodyKey, item)
+					_, err := p.serveBlob(rec, r, item.BlobHash, item.FilePath, item.ContentEncoding, bodyKey, item)
 					if err != nil {
 						return caddyhttp.Error(http.StatusNotFound, err)
 					}
-					cacheHit = hit
 					rec.WriteResponse()
-					p.addLogFields(r, siteID, deploymentID, cacheHit, false)
 					return nil
 				}
 			}
@@ -119,7 +108,6 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 			if p.cacheTTL > 0 && p.cache != nil {
 				p.cache.Set(negKey, &CacheItem{Key: negKey, Exists: false}, 1*time.Minute)
 			}
-			p.addLogFields(r, siteID, deploymentID, false, false)
 			return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("file not found for path: %s", urlPath))
 		}
 
@@ -136,13 +124,12 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 			}, p.cacheTTL)
 		}
 
-		cacheHit, err = p.serveBlob(rec, r, resolved.BlobHash, resolved.FilePath, resolved.ContentEncoding, bodyKey, nil)
+		_, err = p.serveBlob(rec, r, resolved.BlobHash, resolved.FilePath, resolved.ContentEncoding, bodyKey, nil)
 		if err != nil {
 			return caddyhttp.Error(http.StatusNotFound, err)
 		}
 
 		rec.WriteResponse()
-		p.addLogFields(r, siteID, resolved.DeploymentID, cacheHit, true)
 		return nil
 	}
 
@@ -171,21 +158,6 @@ func (p *StaticPlugin) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 	}
 
 	return nil
-}
-
-// addLogFields attaches per-request multi-tenant context to Caddy's structured
-// access log. Caddy emits these fields at the top level of each JSON log line,
-// which the in-process usage tracker consumes downstream for usage/metrics
-// aggregation. This is best-effort and never blocks the request.
-func (p *StaticPlugin) addLogFields(r *http.Request, siteID, deploymentID string, cacheHit bool, fromManifest bool) {
-	extra, ok := r.Context().Value(caddyhttp.ExtraLogFieldsCtxKey).(*caddyhttp.ExtraLogFields)
-	if !ok {
-		return
-	}
-	extra.Set(zap.String("site_id", siteID))
-	extra.Set(zap.String("deployment_id", deploymentID))
-	extra.Set(zap.Bool("cache_hit", cacheHit))
-	extra.Set(zap.Bool("from_manifest", fromManifest))
 }
 
 func siteIDL1Key(subdomain string) string {

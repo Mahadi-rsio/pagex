@@ -12,7 +12,7 @@ The PageX console is a Next.js 16 monolith that serves the browser UI, Better Au
 | Caddy | Reverse-proxies the console host to `{$CONSOLE_UPSTREAM}` and serves tenant sites with `static_s3` |
 | Neon | Managed Postgres for auth and API data (separate Drizzle migration histories) |
 | Upstash | Managed Redis (REST) for sessions, caches, rate limits, deploy tokens, and locks |
-| Blob-server usage tracker | In-process tracker in the `static_s3` Go plugin that aggregates Caddy access logs and posts usage to the console |
+| Usage ingest | Console `POST /internal/usage/ingest` endpoint persisting pre-aggregated usage |
 
 Public `/api/*` requests are native App Router route files under `src/app/api/`. Each wraps its handler in the `withApiAuth` guard from `src/server/api/http/guard.ts`, which applies rate limiting and authentication (CLI Bearer JWT verified against Better Auth JWKS, or a browser session cookie) exactly once, before the feature service runs. `/internal/usage/ingest` uses `USAGE_INGEST_TOKEN` instead.
 
@@ -58,7 +58,7 @@ Workers never auto-migrate. Use `pnpm db:migrate` against an explicit database, 
 
 ## Deployment
 
-The console deploys to **Cloudflare Workers** (`pnpm run deploy` from `services/console` after review — never auto-deploy production from agents). Docker runs only the blob-server (Caddy + `static_s3`, including the in-process usage tracker):
+The console deploys to **Cloudflare Workers** (`pnpm run deploy` from `services/console` after review — never auto-deploy production from agents). Docker runs only the blob-server (Caddy + `static_s3`):
 
 ```bash
 # repository root

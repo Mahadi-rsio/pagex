@@ -1,0 +1,22 @@
+{
+    "name": "pagex-http-requests",
+    "enabled": true,
+    "dataset": "http_requests",
+    "destination_conf": "__DESTINATION_CONF__",
+    "output_options": {
+        "output_type": "ndjson",
+        "timestamp_format": "rfc3339",
+        "field_names": [
+            "RayID",
+            "EdgeStartTimestamp",
+            "ClientRequestHost",
+            "ClientRequestPath",
+            "ClientRequestMethod",
+            "EdgeResponseStatus",
+            "EdgeResponseBytes",
+            "ClientCountry",
+            "CacheCacheStatus"
+        ]
+    },
+    "ownership_challenge": "__OWNERSHIP_CHALLENGE__"
+}

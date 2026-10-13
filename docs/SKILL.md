@@ -3,7 +3,7 @@ name: pagex-server
 description: >
   AI skill for the PageX codebase. Multi-tenant static hosting with a Next.js
   native API, PostgreSQL/Drizzle, Redis, MinIO blobs, Caddy static_s3,
-  CLI deploys, in-process usage aggregation, and deployment GC.
+  CLI deploys, usage ingest, and deployment GC.
 ---
 
 # PageX — AI Skill Guide
@@ -41,13 +41,12 @@ Serving path: subdomain → site ID → active deployment manifest → path look
 
 ## Usage Pipeline
 
-The blob-server's in-process usage tracker (in the `static_s3` Go plugin) tails Caddy's JSON access log and aggregates them by site and hour, then posts to `/internal/usage/ingest` with `USAGE_INGEST_TOKEN`.
+Pre-aggregated hourly usage records are pushed to `/internal/usage/ingest` with `USAGE_INGEST_TOKEN`.
 
 The console's `usage-ingest.service.ts` applies aggregates transactionally with deterministic deduplication.
 
 - Requests are unlimited and are never billed.
 - Only bandwidth is billed, in decimal GB.
-- The usage tracker has no PostgreSQL credentials and never writes to the database directly.
 - Aggregate first; do not store one row per request.
 
 ## Operational Checks
@@ -82,5 +81,5 @@ pnpm db:studio
 | `src/server/api/services/usage-ingest.service.ts` | Idempotent usage aggregate ingestion |
 | `src/server/api/infrastructure/storage/minio.ts` | Lazy MinIO client and object helpers |
 | `src/server/api/infrastructure/cache/redis.ts` | Caches, rate limits, deploy tokens/locks |
-| Blob server | Go static_s3 plugin, access logs, and in-process usage tracker |
-| Usage tracker | Per-site/hour usage aggregation and console ingest |
+| Blob server | Go static_s3 plugin and access logs |
+| Usage ingest | Console ingest endpoint for pre-aggregated usage |

@@ -1,0 +1,16 @@
+name = "pagex-logs-cron"
+main = "src/index.ts"
+compatibility_date = "2026-10-08"
+
+# Every 25 minutes. Cron Trigger changes can take up to ~15 minutes to
+# propagate. NOTE: Cron Triggers require the Workers Paid plan; on the free
+# plan use an external scheduler to POST https://<worker>/start instead.
+[triggers]
+crons = ["*/25 * * * *"]
+
+[vars]
+FLY_APP = "pagex-logs"
+FLY_MACHINE_ID = "080169ead31348"
+
+[observability]
+enabled = true

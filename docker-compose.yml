@@ -3,8 +3,7 @@
 #
 # Docker runs the blob-server (Caddy + static_s3) only. The console runs on
 # Vercel (serverless) and the datastore is managed: Neon (Postgres) + Upstash
-# (Redis). Nothing here runs the console. Usage/metrics aggregation is done
-# in-process by the static_s3 plugin's usage tracker (no Vector container).
+# (Redis). Nothing here runs the console.
 #
 # Usage (from repo root):
 #   cp .env.example .env     # first run, then fill in required values
@@ -52,17 +51,9 @@ services:
       - MAX_CACHE_SIZE=${MAX_CACHE_SIZE:-512KiB}
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
       - TLS_CFG=${TLS_CFG:-tls-off}
-      # In-process usage tracker (replaces the removed Vector container). The
-      # plugin tails its own access log and POSTs usage to the console ingest
-      # endpoint. Only starts when USAGE_INGEST_TOKEN is set.
-      - USAGE_INGEST_TOKEN=${USAGE_INGEST_TOKEN:-}
-      - USAGE_API_URL=${USAGE_API_URL:-http://localhost:3000/internal/usage/ingest}
-      - USAGE_LOG_PATH=${USAGE_LOG_PATH:-/var/log/caddy/access.log}
-      - USAGE_LOG_DIR=${USAGE_LOG_DIR:-/var/log/caddy}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./services/blob-server/tls:/etc/caddy/tls:ro
-      - caddy_logs:/var/log/caddy
     restart: unless-stopped
     networks:
       - pagex
@@ -74,9 +65,6 @@ services:
   # `cleanup-worker` Cloudflare Worker (push consumer on `pagex-background`).
   # Cleanup now runs on Cloudflare — there is no local worker container.
   # See `cleanup-worker/README.md`.
-
-volumes:
-  caddy_logs:
 
 networks:
   pagex:

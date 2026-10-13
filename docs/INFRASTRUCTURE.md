@@ -6,7 +6,7 @@
 
 | Service | Container | Image/Stage | Role |
 |---------|-----------|-------------|------|
-| `blob-server` | `caddy` | `ghcr.io/mahadi-rsio/pagex/blob-server:latest` | Caddy + static_s3 (blob-direct), in-process usage tracker, ports 80/443/3080/2019 |
+| `blob-server` | `caddy` | `ghcr.io/mahadi-rsio/pagex/blob-server:latest` | Caddy + static_s3 (blob-direct), ports 80/443/3080/2019 |
 
 The console (Next.js UI + native API) is **not** a Compose service — it is deployed to **Vercel**.
 
@@ -35,7 +35,7 @@ FROM caddy:2.11.4-alpine             # blob-server runtime
 ```
 blob-server (:80/:443 sites, :3080 console/API) ──► Neon (sites, deployments, manifests)
                                                 └► MinIO/S3 (blobs, manifests)
-in-process usage tracker (tails /var/log/caddy) ──► POST /internal/usage/ingest on the console (Vercel + Upstash)
+usage pipeline ──► POST /internal/usage/ingest on the console (Vercel + Upstash)
 ```
 
 ---
@@ -44,7 +44,6 @@ in-process usage tracker (tails /var/log/caddy) ──► POST /internal/usage/i
 
 | Volume / bind | Mount | Purpose |
 |---------------|-------|---------|
-| `caddy_logs` | `/var/log/caddy` | Blob-server access log (tailed by the in-process usage tracker; checkpoint at `/var/log/caddy/.usage-checkpoint`) |
 
 ---
 
@@ -86,14 +85,13 @@ Image: `ghcr.io/mahadi-rsio/pagex/blob-server:latest` (built locally for dev via
 2. **Path map** — deployment manifest lookup: `files` map of path → blob SHA256 (MinIO `manifests/{deploymentID}.json`)
 3. **File serving** — stream / redirect from MinIO `blobs/{sha256}` (with Content-Encoding when set)
 4. **Console reverse proxy** — `:3080` proxies to the console (`CONSOLE_UPSTREAM`; port 3000 in local dev, the Vercel origin in production)
-5. **Access logs** — emitted to `/var/log/caddy` (`caddy_logs` volume), tailed by the in-process usage tracker
 
-Analytics aggregation is done by the **in-process usage tracker + console API**, not in Caddy. Blob-server resolves tenant routing as **LRU → Redis → PostgreSQL** (Redis is the durable distributed lookup layer; PostgreSQL is authoritative) and backfills Redis on a miss. Redis is also used for API caching, rate limiting, and deploy locks.
+Analytics aggregation is done by the **usage pipeline + console API**, not in Caddy. Blob-server resolves tenant routing as **LRU → Redis → PostgreSQL** (Redis is the durable distributed lookup layer; PostgreSQL is authoritative) and backfills Redis on a miss. Redis is also used for API caching, rate limiting, and deploy locks.
 
 No per-tenant Caddy config. A site is live once `sites.active=true` and the active deployment has a persisted manifest.
 
 ---
 
-## In-process usage tracker (access-log aggregation → console ingest)
+## Usage metering
 
-The blob-server's in-process usage tracker (in the `static_s3` Go plugin) tails the blob-server access log at `/var/log/caddy/access.log`, aggregates them into pre-aggregated hourly usage records, and POSTs them to the console ingest endpoint (`USAGE_API_URL`, e.g. `https://your-app.vercel.app/internal/usage/ingest`) using `USAGE_INGEST_TOKEN`. It runs inside the Caddy container, checkpoints at `/var/log/caddy/.usage-checkpoint`, and is started only when `USAGE_INGEST_TOKEN` is set. See `POST /internal/usage/ingest` in `docs/API.md`.
+The blob-server's in-process usage metering was removed. Usage metering now happens in the usage pipeline, which pushes pre-aggregated hourly usage records to the console ingest endpoint `POST /internal/usage/ingest` (authenticated with `USAGE_INGEST_TOKEN`). See `POST /internal/usage/ingest` in `docs/API.md`.

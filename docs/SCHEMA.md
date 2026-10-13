@@ -50,7 +50,7 @@ makes the project invisible to every user-facing read immediately; the
 - Every user-facing query filters `deleted_at IS NULL` via `withLivePage`
   (`src/server/api/utils/page-visibility.ts`). Do not add a new page read without
   it.
-- **Usage ingest is deliberately unfiltered.** The blob-server's in-process usage tracker batches access logs, so a
+- **Usage ingest is deliberately unfiltered.** The usage-ingest pipeline batches access logs, so a
   request served just before a delete arrives in a later batch; `resolveTenantId`
   looks up the site regardless of `deletedAt` so late usage is still attributed
   instead of silently dropped.
@@ -62,7 +62,7 @@ Partial index `pages_deleted_at_idx` on `(deleted_at)`.
 ---
 
 ### `site_daily_stats`
-Per-site daily analytics written by the API usage-ingest service (fed by the blob-server's in-process usage tracker).
+Per-site daily analytics written by the API usage-ingest service (fed by the usage-ingest pipeline).
 
 ```sql
 id                  UUID    PRIMARY KEY
@@ -77,7 +77,7 @@ INDEX: idx_site_daily_stats_site_date ON (site_id, date)
 ---
 
 ### `bandwidth_usage_hourly`
-Billing **usage** aggregate (bandwidth only), written by the API usage-ingest service (fed by the blob-server's in-process usage tracker).
+Billing **usage** aggregate (bandwidth only), written by the API usage-ingest service (fed by the usage-ingest pipeline).
 Hourly buckets are additive (`ON CONFLICT ... DO UPDATE SET bytes = bytes + EXCLUDED.bytes`).
 
 ```sql
@@ -98,7 +98,7 @@ Tenant id is resolved at ingest time via `INSERT ... SELECT p.tenant_id FROM pag
 ---
 
 ### `service_metrics_hourly`
-Operational **metrics** (separate from billing usage), written by the API usage-ingest service (fed by the blob-server's in-process usage tracker).
+Operational **metrics** (separate from billing usage), written by the API usage-ingest service (fed by the usage-ingest pipeline).
 
 ```sql
 site_id         UUID      FK → sites(id) ON DELETE CASCADE

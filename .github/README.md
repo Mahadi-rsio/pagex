@@ -16,4 +16,4 @@ git tag blob-server/v1.6.0
 git push origin blob-server/v1.6.0
 ```
 
-The console is deployed to Vercel and is not containerized, so there is no console publish workflow and no console image. Docker only runs the blob-server (Caddy + `static_s3`, including the in-process usage tracker).
+The console is deployed to Vercel and is not containerized, so there is no console publish workflow and no console image. Docker only runs the blob-server (Caddy + `static_s3`).
