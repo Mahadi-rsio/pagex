@@ -1,0 +1,7 @@
+- generic [active] [ref=f2e1]:
+  - status "Loading" [ref=f2e132]
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=f2e165]:
+        - generic [ref=f2e170]: Account created successfully!
+  - alert [ref=f2e31]: Welcome Back

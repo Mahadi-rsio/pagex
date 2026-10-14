@@ -1,0 +1,66 @@
+- generic [active] [ref=f2e1]:
+  - generic [ref=f2e307]:
+    - banner [ref=f2e308]:
+      - generic [ref=f2e309]:
+        - link "Cloudisy Console" [ref=f2e311] [cursor=pointer]:
+          - /url: /
+          - generic [ref=f2e315]:
+            - generic [ref=f2e316]: Cloudisy
+            - generic [ref=f2e317]: Console
+        - searchbox "Search projects, domains..." [ref=f2e320]
+        - generic [ref=f2e321]:
+          - link "BAL $0.00" [ref=f2e322] [cursor=pointer]:
+            - /url: /billing
+            - generic [ref=f2e323]: BAL
+            - generic [ref=f2e324]: $0.00
+          - button "AD" [ref=f2e327]
+    - generic [ref=f2e330]:
+      - complementary [ref=f2e331]:
+        - navigation [ref=f2e332]:
+          - list [ref=f2e333]:
+            - listitem [ref=f2e334]:
+              - link "Dashboard" [ref=f2e335] [cursor=pointer]:
+                - /url: /
+            - listitem [ref=f2e341]:
+              - link "Projects" [ref=f2e342] [cursor=pointer]:
+                - /url: /projects
+            - listitem [ref=f2e345]:
+              - link "Billing" [ref=f2e346] [cursor=pointer]:
+                - /url: /billing
+            - listitem [ref=f2e349]:
+              - link "Settings" [ref=f2e350] [cursor=pointer]:
+                - /url: /settings
+        - button "AD Alex Doe alex.rando13@example.com" [ref=f2e355]:
+          - generic [ref=f2e356]: AD
+          - generic [ref=f2e358]:
+            - paragraph [ref=f2e359]: Alex Doe
+            - paragraph [ref=f2e360]: alex.rando13@example.com
+      - main [ref=f2e363]:
+        - generic [ref=f2e449]:
+          - generic [ref=f2e450]:
+            - button [ref=f2e451]
+            - generic [ref=f2e452]:
+              - heading "Create a new project" [level=1] [ref=f2e453]
+              - paragraph [ref=f2e454]: Deploy with Cloud, CLI, or CI/CD
+            - generic [ref=f2e464]: my-awesome-project
+          - generic [ref=f2e465]:
+            - tablist [ref=f2e466]:
+              - tab "Cloud Deploy" [selected] [ref=f2e467]
+              - tab "CLI" [ref=f2e470]
+              - tab "CI/CD" [ref=f2e475]
+            - tabpanel "Cloud Deploy" [ref=f2e480]:
+              - generic [ref=f2e481]:
+                - generic [ref=f2e482]:
+                  - generic [ref=f2e483]: Deploy from GitHub
+                  - generic [ref=f2e484]: Build and deploy a public GitHub repository with one click. No account connection required.
+                - generic [ref=f2e485]:
+                  - generic [ref=f2e489]:
+                    - textbox "https://github.com/user/repo" [ref=f2e490]
+                    - button "Deploy" [ref=f2e491]
+                  - generic [ref=f2e492]:
+                    - textbox "Git branch" [ref=f2e493]:
+                      - /placeholder: main
+                    - generic [ref=f2e494]: Branch (defaults to main)
+                  - paragraph [ref=f2e495]: Paste a public GitHub repo URL. We clone it, run the build, and deploy the output to your project domain.
+  - region "Notifications alt+T"
+  - alert [ref=f2e31]

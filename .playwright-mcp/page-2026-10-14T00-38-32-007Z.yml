@@ -1,0 +1,4 @@
+- generic [active] [ref=e1]:
+  - status "Authenticating" [ref=e2]
+  - region "Notifications alt+T"
+  - alert [ref=e35]

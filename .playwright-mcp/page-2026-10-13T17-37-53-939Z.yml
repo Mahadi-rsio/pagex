@@ -1,0 +1,169 @@
+- generic [active] [ref=f4e1]:
+  - generic [ref=f4e32]:
+    - banner [ref=f4e33]:
+      - generic [ref=f4e34]:
+        - link "Cloudisy Console" [ref=f4e36] [cursor=pointer]:
+          - /url: /
+          - generic [ref=f4e40]:
+            - generic [ref=f4e41]: Cloudisy
+            - generic [ref=f4e42]: Console
+        - searchbox "Search projects, domains..." [ref=f4e45]
+        - generic [ref=f4e46]:
+          - link "BAL $0.00" [ref=f4e47] [cursor=pointer]:
+            - /url: /billing
+            - generic [ref=f4e48]: BAL
+            - generic [ref=f4e49]: $0.00
+          - button "AD" [ref=f4e52]
+    - generic [ref=f4e55]:
+      - complementary [ref=f4e56]:
+        - navigation [ref=f4e57]:
+          - list [ref=f4e58]:
+            - listitem [ref=f4e59]:
+              - link "Dashboard" [ref=f4e60] [cursor=pointer]:
+                - /url: /
+            - listitem [ref=f4e66]:
+              - link "Projects" [ref=f4e67] [cursor=pointer]:
+                - /url: /projects
+            - listitem [ref=f4e70]:
+              - link "Billing" [ref=f4e71] [cursor=pointer]:
+                - /url: /billing
+            - listitem [ref=f4e74]:
+              - link "Settings" [ref=f4e75] [cursor=pointer]:
+                - /url: /settings
+        - button "AD Alex Doe alex.rando13@example.com" [ref=f4e80]:
+          - generic [ref=f4e81]: AD
+          - generic [ref=f4e83]:
+            - paragraph [ref=f4e84]: Alex Doe
+            - paragraph [ref=f4e85]: alex.rando13@example.com
+      - main [ref=f4e88]:
+        - generic [ref=f4e89]:
+          - generic [ref=f4e90]:
+            - button [ref=f4e91]
+            - generic [ref=f4e92]:
+              - heading "Create a new project" [level=1] [ref=f4e93]
+              - paragraph [ref=f4e94]: Deploy with Cloud, CLI, or CI/CD
+            - generic [ref=f4e104]: my-awesome-project
+          - generic [ref=f4e105]:
+            - tablist [ref=f4e106]:
+              - tab "Cloud Deploy" [selected] [ref=f4e107]
+              - tab "CLI" [ref=f4e110]
+              - tab "CI/CD" [ref=f4e115]
+            - tabpanel "Cloud Deploy" [ref=f4e120]:
+              - generic [ref=f4e121]:
+                - generic [ref=f4e122]:
+                  - generic [ref=f4e123]:
+                    - status "Loading" [ref=f4e136]
+                    - text: Building your project
+                  - generic [ref=f4e124]: https://github.com/Mahadi-rsio/web.git · GitHub
+                - generic [ref=f4e141]:
+                  - generic [ref=f4e142]:
+                    - generic [ref=f4e150]:
+                      - paragraph [ref=f4e151]: Build · my-awesome-project
+                      - paragraph [ref=f4e152]: https://github.com/Mahadi-rsio/web.git
+                    - generic [ref=f4e153]:
+                      - generic [ref=f4e154]: 01:15
+                      - generic [ref=f4e158]: Cloning repo
+                      - button "Copy build log" [ref=f4e160]
+                  - generic [ref=f4e162]:
+                    - generic [ref=f4e171]:
+                      - generic [ref=f4e172]: 17:36:43
+                      - generic [ref=f4e173]: ==> Cloning https://github.com/Mahadi-rsio/web
+                    - generic [ref=f4e174]:
+                      - generic [ref=f4e175]: 17:36:43
+                      - generic [ref=f4e176]: From https://github.com/Mahadi-rsio/web
+                    - generic [ref=f4e177]:
+                      - generic [ref=f4e178]: 17:36:43
+                      - generic [ref=f4e179]: "* branch b2cc7918758ac7ba4710d4507af8caca3e2dba3d -> FETCH_HEAD"
+                    - generic [ref=f4e180]:
+                      - generic [ref=f4e181]: 17:36:43
+                      - generic [ref=f4e182]: ==> Installing dependencies (pnpm)
+                    - generic [ref=f4e183]:
+                      - generic [ref=f4e184]: 17:36:45
+                      - generic [ref=f4e185]: "(node:704) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities."
+                    - generic [ref=f4e186]:
+                      - generic [ref=f4e187]: 17:36:45
+                      - generic [ref=f4e188]: "(Use `node --trace-deprecation ...` to show where the warning was created)"
+                    - generic [ref=f4e189]:
+                      - generic [ref=f4e190]: 17:36:45
+                      - generic [ref=f4e191]: Lockfile is up to date, resolution step is skipped
+                    - generic [ref=f4e192]:
+                      - generic [ref=f4e193]: 17:36:45
+                      - generic [ref=f4e194]: "Progress: resolved 1, reused 0, downloaded 0, added 0"
+                    - generic [ref=f4e195]:
+                      - generic [ref=f4e196]: 17:36:45
+                      - generic [ref=f4e197]: "Packages: +584"
+                    - generic [ref=f4e198]:
+                      - generic [ref=f4e199]: 17:36:45
+                      - generic [ref=f4e200]: ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                    - generic [ref=f4e201]:
+                      - generic [ref=f4e202]: 17:36:47
+                      - generic [ref=f4e203]: "Progress: resolved 584, reused 0, downloaded 49, added 43"
+                    - generic [ref=f4e204]:
+                      - generic [ref=f4e205]: 17:36:47
+                      - generic [ref=f4e206]: "Progress: resolved 584, reused 0, downloaded 105, added 93"
+                    - generic [ref=f4e207]:
+                      - generic [ref=f4e208]: 17:36:48
+                      - generic [ref=f4e209]: "Progress: resolved 584, reused 0, downloaded 108, added 93"
+                    - generic [ref=f4e210]:
+                      - generic [ref=f4e211]: 17:36:49
+                      - generic [ref=f4e212]: "Progress: resolved 584, reused 0, downloaded 109, added 99"
+                    - generic [ref=f4e213]:
+                      - generic [ref=f4e214]: 17:36:51
+                      - generic [ref=f4e215]: "Progress: resolved 584, reused 0, downloaded 118, added 104"
+                    - generic [ref=f4e216]:
+                      - generic [ref=f4e217]: 17:36:52
+                      - generic [ref=f4e218]: "Progress: resolved 584, reused 0, downloaded 119, added 104"
+                    - generic [ref=f4e219]:
+                      - generic [ref=f4e220]: 17:36:52
+                      - generic [ref=f4e221]: "Progress: resolved 584, reused 0, downloaded 120, added 106"
+                    - generic [ref=f4e222]:
+                      - generic [ref=f4e223]: 17:36:53
+                      - generic [ref=f4e224]: "Progress: resolved 584, reused 0, downloaded 126, added 111"
+                    - generic [ref=f4e225]:
+                      - generic [ref=f4e226]: 17:36:58
+                      - generic [ref=f4e227]: "Progress: resolved 584, reused 0, downloaded 127, added 111"
+                    - generic [ref=f4e228]:
+                      - generic [ref=f4e229]: 17:37:00
+                      - generic [ref=f4e230]: "Progress: resolved 584, reused 0, downloaded 129, added 115"
+                    - generic [ref=f4e231]:
+                      - generic [ref=f4e232]: 17:37:00
+                      - generic [ref=f4e233]: "Progress: resolved 584, reused 0, downloaded 132, added 118"
+                    - generic [ref=f4e234]:
+                      - generic [ref=f4e235]: 17:37:01
+                      - generic [ref=f4e236]: "Progress: resolved 584, reused 0, downloaded 142, added 126"
+                    - generic [ref=f4e237]:
+                      - generic [ref=f4e238]: 17:37:02
+                      - generic [ref=f4e239]: "Progress: resolved 584, reused 0, downloaded 142, added 127"
+                    - generic [ref=f4e240]:
+                      - generic [ref=f4e241]: 17:37:04
+                      - generic [ref=f4e242]: "Progress: resolved 584, reused 0, downloaded 144, added 128"
+                    - generic [ref=f4e243]:
+                      - generic [ref=f4e244]: 17:37:04
+                      - generic [ref=f4e245]: "Progress: resolved 584, reused 0, downloaded 148, added 133"
+                    - generic [ref=f4e246]:
+                      - generic [ref=f4e247]: 17:37:06
+                      - generic [ref=f4e248]: "Progress: resolved 584, reused 0, downloaded 149, added 133"
+                    - generic [ref=f4e249]:
+                      - generic [ref=f4e250]: 17:37:07
+                      - generic [ref=f4e251]: "Progress: resolved 584, reused 0, downloaded 154, added 139"
+                    - generic [ref=f4e252]:
+                      - generic [ref=f4e253]: 17:37:07
+                      - generic [ref=f4e254]: "Progress: resolved 584, reused 0, downloaded 158, added 143"
+                    - generic [ref=f4e255]:
+                      - generic [ref=f4e256]: 17:37:09
+                      - generic [ref=f4e257]: "Progress: resolved 584, reused 0, downloaded 164, added 149"
+                    - generic [ref=f4e258]:
+                      - generic [ref=f4e259]: 17:37:10
+                      - generic [ref=f4e260]: "Progress: resolved 584, reused 0, downloaded 170, added 155"
+                    - generic [ref=f4e261]:
+                      - generic [ref=f4e262]: 17:37:10
+                      - generic [ref=f4e263]: "Progress: resolved 584, reused 0, downloaded 183, added 168"
+                    - generic [ref=f4e264]:
+                      - generic [ref=f4e265]: 17:37:13
+                      - generic [ref=f4e266]: "Progress: resolved 584, reused 0, downloaded 186, added 171"
+                    - generic [ref=f4e165]: 17:37:53
+                  - generic [ref=f4e168]:
+                    - generic [ref=f4e169]: Streaming Cloning repo…
+                    - generic [ref=f4e170]: 32 lines · 01:15
+  - region "Notifications alt+T"
+  - alert [ref=f4e31]

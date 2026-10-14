@@ -1,0 +1,74 @@
+- generic [active] [ref=f4e1]:
+  - generic [ref=f4e32]:
+    - banner [ref=f4e33]:
+      - generic [ref=f4e34]:
+        - link "Cloudisy Console" [ref=f4e36] [cursor=pointer]:
+          - /url: /
+          - generic [ref=f4e40]:
+            - generic [ref=f4e41]: Cloudisy
+            - generic [ref=f4e42]: Console
+        - searchbox "Search projects, domains..." [ref=f4e45]
+        - generic [ref=f4e46]:
+          - link "BAL $0.00" [ref=f4e47] [cursor=pointer]:
+            - /url: /billing
+            - generic [ref=f4e48]: BAL
+            - generic [ref=f4e49]: $0.00
+          - button "AD" [ref=f4e52]
+    - generic [ref=f4e55]:
+      - complementary [ref=f4e56]:
+        - navigation [ref=f4e57]:
+          - list [ref=f4e58]:
+            - listitem [ref=f4e59]:
+              - link "Dashboard" [ref=f4e60] [cursor=pointer]:
+                - /url: /
+            - listitem [ref=f4e66]:
+              - link "Projects" [ref=f4e67] [cursor=pointer]:
+                - /url: /projects
+            - listitem [ref=f4e70]:
+              - link "Billing" [ref=f4e71] [cursor=pointer]:
+                - /url: /billing
+            - listitem [ref=f4e74]:
+              - link "Settings" [ref=f4e75] [cursor=pointer]:
+                - /url: /settings
+        - button "AD Alex Doe alex.rando13@example.com" [ref=f4e80]:
+          - generic [ref=f4e81]: AD
+          - generic [ref=f4e83]:
+            - paragraph [ref=f4e84]: Alex Doe
+            - paragraph [ref=f4e85]: alex.rando13@example.com
+      - main [ref=f4e88]:
+        - generic [ref=f4e89]:
+          - generic [ref=f4e90]:
+            - button [ref=f4e91]
+            - generic [ref=f4e92]:
+              - heading "Create a new project" [level=1] [ref=f4e93]
+              - paragraph [ref=f4e94]: Deploy with Cloud, CLI, or CI/CD
+            - generic [ref=f4e104]: my-awesome-project
+          - generic [ref=f4e105]:
+            - tablist [ref=f4e106]:
+              - tab "Cloud Deploy" [selected] [ref=f4e107]
+              - tab "CLI" [ref=f4e110]
+              - tab "CI/CD" [ref=f4e115]
+            - tabpanel "Cloud Deploy" [ref=f4e120]:
+              - generic [ref=f4e121]:
+                - generic [ref=f4e122]:
+                  - generic [ref=f4e123]:
+                    - status "Loading" [ref=f4e136]
+                    - text: Building your project
+                  - generic [ref=f4e124]: https://github.com/Mahadi-rsio/web.git · GitHub
+                - generic [ref=f4e141]:
+                  - generic [ref=f4e142]:
+                    - generic [ref=f4e150]:
+                      - paragraph [ref=f4e151]: Build · my-awesome-project
+                      - paragraph [ref=f4e152]: https://github.com/Mahadi-rsio/web.git
+                    - generic [ref=f4e153]:
+                      - generic [ref=f4e154]: 00:00
+                      - generic [ref=f4e158]: Streaming…
+                      - button "Copy build log" [ref=f4e160]
+                  - generic [ref=f4e162]:
+                    - generic [ref=f4e163]: Waiting for build logs…
+                    - generic [ref=f4e165]: 17:36:38
+                  - generic [ref=f4e168]:
+                    - generic [ref=f4e169]: Streaming logs…
+                    - generic [ref=f4e170]: 0 lines · 00:00
+  - region "Notifications alt+T"
+  - alert [ref=f4e31]

@@ -1,0 +1,134 @@
+- generic [active] [ref=f5e1]:
+  - generic [ref=f5e32]:
+    - banner [ref=f5e33]:
+      - generic [ref=f5e34]:
+        - link "Cloudisy Console" [ref=f5e36] [cursor=pointer]:
+          - /url: /
+          - generic [ref=f5e40]:
+            - generic [ref=f5e41]: Cloudisy
+            - generic [ref=f5e42]: Console
+        - searchbox "Search projects, domains..." [ref=f5e45]
+        - generic [ref=f5e46]:
+          - link "BAL $0.00" [ref=f5e47] [cursor=pointer]:
+            - /url: /billing
+            - generic [ref=f5e48]: BAL
+            - generic [ref=f5e49]: $0.00
+          - button "M" [ref=f5e52]
+    - generic [ref=f5e55]:
+      - complementary [ref=f5e56]:
+        - navigation [ref=f5e57]:
+          - list [ref=f5e58]:
+            - listitem [ref=f5e59]:
+              - link "Dashboard" [ref=f5e60] [cursor=pointer]:
+                - /url: /
+            - listitem [ref=f5e66]:
+              - link "Projects" [ref=f5e67] [cursor=pointer]:
+                - /url: /projects
+            - listitem [ref=f5e70]:
+              - link "Billing" [ref=f5e71] [cursor=pointer]:
+                - /url: /billing
+            - listitem [ref=f5e74]:
+              - link "Settings" [ref=f5e75] [cursor=pointer]:
+                - /url: /settings
+        - button "M Mahadi abc@gmail.com" [ref=f5e80]:
+          - generic [ref=f5e81]: M
+          - generic [ref=f5e83]:
+            - paragraph [ref=f5e84]: Mahadi
+            - paragraph [ref=f5e85]: abc@gmail.com
+      - main [ref=f5e88]:
+        - generic [ref=f5e89]:
+          - generic [ref=f5e90]:
+            - button [ref=f5e91]
+            - generic [ref=f5e93]:
+              - heading "Hss" [level=1] [ref=f5e94]
+              - generic [ref=f5e95]: Active
+            - link "hss-4276.cloudisy.top" [ref=f5e100] [cursor=pointer]:
+              - /url: https://hss-4276.cloudisy.top
+          - generic [ref=f5e105]:
+            - tablist [ref=f5e107]:
+              - tab "Overview" [selected] [ref=f5e108]
+              - tab "Domains" [ref=f5e109]
+              - tab "Deploys" [ref=f5e110]
+              - tab "Builds" [ref=f5e111]
+              - tab "Files" [ref=f5e112]
+              - tab "Environment" [ref=f5e113]
+              - tab "Analytics" [ref=f5e114]
+              - tab "Performance" [ref=f5e115]
+              - tab "Usage" [ref=f5e116]
+              - tab "Settings" [ref=f5e117]
+            - tabpanel "Overview" [ref=f5e118]:
+              - generic [ref=f5e119]:
+                - generic [ref=f5e122]:
+                  - generic [ref=f5e123]:
+                    - paragraph [ref=f5e124]: Deployment Status
+                    - generic [ref=f5e125]: Active
+                  - link "hss-4276.cloudisy.top" [ref=f5e130] [cursor=pointer]:
+                    - /url: https://hss-4276.cloudisy.top
+                - generic [ref=f5e137]:
+                  - generic [ref=f5e138]:
+                    - paragraph [ref=f5e142]: Latest commit
+                    - paragraph [ref=f5e143]:
+                      - link "b2cc791" [ref=f5e144] [cursor=pointer]:
+                        - /url: https://github.com/Mahadi-rsio/web/commit/b2cc7918758ac7ba4710d4507af8caca3e2dba3d
+                      - text: Update Navbar logo size and text
+                    - paragraph [ref=f5e145]: Mahibur Rahman Mahade · 8/24/2026
+                  - button "Redeploy" [ref=f5e146]
+                - generic [ref=f5e147]:
+                  - generic [ref=f5e149]:
+                    - generic [ref=f5e150]: Live Usage
+                    - generic [ref=f5e155]:
+                      - generic [ref=f5e156]: just now
+                      - button [ref=f5e157]
+                  - generic [ref=f5e158]:
+                    - generic [ref=f5e159]:
+                      - generic [ref=f5e160]:
+                        - generic [ref=f5e161]:
+                          - generic [ref=f5e162]: Requests
+                          - generic [ref=f5e165]: 0 / 100,000
+                        - generic [ref=f5e166]:
+                          - generic [ref=f5e168]:
+                            - 'generic "Flushed: 0"'
+                            - 'generic "Live: 0"'
+                          - generic [ref=f5e169]:
+                            - generic [ref=f5e170]: Flushed 0
+                            - generic [ref=f5e172]: Live 0
+                      - generic [ref=f5e174]:
+                        - generic [ref=f5e175]:
+                          - generic [ref=f5e176]: Bandwidth
+                          - generic [ref=f5e179]: 0 B / 2.000 GB
+                        - generic [ref=f5e180]:
+                          - generic [ref=f5e182]:
+                            - 'generic "Flushed: 0 B"'
+                            - 'generic "Live: 0 B"'
+                          - generic [ref=f5e183]:
+                            - generic [ref=f5e184]: Flushed 0 B
+                            - generic [ref=f5e186]: Live 0 B
+                    - generic [ref=f5e188]: Fully synced to DB · Flushes every 25 min
+                - generic [ref=f5e191]:
+                  - generic [ref=f5e193]:
+                    - paragraph [ref=f5e199]: Repository
+                    - paragraph [ref=f5e200]: No repo
+                  - generic [ref=f5e202]:
+                    - paragraph [ref=f5e207]: Provider
+                    - paragraph [ref=f5e208]: Manual
+                  - generic [ref=f5e210]:
+                    - paragraph [ref=f5e215]: Created
+                    - paragraph [ref=f5e216]: 6h ago
+                  - generic [ref=f5e218]:
+                    - paragraph [ref=f5e223]: Last Updated
+                    - paragraph [ref=f5e224]: 6h ago
+                  - generic [ref=f5e226]:
+                    - paragraph [ref=f5e231]: Status
+                    - paragraph [ref=f5e232]: Active
+                  - generic [ref=f5e234]:
+                    - paragraph [ref=f5e240]: Domain
+                    - paragraph [ref=f5e241]: hss-4276.cloudisy.top
+                - generic [ref=f5e242]:
+                  - generic [ref=f5e243]: Recent Deployments
+                  - generic [ref=f5e247]:
+                    - generic [ref=f5e249]:
+                      - paragraph [ref=f5e250]: Cloud build · v1
+                      - paragraph [ref=f5e251]: 59 files · Active
+                    - generic [ref=f5e252]: 29m ago
+  - region "Notifications alt+T"
+  - alert [ref=f5e31]

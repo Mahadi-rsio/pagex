@@ -1,0 +1,76 @@
+- generic [active] [ref=f4e1]:
+  - generic [ref=f4e32]:
+    - banner [ref=f4e33]:
+      - generic [ref=f4e34]:
+        - link "Cloudisy Console" [ref=f4e36] [cursor=pointer]:
+          - /url: /
+          - generic [ref=f4e40]:
+            - generic [ref=f4e41]: Cloudisy
+            - generic [ref=f4e42]: Console
+        - searchbox "Search projects, domains..." [ref=f4e45]
+        - generic [ref=f4e46]:
+          - link "BAL $0.00" [ref=f4e47] [cursor=pointer]:
+            - /url: /billing
+            - generic [ref=f4e48]: BAL
+            - generic [ref=f4e49]: $0.00
+          - button "M" [ref=f4e52]
+    - generic [ref=f4e55]:
+      - complementary [ref=f4e56]:
+        - navigation [ref=f4e57]:
+          - list [ref=f4e58]:
+            - listitem [ref=f4e59]:
+              - link "Dashboard" [ref=f4e60] [cursor=pointer]:
+                - /url: /
+            - listitem [ref=f4e66]:
+              - link "Projects" [ref=f4e67] [cursor=pointer]:
+                - /url: /projects
+            - listitem [ref=f4e70]:
+              - link "Billing" [ref=f4e71] [cursor=pointer]:
+                - /url: /billing
+            - listitem [ref=f4e74]:
+              - link "Settings" [ref=f4e75] [cursor=pointer]:
+                - /url: /settings
+        - button "M Mahadi abc@gmail.com" [ref=f4e80]:
+          - generic [ref=f4e81]: M
+          - generic [ref=f4e83]:
+            - paragraph [ref=f4e84]: Mahadi
+            - paragraph [ref=f4e85]: abc@gmail.com
+      - main [ref=f4e88]:
+        - generic [ref=f4e89]:
+          - generic [ref=f4e90]:
+            - heading "Welcome back, Mahadi 👋" [level=1] [ref=f4e91]
+            - paragraph [ref=f4e92]: Here's what's happening with your projects today.
+          - generic [ref=f4e93]:
+            - generic [ref=f4e95]:
+              - paragraph [ref=f4e103]: "0"
+              - paragraph [ref=f4e104]: Total Projects
+              - paragraph [ref=f4e105]: 0 active
+            - generic [ref=f4e107]:
+              - paragraph [ref=f4e116]: $0.00
+              - paragraph [ref=f4e117]: Available Balance
+              - link "Add funds →" [ref=f4e118] [cursor=pointer]:
+                - /url: /billing
+            - generic [ref=f4e120]:
+              - paragraph [ref=f4e125]: 0GB
+              - paragraph [ref=f4e126]: Storage Used
+              - progressbar [ref=f4e127]
+            - generic [ref=f4e130]:
+              - paragraph [ref=f4e135]: 0%
+              - paragraph [ref=f4e136]: Compute Usage
+              - progressbar [ref=f4e137]
+          - generic [ref=f4e139]:
+            - generic [ref=f4e140]:
+              - generic [ref=f4e141]:
+                - generic [ref=f4e142]: Recent Projects
+                - button "View all" [ref=f4e143]
+              - generic [ref=f4e145]:
+                - paragraph [ref=f4e148]: No projects yet
+                - button "Create Project" [ref=f4e149]
+            - generic [ref=f4e150]:
+              - generic [ref=f4e151]: Recent Activity
+              - paragraph [ref=f4e154]: No recent activity
+          - generic [ref=f4e155]:
+            - generic [ref=f4e156]: Usage Overview
+            - paragraph [ref=f4e159]: Usage metrics will appear once your projects receive traffic.
+  - region "Notifications alt+T"
+  - alert [ref=f4e31]

@@ -1,0 +1,500 @@
+- generic [active] [ref=f3e1]:
+  - banner [ref=f3e2]:
+    - generic [ref=f3e3]:
+      - link "PageX home" [ref=f3e4] [cursor=pointer]:
+        - /url: "#top"
+        - generic [ref=f3e10]: PageX.dev
+      - navigation "Primary" [ref=f3e11]:
+        - link "Static" [ref=f3e12] [cursor=pointer]:
+          - /url: "#static"
+        - link "Containers" [ref=f3e13] [cursor=pointer]:
+          - /url: "#containers"
+        - link "CLI" [ref=f3e14] [cursor=pointer]:
+          - /url: "#cli"
+        - link "Pricing" [ref=f3e15] [cursor=pointer]:
+          - /url: "#pricing"
+        - link "Docs" [ref=f3e16] [cursor=pointer]:
+          - /url: "#"
+      - generic [ref=f3e17]:
+        - link "Sign in" [ref=f3e18] [cursor=pointer]:
+          - /url: "#"
+        - link "Start free →" [ref=f3e19] [cursor=pointer]:
+          - /url: "#"
+          - text: Start free
+          - generic [ref=f3e20]: →
+  - main [ref=f3e21]:
+    - region "Hero" [ref=f3e22]:
+      - generic [ref=f3e25]:
+        - generic [ref=f3e26]: Now in beta
+        - heading "Build faster. Ship calmer." [level=1] [ref=f3e29]
+        - paragraph [ref=f3e30]: The platform for static sites and modern apps — deploy in seconds, scale to zero, never babysit a server again.
+        - generic [ref=f3e31]:
+          - link "Start deploying — free" [ref=f3e32] [cursor=pointer]:
+            - /url: "#"
+          - link "Read the docs" [ref=f3e33] [cursor=pointer]:
+            - /url: "#"
+    - generic [ref=f3e34]:
+      - generic [ref=f3e35]:
+        - generic [ref=f3e36]: One platform, every framework
+        - paragraph [ref=f3e37]: Zero-config builds for the entire JavaScript ecosystem.
+      - generic [ref=f3e39]:
+        - generic [ref=f3e40]: React
+        - generic [ref=f3e42]: Vue
+        - generic [ref=f3e44]: Svelte
+        - generic [ref=f3e46]: Astro
+        - generic [ref=f3e48]: Angular
+        - generic [ref=f3e50]: Next.js
+        - generic [ref=f3e52]: SvelteKit
+        - generic [ref=f3e54]: Nuxt
+        - generic [ref=f3e56]: Solid
+        - generic [ref=f3e58]: Qwik
+        - generic [ref=f3e60]: Vite
+        - generic [ref=f3e62]: Remix
+        - generic [ref=f3e64]: Preact
+        - generic [ref=f3e66]: Eleventy
+        - generic [ref=f3e68]: React
+        - generic [ref=f3e70]: Vue
+        - generic [ref=f3e72]: Svelte
+        - generic [ref=f3e74]: Astro
+        - generic [ref=f3e76]: Angular
+        - generic [ref=f3e78]: Next.js
+        - generic [ref=f3e80]: SvelteKit
+        - generic [ref=f3e82]: Nuxt
+        - generic [ref=f3e84]: Solid
+        - generic [ref=f3e86]: Qwik
+        - generic [ref=f3e88]: Vite
+        - generic [ref=f3e90]: Remix
+        - generic [ref=f3e92]: Preact
+        - generic [ref=f3e94]: Eleventy
+    - generic [ref=f3e97]:
+      - generic [ref=f3e98]:
+        - text: The platform
+        - heading "Everything between your commit and a live URL." [level=2] [ref=f3e99]
+        - paragraph [ref=f3e100]: Connect a repository once. PageX handles the build, the optimization, the certificate and the global rollout — then keeps every deploy reversible.
+      - generic [ref=f3e101]:
+        - generic [ref=f3e103]:
+          - generic [ref=f3e104]: Cloud build
+          - heading "Git-connected builds that just work" [level=3] [ref=f3e108]
+          - paragraph [ref=f3e109]: Hermetic build containers, cached dependencies and framework auto-detection. Push a commit — we return a URL.
+          - generic [ref=f3e110]:
+            - generic [ref=f3e111]: build log
+            - generic [ref=f3e116]:
+              - generic [ref=f3e117]:
+                - generic [ref=f3e118]: $
+                - generic [ref=f3e119]: git push origin main
+              - generic [ref=f3e120]:
+                - generic [ref=f3e121]: ·
+                - generic [ref=f3e122]: "Detected framework: Astro"
+              - generic [ref=f3e123]:
+                - generic [ref=f3e124]: ·
+                - generic [ref=f3e125]: pnpm install --frozen-lockfile
+              - generic [ref=f3e126]:
+                - generic [ref=f3e127]: ·
+                - generic [ref=f3e128]: astro build → 128 routes
+              - generic [ref=f3e129]:
+                - generic [ref=f3e130]: ·
+                - generic [ref=f3e131]: Brotli + WebP · 4.2MB → 1.1MB
+              - generic [ref=f3e132]:
+                - generic [ref=f3e133]: ✓
+                - generic [ref=f3e134]: Live at storefront.pagex.dev
+              - generic [ref=f3e135]: $
+        - generic [ref=f3e138]:
+          - heading "Auto deploy on push" [level=3] [ref=f3e144]
+          - paragraph [ref=f3e145]: Production from main, preview URLs for every branch and pull request.
+          - generic [ref=f3e146]:
+            - generic [ref=f3e147]: main
+            - generic [ref=f3e148]: →
+            - generic [ref=f3e149]: build
+            - generic [ref=f3e150]: →
+            - generic [ref=f3e151]: prod
+        - generic [ref=f3e152]:
+          - generic [ref=f3e153]: Free
+          - generic [ref=f3e157]:
+            - generic [ref=f3e158]: 100k
+            - generic [ref=f3e159]: requests / month
+        - generic [ref=f3e160]:
+          - generic [ref=f3e161]: Free
+          - generic [ref=f3e166]:
+            - generic [ref=f3e167]: 5 CU·h
+            - generic [ref=f3e168]: compute / month
+        - generic [ref=f3e169]:
+          - heading "Instant rollback" [level=3] [ref=f3e175]
+          - paragraph [ref=f3e176]: Immutable deploys. Restore any previous build instantly.
+        - generic [ref=f3e177]:
+          - heading "Free SSL" [level=3] [ref=f3e182]
+          - paragraph [ref=f3e183]: Automatic certificates for every domain and preview URL.
+    - generic [ref=f3e186]:
+      - generic [ref=f3e187]:
+        - generic [ref=f3e188]: Static hosting
+        - heading "A free tier you can actually build on." [level=2] [ref=f3e190]
+        - paragraph [ref=f3e191]: Deploy any static site — React, Vue, Svelte, Astro, Angular — with 100,000 requests every month, on the house. Cloud builds, Git, auto deploy, rollbacks and free SSL included. No credit card, no expiry.
+        - generic [ref=f3e192]:
+          - generic [ref=f3e198]:
+            - generic [ref=f3e199]: Cloud builds
+            - generic [ref=f3e200]: Hermetic build containers with dependency caching.
+          - generic [ref=f3e208]:
+            - generic [ref=f3e209]: Git integration
+            - generic [ref=f3e210]: GitHub, GitLab and Bitbucket in one click.
+          - generic [ref=f3e215]:
+            - generic [ref=f3e216]: Auto deploy
+            - generic [ref=f3e217]: Rebuild and release on every push to main.
+          - generic [ref=f3e224]:
+            - generic [ref=f3e225]: Rollback
+            - generic [ref=f3e226]: One-click restore to any previous deploy.
+          - generic [ref=f3e232]:
+            - generic [ref=f3e233]: Free SSL
+            - generic [ref=f3e234]: Automated certificates, renewed for you.
+          - generic [ref=f3e240]:
+            - generic [ref=f3e241]: Global edge
+            - generic [ref=f3e242]: Served from 300+ locations worldwide.
+        - generic [ref=f3e243]:
+          - link "Deploy for free" [ref=f3e244] [cursor=pointer]:
+            - /url: "#"
+          - generic [ref=f3e247]: No credit card required
+      - generic [ref=f3e249]:
+        - generic [ref=f3e250]: https://storefront.pagex.dev
+        - generic [ref=f3e260]:
+          - generic [ref=f3e273]:
+            - generic [ref=f3e274]:
+              - generic [ref=f3e275]: Requests
+              - generic [ref=f3e276]: 100k / mo
+            - generic [ref=f3e277]:
+              - generic [ref=f3e278]: Bandwidth
+              - generic [ref=f3e279]: Metered
+            - generic [ref=f3e280]:
+              - generic [ref=f3e281]: Sites
+              - generic [ref=f3e282]: Unlimited
+            - generic [ref=f3e283]:
+              - generic [ref=f3e284]: Price
+              - generic [ref=f3e285]: $0 forever
+          - generic [ref=f3e287]:
+            - generic [ref=f3e288]: Requests this month
+            - generic [ref=f3e289]: 62.4k / 100k
+    - generic [ref=f3e319]:
+      - generic [ref=f3e321]:
+        - generic [ref=f3e322]:
+          - generic [ref=f3e328]:
+            - generic [ref=f3e329]: api-service
+            - generic [ref=f3e330]: us-east · node:22
+          - generic [ref=f3e331]: SLEEPING
+        - generic [ref=f3e333]:
+          - generic [ref=f3e334]:
+            - generic [ref=f3e335]:
+              - generic [ref=f3e336]: Compute utilization
+              - generic [ref=f3e337]: CU
+            - generic [ref=f3e363]:
+              - generic [ref=f3e364]: ↓
+              - text: scaled to zero · no traffic billed
+          - generic [ref=f3e365]:
+            - generic [ref=f3e366]:
+              - generic [ref=f3e367]: This second
+              - generic [ref=f3e371]: $0.0000138
+              - generic [ref=f3e372]: paused · $0.00
+            - generic [ref=f3e373]:
+              - generic [ref=f3e374]: Volume
+              - generic [ref=f3e379]: /data
+              - generic [ref=f3e380]: 10 GB · persistent
+        - generic [ref=f3e381]:
+          - generic [ref=f3e382]: "Free tier: 5.00 CU·h / month"
+          - generic [ref=f3e383]: 1.02 used
+      - generic [ref=f3e386]:
+        - generic [ref=f3e387]: Containers
+        - heading "Containers that cost nothing while they sleep." [level=2] [ref=f3e389]
+        - paragraph [ref=f3e390]: Run anything that isn't static — APIs, SSR servers, background workers. Billed per second and scaled to zero between requests, so you only ever pay for real work.
+        - generic [ref=f3e391]:
+          - generic [ref=f3e397]:
+            - generic [ref=f3e398]: Per-second billing
+            - paragraph [ref=f3e399]: Metered to the second — pay only for the compute you actually consume. No minimums, no rounding up.
+          - generic [ref=f3e406]:
+            - generic [ref=f3e407]: Scale to zero
+            - paragraph [ref=f3e408]: Idle containers sleep automatically and wake on the next request. You stop paying the moment traffic stops.
+          - generic [ref=f3e414]:
+            - generic [ref=f3e415]: 5 CU-hours free / month
+            - paragraph [ref=f3e416]: Every account gets five compute-unit hours on the house, every month, forever.
+          - generic [ref=f3e423]:
+            - generic [ref=f3e424]: Persistent volumes
+            - paragraph [ref=f3e425]: Attach durable storage that survives restarts, redeploys and scale-to-zero events.
+        - generic [ref=f3e426]:
+          - link "Launch a container" [ref=f3e427] [cursor=pointer]:
+            - /url: "#"
+          - generic [ref=f3e430]: Persistent volume included
+    - generic [ref=f3e433]:
+      - generic [ref=f3e434]:
+        - generic [ref=f3e435]: PageX CLI
+        - heading "Ship from your terminal." [level=2] [ref=f3e439]
+        - paragraph [ref=f3e440]: A fast, dependency-light command line. Authenticate once, link a project, and deploy the output directory — the CLI handles framework detection, validation and upload.
+        - generic [ref=f3e441]:
+          - generic [ref=f3e442]:
+            - generic [ref=f3e443]: $
+            - code [ref=f3e444]: pagex login
+            - generic [ref=f3e445]: Device-flow auth in one command.
+          - generic [ref=f3e446]:
+            - generic [ref=f3e447]: $
+            - code [ref=f3e448]: pagex init
+            - generic [ref=f3e449]: Detects your framework and links the project.
+          - generic [ref=f3e450]:
+            - generic [ref=f3e451]: $
+            - code [ref=f3e452]: pagex deploy --build
+            - generic [ref=f3e453]: Builds, uploads and prints your live URL.
+          - generic [ref=f3e454]:
+            - generic [ref=f3e455]: $
+            - code [ref=f3e456]: pagex pages
+            - generic [ref=f3e457]: List every project on your account.
+        - generic [ref=f3e458]:
+          - link "Read the CLI docs" [ref=f3e459] [cursor=pointer]:
+            - /url: "#"
+          - generic [ref=f3e463]: Node 18+
+      - generic [ref=f3e465]:
+        - generic [ref=f3e466]: ~/acme/storefront
+        - generic [ref=f3e473]: $
+    - generic [ref=f3e478]:
+      - generic [ref=f3e479]:
+        - text: Pricing
+        - heading "Start free. Upgrade when you grow." [level=2] [ref=f3e480]
+        - paragraph [ref=f3e481]: The free tier never expires. Paid tiers add capacity, collaboration and guarantees.
+        - generic [ref=f3e482]:
+          - tablist "Billing period" [ref=f3e483]:
+            - tab "Monthly" [ref=f3e484]
+            - tab "Yearly" [selected] [ref=f3e485]
+          - generic [ref=f3e486]: save 20%
+      - generic [ref=f3e487]:
+        - generic [ref=f3e488]:
+          - generic [ref=f3e489]:
+            - heading "Hobby" [level=3] [ref=f3e490]
+            - generic [ref=f3e491]: Static + Containers
+          - generic [ref=f3e492]:
+            - generic [ref=f3e493]: $ 0
+            - generic [ref=f3e494]: /mo forever
+          - paragraph [ref=f3e495]: Everything you need to ship your first project. Free forever.
+          - link "Start free" [ref=f3e496] [cursor=pointer]:
+            - /url: "#"
+          - list [ref=f3e498]:
+            - listitem [ref=f3e499]:
+              - generic [ref=f3e503]: 100k requests / month
+            - listitem [ref=f3e504]:
+              - generic [ref=f3e508]: Unlimited static sites
+            - listitem [ref=f3e509]:
+              - generic [ref=f3e513]: Cloud builds · Git · Auto deploy
+            - listitem [ref=f3e514]:
+              - generic [ref=f3e518]: Instant rollback + free SSL
+            - listitem [ref=f3e519]:
+              - generic [ref=f3e523]: 5 CU·h containers / month
+            - listitem [ref=f3e524]:
+              - generic [ref=f3e528]: Community support
+        - generic [ref=f3e529]:
+          - generic [ref=f3e530]: Most popular
+          - generic [ref=f3e531]:
+            - heading "Pro" [level=3] [ref=f3e532]
+            - generic [ref=f3e533]: For growing teams
+          - generic [ref=f3e534]:
+            - generic [ref=f3e535]: $ 16
+            - generic [ref=f3e536]: /mo billed yearly
+          - paragraph [ref=f3e537]: More headroom, teams and the controls production demands.
+          - link "Start 14-day trial" [ref=f3e538] [cursor=pointer]:
+            - /url: "#"
+          - list [ref=f3e540]:
+            - listitem [ref=f3e541]:
+              - generic [ref=f3e545]: 1M requests / month included
+            - listitem [ref=f3e546]:
+              - generic [ref=f3e550]: 100 GB bandwidth
+            - listitem [ref=f3e551]:
+              - generic [ref=f3e555]: 100 CU·h containers / month
+            - listitem [ref=f3e556]:
+              - generic [ref=f3e560]: Team members & roles
+            - listitem [ref=f3e561]:
+              - generic [ref=f3e565]: Custom + wildcard domains
+            - listitem [ref=f3e566]:
+              - generic [ref=f3e570]: Password-protected previews
+            - listitem [ref=f3e571]:
+              - generic [ref=f3e575]: Email support
+        - generic [ref=f3e576]:
+          - generic [ref=f3e577]:
+            - heading "Scale" [level=3] [ref=f3e578]
+            - generic [ref=f3e579]: For high traffic
+          - generic [ref=f3e580]:
+            - generic [ref=f3e581]: $ 82
+            - generic [ref=f3e582]: /mo billed yearly
+          - paragraph [ref=f3e583]: Serious capacity with the guarantees enterprises expect.
+          - link "Talk to us" [ref=f3e584] [cursor=pointer]:
+            - /url: "#"
+          - list [ref=f3e586]:
+            - listitem [ref=f3e587]:
+              - generic [ref=f3e591]: 10M+ requests / month
+            - listitem [ref=f3e592]:
+              - generic [ref=f3e596]: 1 TB+ bandwidth
+            - listitem [ref=f3e597]:
+              - generic [ref=f3e601]: 500+ CU·h containers
+            - listitem [ref=f3e602]:
+              - generic [ref=f3e606]: SSO / SAML & audit logs
+            - listitem [ref=f3e607]:
+              - generic [ref=f3e611]: 99.99% uptime SLA
+            - listitem [ref=f3e612]:
+              - generic [ref=f3e616]: Dedicated support & onboarding
+      - paragraph [ref=f3e617]: All plans include cloud builds, Git, auto deploy, rollback and free SSL.
+    - generic [ref=f3e619]:
+      - generic [ref=f3e620]:
+        - text: Loved by builders
+        - heading "Teams ship faster on PageX." [level=2] [ref=f3e621]
+      - generic [ref=f3e622]:
+        - figure "AM Ava Mercer Head of Platform, Northwind" [ref=f3e623]:
+          - blockquote [ref=f3e627]: “We moved forty marketing sites off our old host in a weekend. Deploy previews on every PR changed how our team ships.”
+          - generic [ref=f3e628]:
+            - generic [ref=f3e629]: AM
+            - generic [ref=f3e630]:
+              - generic [ref=f3e631]: Ava Mercer
+              - generic [ref=f3e632]: Head of Platform, Northwind
+        - figure "KS Kenji Sato Staff Engineer, Loop" [ref=f3e633]:
+          - blockquote [ref=f3e637]: “Per-second billing with scale-to-zero is the whole reason we switched. Our staging APIs now cost us almost nothing overnight.”
+          - generic [ref=f3e638]:
+            - generic [ref=f3e639]: KS
+            - generic [ref=f3e640]:
+              - generic [ref=f3e641]: Kenji Sato
+              - generic [ref=f3e642]: Staff Engineer, Loop
+        - figure "PR Priya Raman CTO, Fieldnote" [ref=f3e643]:
+          - blockquote [ref=f3e647]: “The CLI does exactly one thing well — push and get a URL. Rollbacks have saved us in two incidents already.”
+          - generic [ref=f3e648]:
+            - generic [ref=f3e649]: PR
+            - generic [ref=f3e650]:
+              - generic [ref=f3e651]: Priya Raman
+              - generic [ref=f3e652]: CTO, Fieldnote
+        - figure "DF Diego Fuentes Founder, Cartlite" [ref=f3e653]:
+          - blockquote [ref=f3e657]: “Static sites, containers and certificates under one roof, with builds that just pass. Our infra list shrank in half.”
+          - generic [ref=f3e658]:
+            - generic [ref=f3e659]: DF
+            - generic [ref=f3e660]:
+              - generic [ref=f3e661]: Diego Fuentes
+              - generic [ref=f3e662]: Founder, Cartlite
+        - figure "NO Nadia okonkwo Engineer, Relay" [ref=f3e663]:
+          - blockquote [ref=f3e667]: “Onboarding to prod took an afternoon. The persistent volume made running our worker trivial.”
+          - generic [ref=f3e668]:
+            - generic [ref=f3e669]: "NO"
+            - generic [ref=f3e670]:
+              - generic [ref=f3e671]: Nadia okonkwo
+              - generic [ref=f3e672]: Engineer, Relay
+        - figure "LB Liam Byrne Indie maker" [ref=f3e673]:
+          - blockquote [ref=f3e677]: “100k requests free let us validate the whole product before paying a cent. Rare to find a tier this generous.”
+          - generic [ref=f3e678]:
+            - generic [ref=f3e679]: LB
+            - generic [ref=f3e680]:
+              - generic [ref=f3e681]: Liam Byrne
+              - generic [ref=f3e682]: Indie maker
+    - generic [ref=f3e684]:
+      - generic [ref=f3e685]:
+        - text: FAQ
+        - heading "Questions, answered." [level=2] [ref=f3e686]
+      - generic [ref=f3e687]:
+        - group [ref=f3e688]:
+          - generic "Is the free tier really free forever?" [ref=f3e689] [cursor=pointer]
+          - paragraph [ref=f3e695]: Yes. Every account gets 100,000 requests per month for static hosting, unlimited sites, cloud builds, Git integration, auto deploy, rollback and free SSL — with no credit card and no expiry. Container workloads include 5 compute-unit hours on the house each month.
+        - group [ref=f3e696]:
+          - generic "Which frameworks can I deploy?" [ref=f3e697] [cursor=pointer]
+        - group [ref=f3e702]:
+          - generic "How does container billing work?" [ref=f3e703] [cursor=pointer]
+        - group [ref=f3e708]:
+          - generic "Do containers keep their data?" [ref=f3e709] [cursor=pointer]
+        - group [ref=f3e714]:
+          - generic "Can I use my own domain?" [ref=f3e715] [cursor=pointer]
+        - group [ref=f3e720]:
+          - generic "What happens if a deploy breaks production?" [ref=f3e721] [cursor=pointer]
+    - generic [ref=f3e728]:
+      - generic [ref=f3e729]: Deploy in under a minute
+      - heading "Your next deploy is free." [level=2] [ref=f3e731]
+      - paragraph [ref=f3e732]: Connect a repo or push from the CLI. Static sites are free forever, and containers sleep so they don't cost a thing while you build.
+      - generic [ref=f3e733]:
+        - link "Start deploying — free" [ref=f3e734] [cursor=pointer]:
+          - /url: "#"
+        - link "npm i -g pagex" [ref=f3e737] [cursor=pointer]:
+          - /url: "#"
+      - generic [ref=f3e738]:
+        - generic [ref=f3e739]: No credit card
+        - generic [ref=f3e742]: Free SSL
+        - generic [ref=f3e745]: 100k requests / mo
+  - contentinfo [ref=f3e748]:
+    - generic [ref=f3e749]:
+      - generic [ref=f3e750]:
+        - generic [ref=f3e751]:
+          - link "PageX home" [ref=f3e752] [cursor=pointer]:
+            - /url: "#top"
+            - generic [ref=f3e758]: PageX.dev
+          - paragraph [ref=f3e759]: Deploy static sites and containers in seconds. Built for teams that ship.
+          - generic [ref=f3e760]:
+            - link "GitHub" [ref=f3e761] [cursor=pointer]:
+              - /url: "#"
+            - link "X" [ref=f3e764] [cursor=pointer]:
+              - /url: "#"
+            - link "Discord" [ref=f3e767] [cursor=pointer]:
+              - /url: "#"
+        - generic [ref=f3e774]:
+          - heading "Product" [level=3] [ref=f3e775]
+          - list [ref=f3e776]:
+            - listitem [ref=f3e777]:
+              - link "Static hosting" [ref=f3e778] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e779]:
+              - link "Containers" [ref=f3e780] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e781]:
+              - link "Cloud builds" [ref=f3e782] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e783]:
+              - link "Preview deploys" [ref=f3e784] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e785]:
+              - link "Pricing" [ref=f3e786] [cursor=pointer]:
+                - /url: "#"
+        - generic [ref=f3e787]:
+          - heading "Developers" [level=3] [ref=f3e788]
+          - list [ref=f3e789]:
+            - listitem [ref=f3e790]:
+              - link "Documentation" [ref=f3e791] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e792]:
+              - link "CLI reference" [ref=f3e793] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e794]:
+              - link "API" [ref=f3e795] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e796]:
+              - link "Changelog" [ref=f3e797] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e798]:
+              - link "Status" [ref=f3e799] [cursor=pointer]:
+                - /url: "#"
+        - generic [ref=f3e800]:
+          - heading "Company" [level=3] [ref=f3e801]
+          - list [ref=f3e802]:
+            - listitem [ref=f3e803]:
+              - link "About" [ref=f3e804] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e805]:
+              - link "Blog" [ref=f3e806] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e807]:
+              - link "Careers" [ref=f3e808] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e809]:
+              - link "Contact" [ref=f3e810] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e811]:
+              - link "Brand" [ref=f3e812] [cursor=pointer]:
+                - /url: "#"
+        - generic [ref=f3e813]:
+          - heading "Legal" [level=3] [ref=f3e814]
+          - list [ref=f3e815]:
+            - listitem [ref=f3e816]:
+              - link "Privacy" [ref=f3e817] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e818]:
+              - link "Terms" [ref=f3e819] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e820]:
+              - link "DPA" [ref=f3e821] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f3e822]:
+              - link "Security" [ref=f3e823] [cursor=pointer]:
+                - /url: "#"
+      - generic [ref=f3e824]:
+        - paragraph [ref=f3e825]: © 2026 PageX. All rights reserved.
+        - generic [ref=f3e826]:
+          - generic [ref=f3e827]: All systems operational
+          - generic [ref=f3e831]: v1.6.0

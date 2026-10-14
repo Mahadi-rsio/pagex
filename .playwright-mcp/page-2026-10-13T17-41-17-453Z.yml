@@ -1,0 +1,31 @@
+- generic [ref=f5e3]:
+  - generic [ref=f5e4]:
+    - 'heading "Error 1102 Ray ID: a4a0225fa93f77fc • 2026-10-13 17:41:17 UTC" [level=1] [ref=f5e5]'
+    - heading "Worker exceeded resource limits" [level=2] [ref=f5e6]
+  - generic [ref=f5e8]:
+    - generic [ref=f5e9]:
+      - heading "What happened?" [level=2] [ref=f5e10]
+      - paragraph [ref=f5e11]:
+        - text: You've requested a page on a website (pagex-console.rsioex.workers.dev) that is on the
+        - link "Cloudflare" [ref=f5e12] [cursor=pointer]:
+          - /url: https://www.cloudflare.com/5xx-error-landing?utm_source=error_100x
+        - text: network. An unknown error occurred while rendering the page.
+    - generic [ref=f5e13]:
+      - heading "What can I do?" [level=2] [ref=f5e14]
+      - paragraph [ref=f5e15]:
+        - strong [ref=f5e16]: "If you are the owner of this website:"
+        - text: refer to
+        - link "Workers - Errors and Exceptions" [ref=f5e17] [cursor=pointer]:
+          - /url: https://developers.cloudflare.com/workers/observability/errors/
+        - text: and check Workers Logs for pagex-console.rsioex.workers.dev.
+  - paragraph [ref=f5e19]:
+    - generic [ref=f5e20]:
+      - text: "Cloudflare Ray ID:"
+      - strong [ref=f5e21]: a4a0225fa93f77fc
+    - generic [ref=f5e22]:
+      - text: "Your IP:"
+      - button "Click to reveal" [ref=f5e23] [cursor=pointer]
+    - generic [ref=f5e24]:
+      - text: Performance & security by
+      - link "Cloudflare" [ref=f5e25] [cursor=pointer]:
+        - /url: https://www.cloudflare.com/5xx-error-landing

@@ -1,0 +1,130 @@
+- generic [active] [ref=f7e1]:
+  - generic [ref=f7e2]:
+    - banner [ref=f7e3]:
+      - generic [ref=f7e4]:
+        - link "Cloudisy Console" [ref=f7e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=f7e10]:
+            - generic [ref=f7e11]: Cloudisy
+            - generic [ref=f7e12]: Console
+        - searchbox "Search projects, domains..." [ref=f7e15]
+        - generic [ref=f7e16]:
+          - link "BAL $0.00" [ref=f7e17] [cursor=pointer]:
+            - /url: /billing
+            - generic [ref=f7e18]: BAL
+            - generic [ref=f7e19]: $0.00
+          - button "M" [ref=f7e22]
+    - generic [ref=f7e25]:
+      - complementary [ref=f7e26]:
+        - navigation [ref=f7e27]:
+          - list [ref=f7e28]:
+            - listitem [ref=f7e29]:
+              - link "Dashboard" [ref=f7e30] [cursor=pointer]:
+                - /url: /
+            - listitem [ref=f7e36]:
+              - link "Projects" [ref=f7e37] [cursor=pointer]:
+                - /url: /projects
+            - listitem [ref=f7e40]:
+              - link "Billing" [ref=f7e41] [cursor=pointer]:
+                - /url: /billing
+            - listitem [ref=f7e44]:
+              - link "Settings" [ref=f7e45] [cursor=pointer]:
+                - /url: /settings
+        - button "M Mahadi abc@gmail.com" [ref=f7e50]:
+          - generic [ref=f7e51]: M
+          - generic [ref=f7e53]:
+            - paragraph [ref=f7e54]: Mahadi
+            - paragraph [ref=f7e55]: abc@gmail.com
+      - main [ref=f7e58]:
+        - generic [ref=f7e83]:
+          - generic [ref=f7e84]:
+            - button [ref=f7e85]
+            - generic [ref=f7e87]:
+              - heading "Hss" [level=1] [ref=f7e88]
+              - generic [ref=f7e89]: Active
+            - link "hss-4276.cloudisy.top" [ref=f7e94] [cursor=pointer]:
+              - /url: https://hss-4276.cloudisy.top
+          - generic [ref=f7e99]:
+            - tablist [ref=f7e101]:
+              - tab "Overview" [selected] [ref=f7e102]
+              - tab "Domains" [ref=f7e103]
+              - tab "Deploys" [ref=f7e104]
+              - tab "Builds" [ref=f7e105]
+              - tab "Files" [ref=f7e106]
+              - tab "Environment" [ref=f7e107]
+              - tab "Analytics" [ref=f7e108]
+              - tab "Performance" [ref=f7e109]
+              - tab "Usage" [ref=f7e110]
+              - tab "Settings" [ref=f7e111]
+            - tabpanel "Overview" [ref=f7e112]:
+              - generic [ref=f7e113]:
+                - generic [ref=f7e116]:
+                  - generic [ref=f7e117]:
+                    - paragraph [ref=f7e118]: Deployment Status
+                    - generic [ref=f7e119]: Active
+                  - link "hss-4276.cloudisy.top" [ref=f7e124] [cursor=pointer]:
+                    - /url: https://hss-4276.cloudisy.top
+                - generic [ref=f7e131]:
+                  - generic [ref=f7e132]:
+                    - paragraph [ref=f7e136]: Latest commit
+                    - paragraph [ref=f7e137]: Could not load the latest commit for this repository.
+                  - button "Redeploy" [ref=f7e138]
+                - generic [ref=f7e139]:
+                  - generic [ref=f7e141]:
+                    - generic [ref=f7e142]: Live Usage
+                    - generic [ref=f7e147]:
+                      - generic [ref=f7e148]: just now
+                      - button [ref=f7e149]
+                  - generic [ref=f7e150]:
+                    - generic [ref=f7e151]:
+                      - generic [ref=f7e152]:
+                        - generic [ref=f7e153]:
+                          - generic [ref=f7e154]: Requests
+                          - generic [ref=f7e157]: 0 / 100,000
+                        - generic [ref=f7e158]:
+                          - generic [ref=f7e160]:
+                            - 'generic "Flushed: 0"'
+                            - 'generic "Live: 0"'
+                          - generic [ref=f7e161]:
+                            - generic [ref=f7e162]: Flushed 0
+                            - generic [ref=f7e164]: Live 0
+                      - generic [ref=f7e166]:
+                        - generic [ref=f7e167]:
+                          - generic [ref=f7e168]: Bandwidth
+                          - generic [ref=f7e171]: 0 B / 2.000 GB
+                        - generic [ref=f7e172]:
+                          - generic [ref=f7e174]:
+                            - 'generic "Flushed: 0 B"'
+                            - 'generic "Live: 0 B"'
+                          - generic [ref=f7e175]:
+                            - generic [ref=f7e176]: Flushed 0 B
+                            - generic [ref=f7e178]: Live 0 B
+                    - generic [ref=f7e180]: Fully synced to DB · Flushes every 25 min
+                - generic [ref=f7e183]:
+                  - generic [ref=f7e185]:
+                    - paragraph [ref=f7e191]: Repository
+                    - paragraph [ref=f7e192]: No repo
+                  - generic [ref=f7e194]:
+                    - paragraph [ref=f7e199]: Provider
+                    - paragraph [ref=f7e200]: Manual
+                  - generic [ref=f7e202]:
+                    - paragraph [ref=f7e207]: Created
+                    - paragraph [ref=f7e208]: 6h ago
+                  - generic [ref=f7e210]:
+                    - paragraph [ref=f7e215]: Last Updated
+                    - paragraph [ref=f7e216]: 6h ago
+                  - generic [ref=f7e218]:
+                    - paragraph [ref=f7e223]: Status
+                    - paragraph [ref=f7e224]: Active
+                  - generic [ref=f7e226]:
+                    - paragraph [ref=f7e232]: Domain
+                    - paragraph [ref=f7e233]: hss-4276.cloudisy.top
+                - generic [ref=f7e234]:
+                  - generic [ref=f7e235]: Recent Deployments
+                  - generic [ref=f7e239]:
+                    - generic [ref=f7e241]:
+                      - paragraph [ref=f7e242]: Cloud build · v1
+                      - paragraph [ref=f7e243]: 59 files · Active
+                    - generic [ref=f7e244]: 12m ago
+  - region "Notifications alt+T"
+  - alert [ref=f7e82]

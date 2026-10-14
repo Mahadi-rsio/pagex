@@ -1,0 +1,484 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - link "Vanta logo Cloudisy" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - img "Vanta logo" [ref=e6]
+        - generic [ref=e7]: Cloudisy
+      - navigation [ref=e8]:
+        - link "Features" [ref=e9] [cursor=pointer]:
+          - /url: "#features"
+        - link "Workflow" [ref=e10] [cursor=pointer]:
+          - /url: "#workflow"
+        - link "Docs" [ref=e11] [cursor=pointer]:
+          - /url: /docs
+        - link "Blog" [ref=e12] [cursor=pointer]:
+          - /url: /blog
+        - link "Pricing" [ref=e13] [cursor=pointer]:
+          - /url: /pricing
+        - link "FAQ" [ref=e14] [cursor=pointer]:
+          - /url: "#faq"
+      - generic [ref=e15]:
+        - link "Sign in" [ref=e16] [cursor=pointer]:
+          - /url: /login
+        - link "Start deploying free" [ref=e17] [cursor=pointer]:
+          - /url: "#cta"
+  - main [ref=e18]:
+    - generic [ref=e19]:
+      - generic [ref=e20]: hero
+      - generic [ref=e25]:
+        - generic [ref=e26]:
+          - link "System online / v2.4.1" [ref=e27] [cursor=pointer]:
+            - /url: "#features"
+            - text: System online
+            - generic [ref=e31]: / v2.4.1
+          - heading "Deploy static apps, rebuilt for the edge." [level=1] [ref=e32]: Deploy static apps,rebuilt for the edge.
+          - paragraph [ref=e33]: VANTA compiles your static app into atomic, immutable builds and serves them from 2 global edge regions — sub-50ms cold start, zero config, one command. Free tier, no credit card required.
+          - generic [ref=e34]:
+            - link "Start deploying free" [ref=e35] [cursor=pointer]:
+              - /url: "#cta"
+            - link "View the workflow" [ref=e36] [cursor=pointer]:
+              - /url: "#workflow"
+          - generic [ref=e37]:
+            - generic [ref=e38]:
+              - term [ref=e39]: EDGE REGIONS
+              - definition [ref=e40]: "2"
+            - generic [ref=e41]:
+              - term [ref=e42]: MEDIAN TTFB
+              - definition [ref=e43]: 40ms
+            - generic [ref=e44]:
+              - term [ref=e45]: UPTIME SLA
+              - definition [ref=e46]: 99.99%
+        - generic [ref=e50]:
+          - generic [ref=e51]:
+            - paragraph [ref=e56]: vanta deploy — prod
+            - paragraph [ref=e57]: acme.studio
+          - paragraph [ref=e59]: $
+    - generic [ref=e61]:
+      - generic [ref=e62]: capabilities / 02
+      - generic [ref=e66]:
+        - generic [ref=e67]:
+          - paragraph [ref=e68]:
+            - generic [ref=e69]: "02"
+            - text: Capabilities
+          - heading "One platform. Every edge." [level=2] [ref=e71]
+          - paragraph [ref=e72]: A bento of primitives engineered for static-first architectures — each boxed, isolated, and measurable.
+        - generic [ref=e73]:
+          - generic [ref=e74]:
+            - generic [ref=e75]:
+              - generic [ref=e76]: cell/01
+              - generic [ref=e77]: 2 regions
+            - generic [ref=e78]:
+              - heading "Global edge network" [level=3] [ref=e79]
+              - paragraph [ref=e80]: Every byte resolved from the nearest PoP. Sub-50ms cold starts, zero origin round-trips.
+            - generic [ref=e82]:
+              - img [aria-hidden] [ref=e83]:
+                - generic [ref=e135]: LON
+                - generic [ref=e136]: SIN
+              - paragraph: "lat: 0.00 / long: 0.00 / live-mesh"
+          - generic [ref=e137]:
+            - generic [ref=e138]:
+              - generic [ref=e139]: cell/02
+              - generic [ref=e140]: immutable
+            - generic [ref=e141]:
+              - heading "Instant rollbacks" [level=3] [ref=e142]
+              - paragraph [ref=e143]: Every deploy is a timestamped snapshot. Revert production in one click — or via git revert.
+            - generic [ref=e146]:
+              - generic [ref=e147]:
+                - generic [ref=e148]: a7f3
+                - generic [ref=e150]:
+                  - generic [ref=e151]: 14:02:11
+                  - generic [ref=e152]: Live
+              - generic [ref=e153]:
+                - generic [ref=e154]: 9c2e
+                - generic [ref=e156]: 13:41:09
+              - generic [ref=e158]:
+                - generic [ref=e159]: 5b18
+                - generic [ref=e161]: 12:57:44
+              - generic [ref=e163]:
+                - generic [ref=e164]: e04a
+                - generic [ref=e166]:
+                  - generic [ref=e167]: 11:23:30
+                  - generic [ref=e168]: ↶ rev
+          - generic [ref=e169]:
+            - generic [ref=e170]:
+              - generic [ref=e171]: cell/03
+              - generic [ref=e172]: zero config
+            - generic [ref=e173]:
+              - heading "Static-first builds" [level=3] [ref=e174]
+              - paragraph [ref=e175]: Framework detection, asset optimization, and edge prerendering — inferred automatically on connect.
+            - generic [ref=e177]:
+              - generic [ref=e178]:
+                - generic [ref=e179]: astro.config.mjs
+                - generic [ref=e180]: readonly
+              - generic [ref=e181]: "// auto-generated by vanta export default defineConfig({ prerender: true, adapter: edge(), compress: \"br\", cache: { strategy: \"stale-while-revalidate\", ttl: 31536000, }, /* 0 manual configuration */ })"
+          - generic [ref=e182]:
+            - generic [ref=e183]:
+              - generic [ref=e184]: cell/04
+              - generic [ref=e185]: immutable
+            - generic [ref=e186]:
+              - heading "Atomic deploys" [level=3] [ref=e187]
+              - paragraph [ref=e188]: Published or not at all. No partial states, no broken middle-grounds.
+            - generic [ref=e190]:
+              - paragraph [ref=e191]: ✓ validate 1,204 files
+              - paragraph [ref=e192]: ✓ hash manifest.edge.json
+              - paragraph [ref=e193]: ✓ purge stale routes
+              - paragraph [ref=e194]: ✓ activate a7f3e1d
+              - paragraph [ref=e195]: all regions live
+          - generic [ref=e197]:
+            - generic [ref=e198]:
+              - generic [ref=e199]: cell/05
+              - generic [ref=e200]: vanta
+            - generic [ref=e201]:
+              - heading "CLI-first" [level=3] [ref=e202]
+              - paragraph [ref=e203]: Type once, deploy everywhere. Full pipeline control from the terminal.
+            - generic [ref=e206]:
+              - generic [ref=e207]:
+                - paragraph [ref=e208]: $ vanta deploy --prod
+                - paragraph [ref=e209]: ✓ published in 3.2s · 2 regions live
+              - generic [ref=e210]:
+                - generic [ref=e211]: $ vanta rollback
+                - generic [ref=e212]: $ vanta logs --follow
+    - generic [ref=e213]:
+      - generic [ref=e214]: performance / 03
+      - generic [ref=e218]:
+        - generic [ref=e219]:
+          - paragraph [ref=e220]:
+            - generic [ref=e221]: "03"
+            - text: Performance
+          - heading "Page speed, quantified." [level=2] [ref=e223]
+          - paragraph [ref=e224]: Every deployment ships with a live PageSpeed-style report. Watch scores, TTFB and Core Web Vitals move with each deploy — no extra tooling.
+        - generic [ref=e225]:
+          - generic [ref=e226]:
+            - generic [ref=e230]:
+              - generic [ref=e231]: "100"
+              - generic [ref=e232]: page speed
+            - paragraph [ref=e233]: Lighthouse · mobile
+          - generic [ref=e234]:
+            - generic [ref=e235]:
+              - generic [ref=e236]:
+                - generic [ref=e237]: Performance
+                - generic [ref=e238]: 38 ms TTFB
+              - generic [ref=e241]:
+                - generic [ref=e242]: score
+                - generic [ref=e243]: 100 / 100
+            - generic [ref=e244]:
+              - generic [ref=e245]:
+                - generic [ref=e246]: Accessibility
+                - generic [ref=e247]: WCAG 2.2 AA
+              - generic [ref=e250]:
+                - generic [ref=e251]: score
+                - generic [ref=e252]: 100 / 100
+            - generic [ref=e253]:
+              - generic [ref=e254]:
+                - generic [ref=e255]: Best Practices
+                - generic [ref=e256]: 0 errors
+              - generic [ref=e259]:
+                - generic [ref=e260]: score
+                - generic [ref=e261]: 100 / 100
+            - generic [ref=e262]:
+              - generic [ref=e263]:
+                - generic [ref=e264]: SEO
+                - generic [ref=e265]: fully indexable
+              - generic [ref=e268]:
+                - generic [ref=e269]: score
+                - generic [ref=e270]: 100 / 100
+    - generic [ref=e271]:
+      - generic [ref=e272]: telemetry / 04
+      - generic [ref=e276]:
+        - generic [ref=e277]:
+          - generic [ref=e278]:
+            - generic [ref=e279]: "0"
+            - generic [ref=e281]: active PoPs
+          - paragraph [ref=e282]: Edge regions
+        - generic [ref=e283]:
+          - generic [ref=e284]:
+            - generic [ref=e285]: 0ms
+            - generic [ref=e287]: global P95
+          - paragraph [ref=e288]: Median TTFB
+        - generic [ref=e289]:
+          - generic [ref=e290]:
+            - generic [ref=e291]: 0.00%
+            - generic [ref=e293]: rolling 12mo
+          - paragraph [ref=e294]: Uptime SLA
+        - generic [ref=e295]:
+          - generic [ref=e296]:
+            - generic [ref=e297]: 0.0B
+            - generic [ref=e299]: served at edge
+          - paragraph [ref=e300]: Requests / mo
+    - generic [ref=e303]:
+      - generic [ref=e304]:
+        - paragraph [ref=e305]:
+          - generic [ref=e306]: "05"
+          - text: Workflow
+        - heading "From commit to edge in one command." [level=2] [ref=e308]
+        - paragraph [ref=e309]: A pipeline so thin it disappears. You push. VANTA does the rest.
+      - generic [ref=e312]:
+        - generic [ref=e313]:
+          - generic [ref=e314]:
+            - generic [ref=e315]: step/01
+            - generic [ref=e316]: 01/03
+          - heading "Connect" [level=3] [ref=e317]
+          - paragraph [ref=e318]: Point VANTA at your repository. Framework detection runs automatically — no config files to write.
+          - paragraph [ref=e319]:
+            - generic [ref=e320]: $
+            - text: git push origin main
+        - generic [ref=e321]:
+          - generic [ref=e322]:
+            - generic [ref=e323]: step/02
+            - generic [ref=e324]: 02/03
+          - heading "Build" [level=3] [ref=e325]
+          - paragraph [ref=e326]: Astro, Next, Vite, Svelte — prerendered into static HTML and pushed to a global edge as one atomic unit.
+          - paragraph [ref=e327]:
+            - generic [ref=e328]: $
+            - text: vanta build · 12.4s
+        - generic [ref=e329]:
+          - generic [ref=e330]:
+            - generic [ref=e331]: step/03
+            - generic [ref=e332]: 03/03
+          - heading "Deploy" [level=3] [ref=e333]
+          - paragraph [ref=e334]: Released instantly across 2 regions with immutable snapshots. Preview URLs on every commit, rollbacks in a click.
+          - paragraph [ref=e335]:
+            - generic [ref=e336]: $
+            - text: edge = live · 3.2s
+      - generic [ref=e337]: avg. time to live · 00:00:16
+    - generic [ref=e342]:
+      - generic [ref=e343]:
+        - paragraph [ref=e344]:
+          - generic [ref=e345]: "06"
+          - text: Pricing
+        - heading "Simple, metered. No surprises." [level=2] [ref=e347]
+        - paragraph [ref=e348]: Every plan runs on the same global edge. Upgrade when your traffic demands it.
+      - generic [ref=e350]:
+        - generic [ref=e352]:
+          - button "Monthly" [ref=e353]
+          - button "Annual−25%" [ref=e354]
+        - generic [ref=e355]:
+          - generic [ref=e356]:
+            - heading "Free" [level=3] [ref=e358]
+            - paragraph [ref=e359]: 2 projects. No custom domains. Free forever.
+            - generic [ref=e360]:
+              - generic [ref=e361]: ৳0
+              - generic [ref=e362]: / mo
+            - paragraph [ref=e363]: free forever
+            - list [ref=e364]:
+              - listitem [ref=e365]:
+                - generic [ref=e368]: 2 projects
+              - listitem [ref=e369]:
+                - generic [ref=e372]: Limited builds & deploys
+              - listitem [ref=e373]:
+                - generic [ref=e376]: Free SSL + free subdomain
+              - listitem [ref=e377]:
+                - generic [ref=e380]: No custom domains
+              - listitem [ref=e381]:
+                - generic [ref=e384]: 100k monthly page requests
+              - listitem [ref=e385]:
+                - generic [ref=e388]: 5 GB bandwidth / mo
+            - link "Start deploying free" [ref=e390] [cursor=pointer]:
+              - /url: "#cta"
+          - generic [ref=e391]:
+            - generic [ref=e392]:
+              - heading "Pro" [level=3] [ref=e393]
+              - generic [ref=e394]: Popular
+            - paragraph [ref=e395]: For studios shipping real products.
+            - generic [ref=e396]:
+              - generic [ref=e397]: ৳113
+              - generic [ref=e398]: / mo
+            - paragraph [ref=e399]: billed annually
+            - list [ref=e400]:
+              - listitem [ref=e401]:
+                - generic [ref=e404]: Unlimited projects
+              - listitem [ref=e405]:
+                - generic [ref=e408]: Unlimited deploys
+              - listitem [ref=e409]:
+                - generic [ref=e412]: 1M monthly page requests
+              - listitem [ref=e413]:
+                - generic [ref=e416]: Daily 30 min build limit
+              - listitem [ref=e417]:
+                - generic [ref=e420]: 100 MB asset storage
+              - listitem [ref=e421]:
+                - generic [ref=e424]: 100 image optimizations
+              - listitem [ref=e425]:
+                - generic [ref=e428]: Custom domains + auto SSL
+            - link "Deploy Pro" [ref=e430] [cursor=pointer]:
+              - /url: "#cta"
+          - generic [ref=e431]:
+            - heading "Scale" [level=3] [ref=e433]
+            - paragraph [ref=e434]: Everything in Pro, scaled 10×.
+            - generic [ref=e435]:
+              - generic [ref=e436]: ৳825
+              - generic [ref=e437]: / mo
+            - paragraph [ref=e438]: billed annually
+            - list [ref=e439]:
+              - listitem [ref=e440]:
+                - generic [ref=e443]: Everything in Pro at 10×
+              - listitem [ref=e444]:
+                - generic [ref=e447]: Unlimited projects & deploys
+              - listitem [ref=e448]:
+                - generic [ref=e451]: 10M monthly page requests
+              - listitem [ref=e452]:
+                - generic [ref=e455]: 10× asset storage & bandwidth
+              - listitem [ref=e456]:
+                - generic [ref=e459]: 1,000 image optimizations
+              - listitem [ref=e460]:
+                - generic [ref=e463]: SLA-backed 99.99% uptime
+              - listitem [ref=e464]:
+                - generic [ref=e467]: Dedicated success engineer
+            - link "Contact sales" [ref=e469] [cursor=pointer]:
+              - /url: "#cta"
+    - generic [ref=e470]:
+      - generic [ref=e471]: signal / 07
+      - generic [ref=e474]:
+        - generic [ref=e475]:
+          - paragraph [ref=e476]:
+            - generic [ref=e477]: "07"
+            - text: Signal
+          - heading "Shipped by teams who ship." [level=2] [ref=e479]
+        - generic [ref=e480]:
+          - generic [ref=e482]:
+            - paragraph [ref=e483]: "[ \"We moved 40+ client sites to VANTA in a weekend. Deploys that took minutes now take seconds, and the rollback flow has saved us twice already.\" ]"
+            - generic [ref=e484]:
+              - generic [ref=e485]: M
+              - generic [ref=e486]:
+                - generic [ref=e487]: MARA KESSLER
+                - generic [ref=e488]: Lead Engineer · Northbridge
+          - generic [ref=e490]:
+            - paragraph [ref=e491]: "[ \"The closest thing to infrastructure that simply disappears. Our analytics numbers at the edge are absurdly fast, and the dashboards are gorgeous.\" ]"
+            - generic [ref=e492]:
+              - generic [ref=e493]: J
+              - generic [ref=e494]:
+                - generic [ref=e495]: JONAS REINHARDT
+                - generic [ref=e496]: CTO · Lumen&Co
+          - generic [ref=e498]:
+            - paragraph [ref=e499]: "[ \"Zero-config was not marketing speak. It detected our Astro setup, prerendered everything, and our Lighthouse score went from 88 to 100 overnight.\" ]"
+            - generic [ref=e500]:
+              - generic [ref=e501]: P
+              - generic [ref=e502]:
+                - generic [ref=e503]: PRIYA SANKARAN
+                - generic [ref=e504]: Staff Engineer · Quanta
+    - generic [ref=e507]:
+      - generic [ref=e508]:
+        - paragraph [ref=e509]:
+          - generic [ref=e510]: "08"
+          - text: Protocol
+        - heading "Questions, answered." [level=2] [ref=e512]
+      - generic [ref=e513]:
+        - generic [ref=e514]:
+          - heading [level=3] [ref=e515]:
+            - button "/01 Can I migrate from Netlify or Vercel?" [expanded] [ref=e516]:
+              - generic [ref=e517]: /01
+              - generic [ref=e518]: Can I migrate from Netlify or Vercel?
+          - region "/01 Can I migrate from Netlify or Vercel?" [ref=e519]:
+            - generic [ref=e520]: Yes. VANTA reads your build output and re-deploys it as-is in minutes. We keep your custom domains, redirects, and headers — most teams migrate the same afternoon.
+        - heading [level=3] [ref=e522]:
+          - button "/02 How do custom domains and SSL work?" [ref=e523]:
+            - generic [ref=e524]: /02
+            - generic [ref=e525]: How do custom domains and SSL work?
+        - heading [level=3] [ref=e527]:
+          - button "/03 Do you support serverless functions?" [ref=e528]:
+            - generic [ref=e529]: /03
+            - generic [ref=e530]: Do you support serverless functions?
+        - heading [level=3] [ref=e532]:
+          - button "/04 How do preview deployments work?" [ref=e533]:
+            - generic [ref=e534]: /04
+            - generic [ref=e535]: How do preview deployments work?
+        - heading [level=3] [ref=e537]:
+          - button "/05 What is included in the free tier?" [ref=e538]:
+            - generic [ref=e539]: /05
+            - generic [ref=e540]: What is included in the free tier?
+    - generic [ref=e541]:
+      - generic [ref=e542]: deploy / 09
+      - generic [ref=e548]:
+        - paragraph [ref=e549]:
+          - generic [ref=e550]: "09"
+          - text: Deploy
+        - heading "Your first deploy in 60s" [level=2] [ref=e552]:
+          - text: Your first deploy in
+          - generic [ref=e553]: 60s
+        - paragraph [ref=e554]: Free tier, no credit card, global edge included. Paste your email and we'll spin up a project with a live URL.
+        - generic [ref=e555]:
+          - textbox "you@studio.com" [ref=e556]
+          - button "Start deploying free" [ref=e557]
+        - paragraph [ref=e558]: https://your-site.vanta.dev · ready in ~16s
+  - contentinfo [ref=e559]:
+    - generic [ref=e560]:
+      - generic [ref=e561]:
+        - generic [ref=e562]:
+          - link "V Vanta_sys" [ref=e563] [cursor=pointer]:
+            - /url: /
+            - generic [ref=e564]: V
+            - generic [ref=e565]: Vanta_sys
+          - paragraph [ref=e566]: Static hosting rebuilt for the edge. Atomic builds, instant rollbacks, zero configuration.
+          - paragraph [ref=e567]: All systems operational
+        - generic [ref=e569]:
+          - heading "Product" [level=4] [ref=e570]
+          - list [ref=e571]:
+            - listitem [ref=e572]:
+              - link "Features" [ref=e573] [cursor=pointer]:
+                - /url: /#features
+            - listitem [ref=e574]:
+              - link "Pricing" [ref=e575] [cursor=pointer]:
+                - /url: /pricing
+            - listitem [ref=e576]:
+              - link "Edge network" [ref=e577] [cursor=pointer]:
+                - /url: /docs#edge
+            - listitem [ref=e578]:
+              - link "Changelog" [ref=e579] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=e580]:
+              - link "Status" [ref=e581] [cursor=pointer]:
+                - /url: "#"
+        - generic [ref=e582]:
+          - heading "Developers" [level=4] [ref=e583]
+          - list [ref=e584]:
+            - listitem [ref=e585]:
+              - link "Documentation" [ref=e586] [cursor=pointer]:
+                - /url: /docs
+            - listitem [ref=e587]:
+              - link "CLI reference" [ref=e588] [cursor=pointer]:
+                - /url: /docs#cli
+            - listitem [ref=e589]:
+              - link "HTTP API" [ref=e590] [cursor=pointer]:
+                - /url: /docs#api
+            - listitem [ref=e591]:
+              - link "Templates" [ref=e592] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=e593]:
+              - link "Open source" [ref=e594] [cursor=pointer]:
+                - /url: "#"
+        - generic [ref=e595]:
+          - heading "Company" [level=4] [ref=e596]
+          - list [ref=e597]:
+            - listitem [ref=e598]:
+              - link "About" [ref=e599] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=e600]:
+              - link "Blog" [ref=e601] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=e602]:
+              - link "Careers" [ref=e603] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=e604]:
+              - link "Press kit" [ref=e605] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=e606]:
+              - link "Contact" [ref=e607] [cursor=pointer]:
+                - /url: "#"
+        - generic [ref=e608]:
+          - heading "Legal" [level=4] [ref=e609]
+          - list [ref=e610]:
+            - listitem [ref=e611]:
+              - link "Privacy" [ref=e612] [cursor=pointer]:
+                - /url: /privacy
+            - listitem [ref=e613]:
+              - link "Terms" [ref=e614] [cursor=pointer]:
+                - /url: /terms
+            - listitem [ref=e615]:
+              - link "DPA" [ref=e616] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=e617]:
+              - link "Security" [ref=e618] [cursor=pointer]:
+                - /url: "#"
+      - generic [ref=e619]:
+        - paragraph [ref=e620]: © 2026 Vanta Systems, Inc.
+        - paragraph [ref=e621]: lat 51.50 / lon -0.12 · v2.4.1

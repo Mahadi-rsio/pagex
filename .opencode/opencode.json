@@ -11,8 +11,21 @@
     },
     "codebase-memory-mcp": {
       "type": "local",
-      "command": ["/home/codespace/.local/bin/codebase-memory-mcp"],
+      "command": ["/home/codespace/nvm/current/bin/codebase-memory-mcp"],
       "enabled": true
+    },
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@latest", "--browser", "chromium"],
+      "enabled": true
+    },
+    "21st": {
+      "type": "remote",
+      "url": "https://21st.dev/api/mcp",
+      "enabled": true,
+      "headers": {
+        "x-api-key": "21st_sk_3b8f32729caffbf1d83f73248704b50e1709a11e02f7dfd53e805e1d9e6630d5"
+      }
     }
   }
 }

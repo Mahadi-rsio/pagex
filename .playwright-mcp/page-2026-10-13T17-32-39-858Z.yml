@@ -1,0 +1,49 @@
+- generic [ref=f2e1]:
+  - generic [ref=f2e49]:
+    - banner [ref=f2e50]:
+      - link "Cloudisy Console" [ref=f2e51] [cursor=pointer]:
+        - /url: /
+        - generic [ref=f2e55]:
+          - generic [ref=f2e56]: Cloudisy
+          - generic [ref=f2e57]: Console
+      - link "Home" [ref=f2e58] [cursor=pointer]:
+        - /url: /
+    - main [ref=f2e62]:
+      - generic [ref=f2e63]:
+        - generic [ref=f2e68]:
+          - text: Access Gate
+          - heading "Welcome Back" [level=1] [ref=f2e69]
+          - paragraph [ref=f2e70]: Sign in to manage projects and deployments.
+        - generic [ref=f2e71]:
+          - generic [ref=f2e72]:
+            - button "Continue with Google" [ref=f2e73]
+            - button "Continue with GitHub" [ref=f2e75]
+          - generic [ref=f2e77]:
+            - generic [ref=f2e78]: Or email
+            - generic [ref=f2e83]:
+              - tablist [ref=f2e84]:
+                - tab "Sign In" [ref=f2e85]
+                - tab "Sign Up" [active] [selected] [ref=f2e86]
+              - tabpanel "Sign Up" [ref=f2e108]:
+                - generic [ref=f2e109]:
+                  - generic [ref=f2e110]:
+                    - generic [ref=f2e111]: Name
+                    - textbox "Name" [ref=f2e116]:
+                      - /placeholder: Jane Doe
+                  - generic [ref=f2e117]:
+                    - generic [ref=f2e118]: Email
+                    - textbox "Email" [ref=f2e123]:
+                      - /placeholder: name@example.com
+                  - generic [ref=f2e124]:
+                    - generic [ref=f2e125]: Password
+                    - textbox "Password" [ref=f2e130]:
+                      - /placeholder: ••••••••
+                  - button "Create Account" [ref=f2e131]
+    - contentinfo [ref=f2e104]:
+      - link "Privacy Policy" [ref=f2e105] [cursor=pointer]:
+        - /url: /privacy
+      - generic [ref=f2e106]: ·
+      - link "Terms of Service" [ref=f2e107] [cursor=pointer]:
+        - /url: /terms
+  - region "Notifications alt+T"
+  - alert [ref=f2e31]: Welcome Back

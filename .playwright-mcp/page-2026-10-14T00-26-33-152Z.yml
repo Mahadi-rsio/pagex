@@ -1,0 +1,40 @@
+- generic [active] [ref=f7e1]:
+  - generic [ref=f7e2]:
+    - banner [ref=f7e3]:
+      - generic [ref=f7e4]:
+        - link "Cloudisy Console" [ref=f7e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=f7e10]:
+            - generic [ref=f7e11]: Cloudisy
+            - generic [ref=f7e12]: Console
+        - searchbox "Search projects, domains..." [ref=f7e15]
+        - generic [ref=f7e16]:
+          - link "BAL $0.00" [ref=f7e17] [cursor=pointer]:
+            - /url: /billing
+            - generic [ref=f7e18]: BAL
+            - generic [ref=f7e19]: $0.00
+          - button "M" [ref=f7e22]
+    - generic [ref=f7e25]:
+      - complementary [ref=f7e26]:
+        - navigation [ref=f7e27]:
+          - list [ref=f7e28]:
+            - listitem [ref=f7e29]:
+              - link "Dashboard" [ref=f7e30] [cursor=pointer]:
+                - /url: /
+            - listitem [ref=f7e36]:
+              - link "Projects" [ref=f7e37] [cursor=pointer]:
+                - /url: /projects
+            - listitem [ref=f7e40]:
+              - link "Billing" [ref=f7e41] [cursor=pointer]:
+                - /url: /billing
+            - listitem [ref=f7e44]:
+              - link "Settings" [ref=f7e45] [cursor=pointer]:
+                - /url: /settings
+        - button "M Mahadi abc@gmail.com" [ref=f7e50]:
+          - generic [ref=f7e51]: M
+          - generic [ref=f7e53]:
+            - paragraph [ref=f7e54]: Mahadi
+            - paragraph [ref=f7e55]: abc@gmail.com
+      - main [ref=f7e58]
+  - region "Notifications alt+T"
+  - alert [ref=f7e82]

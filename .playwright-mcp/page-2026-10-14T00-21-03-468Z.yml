@@ -1,0 +1,96 @@
+- generic:
+  - generic [aria-hidden]:
+    - banner:
+      - generic:
+        - generic:
+          - link:
+            - /url: /
+            - generic:
+              - generic: Cloudisy
+              - generic: Console
+        - generic:
+          - generic:
+            - searchbox
+        - generic:
+          - link:
+            - /url: /billing
+            - generic: BAL
+            - generic: $0.00
+          - button:
+            - generic: AD
+    - generic:
+      - complementary:
+        - navigation:
+          - list:
+            - listitem:
+              - link:
+                - /url: /
+                - text: Dashboard
+            - listitem:
+              - link:
+                - /url: /projects
+                - text: Projects
+            - listitem:
+              - link:
+                - /url: /billing
+                - text: Billing
+            - listitem:
+              - link:
+                - /url: /settings
+                - text: Settings
+        - generic:
+          - button [expanded]:
+            - generic: AD
+            - generic:
+              - paragraph: Alex Doe
+              - paragraph: alex.rando13@example.com
+      - main:
+        - generic:
+          - generic:
+            - heading [level=1]: Welcome back, Alex 👋
+            - paragraph: Here's what's happening with your projects today.
+          - generic:
+            - generic:
+              - generic:
+                - paragraph: "0"
+                - paragraph: Total Projects
+                - paragraph: 0 active
+            - generic:
+              - generic:
+                - paragraph: $0.00
+                - paragraph: Available Balance
+                - link:
+                  - /url: /billing
+                  - text: Add funds →
+            - generic:
+              - generic:
+                - paragraph: 0GB
+                - paragraph: Storage Used
+                - progressbar
+            - generic:
+              - generic:
+                - paragraph: 0%
+                - paragraph: Compute Usage
+                - progressbar
+          - generic:
+            - generic:
+              - generic:
+                - generic: Recent Projects
+                - button: View all
+              - generic:
+                - generic:
+                  - paragraph: No projects yet
+                  - button: Create Project
+            - generic:
+              - generic: Recent Activity
+              - generic:
+                - paragraph: No recent activity
+          - generic:
+            - generic: Usage Overview
+            - generic:
+              - paragraph: Usage metrics will appear once your projects receive traffic.
+  - region "Notifications alt+T"
+  - alert
+  - menu "AD Alex Doe alex.rando13@example.com" [active] [ref=f2e171]:
+    - menuitem "Settings" [ref=f2e172] [cursor=pointer]
+    - menuitem "Log out" [ref=f2e176] [cursor=pointer]
