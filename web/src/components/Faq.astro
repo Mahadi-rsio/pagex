@@ -1,0 +1,60 @@
+---
+import Icon from "./Icon.astro";
+
+const faqs = [
+  {
+    q: "Is the free tier really free forever?",
+    a: "Yes. Every account gets 100,000 requests per month for static hosting, unlimited sites, cloud builds, Git integration, auto deploy, rollback and free SSL — with no credit card and no expiry. Container workloads include 5 compute-unit hours on the house each month.",
+  },
+  {
+    q: "Which frameworks can I deploy?",
+    a: "Static output from React, Vue, Svelte, Astro and Angular works out of the box, as do full app frameworks like Next.js and SvelteKit. The CLI auto-detects your framework and build command, or you can configure them explicitly.",
+  },
+  {
+    q: "How does container billing work?",
+    a: "Containers are metered per second and scale to zero when idle, so you pay only for the compute you actually consume. Each account includes 5 CU-hours every month, and idle instances wake on the next request.",
+  },
+  {
+    q: "Do containers keep their data?",
+    a: "Attach a persistent volume and your data survives restarts, redeploys and scale-to-zero events — ideal for databases, caches and background workers.",
+  },
+  {
+    q: "Can I use my own domain?",
+    a: "Add any custom domain to a project and PageX provisions and renews the TLS certificate automatically. Wildcard domains and password-protected previews are available on paid plans.",
+  },
+  {
+    q: "What happens if a deploy breaks production?",
+    a: "Every deploy is immutable. Roll back to any previous build instantly from the dashboard or CLI — no rebuild and no downtime.",
+  },
+];
+---
+<section class="relative py-24 sm:py-32">
+  <div class="shell max-w-3xl">
+    <div class="reveal mb-12 text-center">
+      <span class="eyebrow">FAQ</span>
+      <h2
+        class="mt-4 text-balance text-3xl font-semibold tracking-[-0.03em] sm:text-4xl"
+      >
+        Questions, answered.
+      </h2>
+    </div>
+
+    <div class="reveal divide-y divide-line overflow-hidden rounded-[20px] border border-line bg-card">
+      {
+        faqs.map((f, i) => (
+          <details class="group" open={i === 0}>
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5 text-left transition-colors duration-200 hover:bg-white/[0.02] [&::-webkit-details-marker]:hidden">
+              <span class="text-[15px] font-medium">{f.q}</span>
+              <span class="grid size-6 shrink-0 place-items-center rounded-full border border-line text-muted transition-transform duration-300 group-open:rotate-45">
+                <Icon name="plus" size={13} />
+              </span>
+            </summary>
+            <div class="px-6 pb-6 -mt-1">
+              <p class="max-w-2xl text-sm leading-relaxed text-muted">{f.a}</p>
+            </div>
+          </details>
+        ))
+      }
+    </div>
+  </div>
+</section>

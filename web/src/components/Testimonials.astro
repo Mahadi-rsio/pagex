@@ -1,0 +1,83 @@
+---
+import Icon from "./Icon.astro";
+
+// Placeholder social proof — replace with real customers before launch.
+const testimonials = [
+  {
+    quote:
+      "We moved forty marketing sites off our old host in a weekend. Deploy previews on every PR changed how our team ships.",
+    name: "Ava Mercer",
+    role: "Head of Platform, Northwind",
+    initials: "AM",
+  },
+  {
+    quote:
+      "Per-second billing with scale-to-zero is the whole reason we switched. Our staging APIs now cost us almost nothing overnight.",
+    name: "Kenji Sato",
+    role: "Staff Engineer, Loop",
+    initials: "KS",
+  },
+  {
+    quote:
+      "The CLI does exactly one thing well — push and get a URL. Rollbacks have saved us in two incidents already.",
+    name: "Priya Raman",
+    role: "CTO, Fieldnote",
+    initials: "PR",
+  },
+  {
+    quote:
+      "Static sites, containers and certificates under one roof, with builds that just pass. Our infra list shrank in half.",
+    name: "Diego Fuentes",
+    role: "Founder, Cartlite",
+    initials: "DF",
+  },
+  {
+    quote:
+      "Onboarding to prod took an afternoon. The persistent volume made running our worker trivial.",
+    name: "Nadia okonkwo",
+    role: "Engineer, Relay",
+    initials: "NO",
+  },
+  {
+    quote:
+      "100k requests free let us validate the whole product before paying a cent. Rare to find a tier this generous.",
+    name: "Liam Byrne",
+    role: "Indie maker",
+    initials: "LB",
+  },
+];
+---
+<section class="relative py-24 sm:py-32">
+  <div class="shell">
+    <div class="reveal mx-auto mb-14 max-w-2xl text-center">
+      <span class="eyebrow">Loved by builders</span>
+      <h2
+        class="mt-4 text-balance text-3xl font-semibold tracking-[-0.03em] sm:text-4xl lg:text-[2.75rem]"
+      >
+        Teams ship faster on PageX.
+      </h2>
+    </div>
+
+    <div class="columns-1 gap-5 md:columns-2 lg:columns-3">
+      {
+        testimonials.map((t) => (
+          <figure class="reveal mb-5 break-inside-avoid rounded-[20px] border border-line bg-card p-6 transition-colors duration-300 hover:border-line-strong">
+            <Icon name="sparkle" size={16} class="text-ink-400" />
+            <blockquote class="mt-4 text-sm leading-relaxed text-ink-100">
+              “{t.quote}”
+            </blockquote>
+            <figcaption class="mt-5 flex items-center gap-3 border-t border-line pt-4">
+              <span class="grid size-9 place-items-center rounded-full border border-line-strong bg-gradient-to-b from-ink-700 to-ink-900 text-xs font-semibold">
+                {t.initials}
+              </span>
+              <div>
+                <div class="text-sm font-medium">{t.name}</div>
+                <div class="font-mono text-[10px] text-muted">{t.role}</div>
+              </div>
+            </figcaption>
+          </figure>
+        ))
+      }
+    </div>
+  </div>
+</section>

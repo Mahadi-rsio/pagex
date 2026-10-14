@@ -1,0 +1,158 @@
+---
+import Icon from "./Icon.astro";
+
+const specs = [
+  { k: "Requests", v: "100k / mo" },
+  { k: "Bandwidth", v: "Metered" },
+  { k: "Sites", v: "Unlimited" },
+  { k: "Price", v: "$0 forever" },
+];
+
+const features = [
+  { icon: "cloud-up", t: "Cloud builds", d: "Hermetic build containers with dependency caching." },
+  { icon: "git", t: "Git integration", d: "GitHub, GitLab and Bitbucket in one click." },
+  { icon: "bolt", t: "Auto deploy", d: "Rebuild and release on every push to main." },
+  { icon: "refresh", t: "Rollback", d: "One-click restore to any previous deploy." },
+  { icon: "shield", t: "Free SSL", d: "Automated certificates, renewed for you." },
+  { icon: "globe", t: "Global edge", d: "Served from 300+ locations worldwide." },
+];
+
+const requests = [
+  34, 46, 38, 62, 51, 78, 44, 68, 88, 57, 72, 96, 63, 81, 48, 70, 92, 55, 66,
+  84, 60, 74, 90, 58,
+];
+---
+<section id="static" class="relative overflow-hidden py-24 sm:py-32">
+  <div class="shell">
+    <div class="grid items-center gap-14 lg:grid-cols-2 lg:gap-16">
+      <!-- copy -->
+      <div class="reveal">
+        <span
+          class="inline-flex items-center gap-2 rounded-full border border-line bg-white/[0.03] px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-ink-200"
+        >
+          <span class="size-1.5 rounded-full bg-white"></span> Static hosting
+        </span>
+        <h2
+          class="mt-5 text-balance text-3xl font-semibold tracking-[-0.03em] sm:text-4xl lg:text-[2.75rem]"
+        >
+          A free tier you can actually build on.
+        </h2>
+        <p class="mt-4 max-w-lg text-muted">
+          Deploy any static site — React, Vue, Svelte, Astro, Angular — with
+          100,000 requests every month, on the house. Cloud builds, Git, auto
+          deploy, rollbacks and free SSL included. No credit card, no expiry.
+        </p>
+
+        <div class="mt-8 grid gap-x-6 gap-y-5 sm:grid-cols-2">
+          {
+            features.map((f) => (
+              <div class="flex gap-3">
+                <span class="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg border border-line bg-white/[0.03] text-ink-100">
+                  <Icon name={f.icon} size={15} />
+                </span>
+                <div>
+                  <div class="text-sm font-medium">{f.t}</div>
+                  <div class="text-xs leading-relaxed text-muted">{f.d}</div>
+                </div>
+              </div>
+            ))
+          }
+        </div>
+
+        <div class="mt-9 flex flex-wrap items-center gap-3">
+          <a
+            href="#"
+            class="inline-flex h-11 items-center gap-2 rounded-full bg-fg px-5 text-sm font-semibold text-ink-950 transition-transform duration-200 hover:-translate-y-0.5"
+          >
+            Deploy for free <Icon name="arrow-right" size={16} />
+          </a>
+          <span class="font-mono text-[11px] text-muted">No credit card required</span>
+        </div>
+      </div>
+
+      <!-- visual -->
+      <div class="reveal relative" style="transition-delay:120ms">
+        <div
+          class="pointer-events-none absolute -inset-6 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_60%_20%,rgba(255,255,255,0.08),transparent_60%)]"
+        >
+        </div>
+
+        <div class="panel overflow-hidden shadow-lift">
+          <div class="flex items-center justify-between border-b border-line px-4 py-3">
+            <div class="flex items-center gap-1.5">
+              <span class="size-2.5 rounded-full border border-line-strong bg-white/10"></span>
+              <span class="size-2.5 rounded-full border border-line-strong bg-white/10"></span>
+              <span class="size-2.5 rounded-full border border-line-strong bg-white/10"></span>
+            </div>
+            <div
+              class="flex items-center gap-1.5 rounded-full border border-line bg-ink-950/60 px-3 py-1 font-mono text-[10px] text-ink-200"
+            >
+              <Icon name="lock" size={10} /> https://storefront.pagex.dev
+            </div>
+            <span class="size-2.5"></span>
+          </div>
+
+          <div class="p-5 sm:p-6">
+            <!-- fake site preview -->
+            <div class="rounded-2xl border border-line bg-gradient-to-b from-ink-800 to-ink-900 p-5">
+              <div class="flex items-center justify-between">
+                <div class="h-2.5 w-24 rounded-full bg-white/20"></div>
+                <div class="flex gap-2">
+                  <div class="h-2 w-10 rounded-full bg-white/10"></div>
+                  <div class="h-2 w-10 rounded-full bg-white/10"></div>
+                </div>
+              </div>
+              <div class="mt-6 space-y-2.5">
+                <div class="h-4 w-3/4 rounded-full bg-white/25"></div>
+                <div class="h-4 w-1/2 rounded-full bg-white/15"></div>
+              </div>
+              <div class="mt-6 flex gap-3">
+                <div class="h-8 w-24 rounded-full bg-white"></div>
+                <div class="h-8 w-20 rounded-full border border-line"></div>
+              </div>
+            </div>
+
+            <!-- request meter -->
+            <div class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {
+                specs.map((s) => (
+                  <div class="rounded-xl border border-line bg-white/[0.02] p-3">
+                    <div class="font-mono text-[9px] uppercase tracking-widest text-muted">
+                      {s.k}
+                    </div>
+                    <div class="mt-1 text-sm font-semibold tracking-tight">
+                      {s.v}
+                    </div>
+                  </div>
+                ))
+              }
+            </div>
+
+            <!-- request chart -->
+            <div class="mt-5 rounded-2xl border border-line bg-ink-950/50 p-4">
+              <div class="flex items-center justify-between">
+                <span class="font-mono text-[10px] uppercase tracking-widest text-muted"
+                  >Requests this month</span
+                >
+                <span class="font-mono text-[10px] text-ink-200">62.4k / 100k</span>
+              </div>
+              <div class="mt-4 flex h-20 items-end gap-[3px]">
+                {
+                  requests.map((h) => (
+                    <div
+                      class="flex-1 rounded-t-[3px] bg-gradient-to-t from-ink-600 to-ink-200"
+                      style={`height:${h}%`}
+                    />
+                  ))
+                }
+              </div>
+              <div class="relative mt-3 h-1 rounded-full bg-white/[0.06]">
+                <div class="absolute inset-y-0 left-0 w-[62%] rounded-full bg-white"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,212 @@
+---
+import Icon from "./Icon.astro";
+
+const buildSteps = [
+  { t: "git push origin main", s: "cmd" },
+  { t: "Detected framework: Astro", s: "log" },
+  { t: "pnpm install --frozen-lockfile", s: "log" },
+  { t: "astro build → 128 routes", s: "log" },
+  { t: "Brotli + WebP · 4.2MB → 1.1MB", s: "log" },
+  { t: "Live at storefront.pagex.dev", s: "ok" },
+];
+
+const small = [
+  {
+    icon: "refresh",
+    title: "Instant rollback",
+    body: "Every deploy is immutable. Roll back to any previous build in one click — no rebuild, no downtime.",
+  },
+  {
+    icon: "shield",
+    title: "Free SSL, forever",
+    body: "Automatic TLS for every domain and preview URL. Issued, renewed and rotated for you.",
+  },
+];
+---
+<section id="features" class="relative py-24 sm:py-32">
+  <div class="shell">
+    <div class="reveal mb-14 max-w-2xl">
+      <span class="eyebrow">The platform</span>
+      <h2
+        class="mt-4 text-balance text-3xl font-semibold tracking-[-0.03em] sm:text-4xl lg:text-[2.75rem]"
+      >
+        Everything between your commit and a live URL.
+      </h2>
+      <p class="mt-4 text-muted">
+        Connect a repository once. PageX handles the build, the optimization, the
+        certificate and the global rollout — then keeps every deploy reversible.
+      </p>
+    </div>
+
+    <div class="grid auto-rows-[minmax(190px,auto)] grid-cols-1 gap-4 md:grid-cols-3">
+      <!-- Hero feature -->
+      <div
+        class="reveal group relative row-span-2 overflow-hidden rounded-[20px] border border-line bg-card p-7 md:col-span-2"
+      >
+        <div
+          class="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.12),transparent_65%)] blur-[6px] transition-transform duration-700 group-hover:scale-110"
+        >
+        </div>
+        <div class="relative flex h-full flex-col">
+          <span class="inline-flex w-fit items-center gap-2 rounded-full border border-line bg-white/[0.03] px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-ink-200">
+            <Icon name="cloud-up" size={12} /> Cloud build
+          </span>
+          <h3 class="mt-5 max-w-md text-2xl font-semibold tracking-tight sm:text-[1.75rem]">
+            Git-connected builds that just work
+          </h3>
+          <p class="mt-2.5 max-w-md text-sm text-muted">
+            Hermetic build containers, cached dependencies and framework
+            auto-detection. Push a commit — we return a URL.
+          </p>
+
+          <div
+            class="mt-auto overflow-hidden rounded-2xl border border-line bg-ink-950/80"
+          >
+            <div class="flex items-center gap-1.5 border-b border-line px-3.5 py-2">
+              <span class="size-2 rounded-full bg-white/15"></span>
+              <span class="size-2 rounded-full bg-white/15"></span>
+              <span class="size-2 rounded-full bg-white/15"></span>
+              <span class="ml-2 font-mono text-[10px] text-ink-400"
+                >build log</span
+              >
+            </div>
+            <div class="space-y-1.5 p-3.5 font-mono text-[11px] leading-relaxed">
+              {
+                buildSteps.map((s) => (
+                  <div class="flex gap-2.5">
+                    <span class:list={[
+                      "select-none",
+                      s.s === "cmd" && "text-white",
+                      s.s === "ok" && "text-white",
+                      s.s === "log" && "text-ink-300",
+                    ]}>
+                      {s.s === "cmd" ? "$" : s.s === "ok" ? "✓" : "·"}
+                    </span>
+                    <span
+                      class:list={[
+                        s.s === "cmd" ? "text-white" : "text-ink-200",
+                      ]}
+                    >
+                      {s.t}
+                    </span>
+                  </div>
+                ))
+              }
+              <div class="flex gap-2.5">
+                <span class="text-ink-400">$</span>
+                <span class="h-3.5 w-1.5 animate-blink bg-white/80"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Auto deploy -->
+      <div
+        class="reveal panel-hover group relative overflow-hidden rounded-[20px] border border-line bg-card p-6 hover:border-line-strong"
+      >
+        <div
+          class="grid size-11 place-items-center rounded-xl border border-line bg-white/[0.03] text-white transition-transform duration-300 group-hover:-translate-y-0.5"
+        >
+          <Icon name="git-branch" size={20} />
+        </div>
+        <h3 class="mt-4 text-lg font-semibold tracking-tight">
+          Auto deploy on push
+        </h3>
+        <p class="mt-1.5 text-sm text-muted">
+          Production from <span class="font-mono text-fg">main</span>, preview
+          URLs for every branch and pull request.
+        </p>
+        <div class="mt-4 flex items-center gap-1.5 font-mono text-[10px]">
+          <span class="rounded-md border border-line bg-white/[0.03] px-2 py-1 text-ink-200"
+            >main</span
+          >
+          <span class="text-ink-400">→</span>
+          <span class="rounded-md border border-line bg-white/[0.03] px-2 py-1 text-ink-200"
+            >build</span
+          >
+          <span class="text-ink-400">→</span>
+          <span class="rounded-md border border-line bg-white px-2 py-1 text-ink-950"
+            >prod</span
+          >
+        </div>
+      </div>
+
+      <!-- Requests stat -->
+      <div
+        class="reveal relative overflow-hidden rounded-[20px] border border-line bg-gradient-to-b from-ink-800 to-ink-900 p-6"
+      >
+        <div class="flex items-start justify-between">
+          <Icon name="bolt" size={18} class="text-ink-200" />
+          <span
+            class="rounded-full border border-line bg-white/[0.03] px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-ink-200"
+            >Free</span
+          >
+        </div>
+        <div class="mt-6">
+          <div class="text-4xl font-semibold tracking-tight">100k</div>
+          <div
+            class="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted"
+          >
+            requests / month
+          </div>
+        </div>
+      </div>
+
+      <!-- CU hours stat -->
+      <div
+        class="reveal relative overflow-hidden rounded-[20px] border border-line bg-gradient-to-b from-ink-800 to-ink-900 p-6"
+      >
+        <div class="flex items-start justify-between">
+          <Icon name="cpu" size={18} class="text-ink-200" />
+          <span
+            class="rounded-full border border-line bg-white/[0.03] px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-ink-200"
+            >Free</span
+          >
+        </div>
+        <div class="mt-6">
+          <div class="text-4xl font-semibold tracking-tight">
+            5<span class="text-xl text-ink-300"> CU·h</span>
+          </div>
+          <div
+            class="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted"
+          >
+            compute / month
+          </div>
+        </div>
+      </div>
+
+      <!-- Rollback -->
+      <div
+        class="reveal panel-hover group relative overflow-hidden rounded-[20px] border border-line bg-card p-6 hover:border-line-strong"
+      >
+        <div
+          class="grid size-11 place-items-center rounded-xl border border-line bg-white/[0.03] text-white transition-transform duration-300 group-hover:-translate-y-0.5"
+        >
+          <Icon name="refresh" size={20} />
+        </div>
+        <h3 class="mt-4 text-lg font-semibold tracking-tight">
+          Instant rollback
+        </h3>
+        <p class="mt-1.5 text-sm text-muted">
+          Immutable deploys. Restore any previous build instantly.
+        </p>
+      </div>
+
+      <!-- SSL -->
+      <div
+        class="reveal panel-hover group relative overflow-hidden rounded-[20px] border border-line bg-card p-6 hover:border-line-strong"
+      >
+        <div
+          class="grid size-11 place-items-center rounded-xl border border-line bg-white/[0.03] text-white transition-transform duration-300 group-hover:-translate-y-0.5"
+        >
+          <Icon name="shield" size={20} />
+        </div>
+        <h3 class="mt-4 text-lg font-semibold tracking-tight">Free SSL</h3>
+        <p class="mt-1.5 text-sm text-muted">
+          Automatic certificates for every domain and preview URL.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>

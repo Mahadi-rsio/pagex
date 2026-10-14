@@ -1,0 +1,165 @@
+---
+import Icon from "./Icon.astro";
+
+const cmds = [
+  { c: "pagex login", d: "Device-flow auth in one command." },
+  { c: "pagex init", d: "Detects your framework and links the project." },
+  { c: "pagex deploy --build", d: "Builds, uploads and prints your live URL." },
+  { c: "pagex pages", d: "List every project on your account." },
+];
+---
+<section id="cli" class="relative py-24 sm:py-32">
+  <div class="shell">
+    <div class="grid items-center gap-14 lg:grid-cols-2 lg:gap-16">
+      <!-- copy -->
+      <div class="reveal">
+        <span
+          class="inline-flex items-center gap-2 rounded-full border border-line bg-white/[0.03] px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-ink-200"
+        >
+          <Icon name="terminal" size={12} /> PageX CLI
+        </span>
+        <h2
+          class="mt-5 text-balance text-3xl font-semibold tracking-[-0.03em] sm:text-4xl lg:text-[2.75rem]"
+        >
+          Ship from your terminal.
+        </h2>
+        <p class="mt-4 max-w-lg text-muted">
+          A fast, dependency-light command line. Authenticate once, link a
+          project, and deploy the output directory — the CLI handles framework
+          detection, validation and upload.
+        </p>
+
+        <div class="mt-8 divide-y divide-line overflow-hidden rounded-2xl border border-line">
+          {
+            cmds.map((c) => (
+              <div class="flex items-center gap-4 bg-white/[0.015] px-4 py-3.5 transition-colors duration-200 hover:bg-white/[0.04]">
+                <span class="font-mono text-[11px] text-ink-400">$</span>
+                <code class="shrink-0 font-mono text-xs text-fg">{c.c}</code>
+                <span class="ml-auto hidden text-right text-xs text-muted sm:block">
+                  {c.d}
+                </span>
+              </div>
+            ))
+          }
+        </div>
+
+        <div class="mt-6 flex flex-wrap items-center gap-3">
+          <a
+            href="#"
+            class="inline-flex h-11 items-center gap-2 rounded-full border border-line bg-white/[0.03] px-5 text-sm font-medium text-fg transition-colors duration-200 hover:border-line-strong hover:bg-white/[0.06]"
+          >
+            Read the CLI docs <Icon name="arrow-up-right" size={15} />
+          </a>
+          <span class="font-mono text-[11px] text-muted">Node 18+</span>
+        </div>
+      </div>
+
+      <!-- terminal -->
+      <div class="reveal" style="transition-delay:120ms">
+        <div class="panel overflow-hidden shadow-lift">
+          <div class="flex items-center justify-between border-b border-line px-4 py-3">
+            <div class="flex items-center gap-1.5">
+              <span class="size-2.5 rounded-full border border-line-strong bg-white/10"></span>
+              <span class="size-2.5 rounded-full border border-line-strong bg-white/10"></span>
+              <span class="size-2.5 rounded-full border border-line-strong bg-white/10"></span>
+            </div>
+            <span class="font-mono text-[10px] text-muted">~/acme/storefront</span>
+            <span class="size-2.5"></span>
+          </div>
+          <div
+            id="term"
+            class="h-[336px] overflow-hidden p-4 font-mono text-[12px] leading-[1.75] sm:p-5"
+          >
+            <div id="term-body" class="text-ink-100"></div>
+            <div id="term-cursor" class="mt-0.5 flex items-center gap-2">
+              <span class="text-ink-400">$</span>
+              <span class="inline-block h-3.5 w-2 animate-blink bg-white/80"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  const script = [
+    { type: "cmd", text: "npm install -g pagex" },
+    { type: "out", text: "added 1 package in 3s", tone: "dim" },
+    { type: "cmd", text: "pagex login" },
+    { type: "out", text: "✓ Authenticated as you@acme.dev", tone: "ok" },
+    { type: "cmd", text: "pagex init" },
+    { type: "out", text: "✓ Detected Astro · linked project \"storefront\"", tone: "ok" },
+    { type: "cmd", text: "pagex deploy --build" },
+    { type: "out", text: "→ building with pnpm… done in 18.4s", tone: "dim" },
+    { type: "out", text: "✓ Uploaded 128 files · 4.2 MB", tone: "ok" },
+    { type: "out", text: "✓ Deployed → https://storefront.pagex.dev", tone: "ok" },
+  ];
+
+  const roots = document.querySelectorAll("#term-body");
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const toneClass = (t) =>
+    t === "ok" ? "text-white" : t === "dim" ? "text-ink-300" : "text-ink-100";
+
+  function makeLine(entry) {
+    const row = document.createElement("div");
+    row.className = "flex items-start gap-2.5";
+    const prompt = document.createElement("span");
+    prompt.className = "shrink-0 select-none text-ink-500";
+    prompt.textContent = entry.type === "cmd" ? "$" : "";
+    const content = document.createElement("span");
+    content.className = toneClass(entry.tone);
+    row.append(prompt, content);
+    return { row, content, prompt };
+  }
+
+  async function run(root) {
+    if (root.dataset.done) return;
+    root.dataset.done = "1";
+
+    if (reduce) {
+      script.forEach((e) => {
+        const { row, content, prompt } = makeLine(e);
+        content.textContent = e.text;
+        if (e.type === "cmd") prompt.textContent = "$";
+        root.append(row);
+      });
+      return;
+    }
+
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    for (const entry of script) {
+      const { row, content, prompt } = makeLine(entry);
+      if (entry.type === "cmd") prompt.textContent = "$";
+      root.append(row);
+      if (entry.type === "cmd") {
+        for (let i = 0; i < entry.text.length; i++) {
+          content.textContent += entry.text[i];
+          await wait(28);
+        }
+        await wait(240);
+      } else {
+        await wait(180);
+        content.textContent = entry.text;
+        await wait(200);
+      }
+    }
+  }
+
+  if (roots.length) {
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            run(e.target);
+            io.unobserve(e.target);
+          }
+        });
+      },
+      { threshold: 0.3 },
+    );
+    roots.forEach((r) => io.observe(r));
+  }
+</script>

@@ -1,0 +1,187 @@
+---
+import Icon from "./Icon.astro";
+
+const points = [
+  {
+    icon: "clock",
+    t: "Per-second billing",
+    d: "Metered to the second — pay only for the compute you actually consume. No minimums, no rounding up.",
+  },
+  {
+    icon: "refresh",
+    t: "Scale to zero",
+    d: "Idle containers sleep automatically and wake on the next request. You stop paying the moment traffic stops.",
+  },
+  {
+    icon: "cpu",
+    t: "5 CU-hours free / month",
+    d: "Every account gets five compute-unit hours on the house, every month, forever.",
+  },
+  {
+    icon: "database",
+    t: "Persistent volumes",
+    d: "Attach durable storage that survives restarts, redeploys and scale-to-zero events.",
+  },
+];
+
+const util = [
+  8, 14, 26, 42, 58, 44, 68, 82, 64, 72, 50, 60, 40, 22, 10, 0, 0, 0, 0, 0, 0,
+  0, 6, 20,
+];
+---
+<section id="containers" class="relative overflow-hidden py-24 sm:py-32">
+  <div class="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+    <div class="absolute inset-0 bg-dots opacity-[0.35] mask-fade-b"></div>
+  </div>
+
+  <div class="shell">
+    <div class="grid items-center gap-14 lg:grid-cols-2 lg:gap-16">
+      <!-- visual -->
+      <div class="reveal order-2 lg:order-1">
+        <div
+          class="pointer-events-none absolute -inset-6 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_40%_30%,rgba(255,255,255,0.08),transparent_60%)]"
+        >
+        </div>
+
+        <div class="panel overflow-hidden shadow-lift">
+          <div class="flex items-center justify-between border-b border-line px-4 py-3">
+            <div class="flex items-center gap-2.5">
+              <span class="grid size-7 place-items-center rounded-lg border border-line bg-white/[0.03]">
+                <Icon name="box" size={14} />
+              </span>
+              <div>
+                <div class="text-sm font-medium leading-none">api-service</div>
+                <div class="mt-0.5 font-mono text-[10px] text-muted">
+                  us-east · node:22
+                </div>
+              </div>
+            </div>
+            <span
+              class="inline-flex items-center gap-1.5 rounded-full border border-line bg-white/[0.03] px-2.5 py-1 font-mono text-[10px] tracking-wide text-ink-200"
+            >
+              <span class="size-1.5 rounded-full bg-ink-300"></span> SLEEPING
+            </span>
+          </div>
+
+          <div class="p-5">
+            <!-- utilization graph -->
+            <div class="rounded-2xl border border-line bg-ink-950/50 p-4">
+              <div class="flex items-center justify-between">
+                <span class="font-mono text-[10px] uppercase tracking-widest text-muted"
+                  >Compute utilization</span
+                >
+                <span class="font-mono text-[10px] text-ink-200">CU</span>
+              </div>
+              <div class="mt-4 flex h-24 items-end gap-[3px]">
+                {
+                  util.map((h) => (
+                    <div
+                      class:list={[
+                        "flex-1 rounded-t-[3px]",
+                        h === 0
+                          ? "bg-white/[0.05]"
+                          : "bg-gradient-to-t from-ink-600 to-white",
+                      ]}
+                      style={`height:${Math.max(h, 3)}%`}
+                    />
+                  ))
+                }
+              </div>
+              <div
+                class="mt-3 flex items-center gap-2 border-t border-line pt-3 font-mono text-[10px] text-muted"
+              >
+                <span class="text-ink-200">↓</span> scaled to zero · no traffic
+                billed
+              </div>
+            </div>
+
+            <!-- billing + volume -->
+            <div class="mt-4 grid grid-cols-2 gap-3">
+              <div class="rounded-2xl border border-line bg-white/[0.02] p-4">
+                <div class="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted">
+                  <Icon name="clock" size={11} /> This second
+                </div>
+                <div class="mt-2 text-lg font-semibold tracking-tight tabular-nums">
+                  $0.0000138
+                </div>
+                <div class="mt-1 font-mono text-[10px] text-ink-400">
+                  paused · $0.00
+                </div>
+              </div>
+              <div class="rounded-2xl border border-line bg-white/[0.02] p-4">
+                <div class="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted">
+                  <Icon name="database" size={11} /> Volume
+                </div>
+                <div class="mt-2 text-lg font-semibold tracking-tight">/data</div>
+                <div class="mt-1 font-mono text-[10px] text-ink-400">
+                  10 GB · persistent
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            class="flex items-center justify-between border-t border-line bg-white/[0.02] px-4 py-3 font-mono text-[10px] text-muted"
+          >
+            <span>Free tier: 5.00 CU·h / month</span>
+            <span class="flex items-center gap-1.5 text-ink-200">
+              <span class="h-1 w-16 rounded-full bg-white/[0.08]">
+                <span class="block h-full w-1/5 rounded-full bg-white"></span>
+              </span>
+              1.02 used
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- copy -->
+      <div class="reveal order-1 lg:order-2">
+        <span
+          class="inline-flex items-center gap-2 rounded-full border border-line bg-white/[0.03] px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-ink-200"
+        >
+          <span class="size-1.5 rounded-full bg-white"></span> Containers
+        </span>
+        <h2
+          class="mt-5 text-balance text-3xl font-semibold tracking-[-0.03em] sm:text-4xl lg:text-[2.75rem]"
+        >
+          Containers that cost nothing while they sleep.
+        </h2>
+        <p class="mt-4 max-w-lg text-muted">
+          Run anything that isn't static — APIs, SSR servers, background workers.
+          Billed per second and scaled to zero between requests, so you only ever
+          pay for real work.
+        </p>
+
+        <div class="mt-8 space-y-6">
+          {
+            points.map((p) => (
+              <div class="flex gap-4">
+                <span class="grid size-10 shrink-0 place-items-center rounded-xl border border-line bg-white/[0.03] text-white">
+                  <Icon name={p.icon} size={18} />
+                </span>
+                <div>
+                  <div class="font-medium">{p.t}</div>
+                  <p class="mt-1 max-w-md text-sm leading-relaxed text-muted">
+                    {p.d}
+                  </p>
+                </div>
+              </div>
+            ))
+          }
+        </div>
+
+        <div class="mt-9 flex flex-wrap items-center gap-3">
+          <a
+            href="#"
+            class="inline-flex h-11 items-center gap-2 rounded-full bg-fg px-5 text-sm font-semibold text-ink-950 transition-transform duration-200 hover:-translate-y-0.5"
+          >
+            Launch a container <Icon name="arrow-right" size={16} />
+          </a>
+          <span class="font-mono text-[11px] text-muted"
+            >Persistent volume included</span
+          >
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

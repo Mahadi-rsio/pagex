@@ -1,0 +1,59 @@
+---
+const links = [
+  { label: "Static", href: "#static" },
+  { label: "Containers", href: "#containers" },
+  { label: "CLI", href: "#cli" },
+  { label: "Pricing", href: "#pricing" },
+  { label: "Docs", href: "#" },
+];
+---
+<header
+  id="site-nav"
+  class="fixed inset-x-0 top-0 z-50 border-b border-transparent transition-colors duration-300"
+>
+  <div class="shell flex h-16 items-center justify-between gap-6">
+    <a href="#top" class="group flex items-center gap-2.5" aria-label="PageX home">
+      <span
+        class="relative grid size-8 place-items-center rounded-[9px] border border-line-strong bg-gradient-to-b from-ink-700 to-ink-900"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M2 12.5 12.5 2" stroke="white" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M6.5 14 14 6.5" stroke="white" stroke-width="1.6" stroke-linecap="round" opacity="0.45" />
+          <circle cx="3" cy="3" r="1.75" fill="white" />
+        </svg>
+      </span>
+      <span class="text-[15px] font-semibold tracking-tight">
+        PageX<span class="text-muted">.dev</span>
+      </span>
+    </a>
+
+    <nav class="hidden items-center gap-1 md:flex" aria-label="Primary">
+      {
+        links.map((l) => (
+          <a
+            href={l.href}
+            class="rounded-full px-3.5 py-2 text-sm text-muted transition-colors duration-200 hover:bg-white/5 hover:text-fg"
+          >
+            {l.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="flex items-center gap-2">
+      <a
+        href="#"
+        class="hidden rounded-full px-3.5 py-2 text-sm text-muted transition-colors duration-200 hover:text-fg sm:block"
+      >
+        Sign in
+      </a>
+      <a
+        href="#"
+        class="group inline-flex items-center gap-1.5 rounded-full bg-fg px-4 py-2 text-sm font-medium text-ink-950 transition-transform duration-200 hover:-translate-y-px"
+      >
+        Start free
+        <span class="transition-transform duration-200 group-hover:translate-x-0.5">→</span>
+      </a>
+    </div>
+  </div>
+</header>

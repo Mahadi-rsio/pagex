@@ -1,0 +1,59 @@
+---
+import Icon from "./Icon.astro";
+---
+<section class="relative overflow-hidden py-28 sm:py-36">
+  <div class="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+    <div class="absolute inset-0 bg-grid mask-fade-b opacity-40"></div>
+    <div
+      class="absolute left-1/2 top-1/2 h-[34rem] w-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.14),transparent_62%)] blur-[8px] animate-drift"
+    >
+    </div>
+  </div>
+
+  <div class="shell">
+    <div class="reveal mx-auto max-w-3xl text-center">
+      <span
+        class="inline-flex items-center gap-2 rounded-full border border-line bg-white/[0.03] px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-widest text-ink-200"
+      >
+        <span class="size-1.5 rounded-full bg-white"></span> Deploy in under a minute
+      </span>
+      <h2
+        class="mt-6 text-balance text-4xl font-semibold leading-[1.02] tracking-[-0.04em] sm:text-5xl lg:text-6xl"
+      >
+        <span class="text-gradient">Your next deploy is free.</span>
+      </h2>
+      <p class="mx-auto mt-5 max-w-xl text-pretty text-muted sm:text-lg">
+        Connect a repo or push from the CLI. Static sites are free forever, and
+        containers sleep so they don't cost a thing while you build.
+      </p>
+
+      <div class="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <a
+          href="#"
+          class="group inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-fg px-7 text-sm font-semibold text-ink-950 transition-transform duration-200 hover:-translate-y-0.5 sm:w-auto"
+        >
+          Start deploying — free
+          <Icon name="arrow-right" size={17} class="transition-transform duration-200 group-hover:translate-x-0.5" />
+        </a>
+        <a
+          href="#"
+          class="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border border-line bg-white/[0.02] px-7 font-mono text-[13px] text-fg transition-colors duration-200 hover:border-line-strong hover:bg-white/[0.05] sm:w-auto"
+        >
+          npm i -g pagex
+        </a>
+      </div>
+
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-x-7 gap-y-3 font-mono text-[11px] text-muted">
+        <span class="flex items-center gap-1.5">
+          <Icon name="check" size={12} stroke={2.4} class="text-ink-200" /> No credit card
+        </span>
+        <span class="flex items-center gap-1.5">
+          <Icon name="check" size={12} stroke={2.4} class="text-ink-200" /> Free SSL
+        </span>
+        <span class="flex items-center gap-1.5">
+          <Icon name="check" size={12} stroke={2.4} class="text-ink-200" /> 100k requests / mo
+        </span>
+      </div>
+    </div>
+  </div>
+</section>

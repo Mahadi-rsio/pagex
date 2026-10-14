@@ -1,0 +1,355 @@
+---
+// src/components/ShaderHero.astro
+// Full-viewport aurora hero. Pure CSS — animated gradient blobs + a sweeping
+// ribbon with a screen blend over a near-black base. No WebGL, no JS.
+// Tune colors below in the .aurora-blob / .aurora-ribbon rules.
+
+interface Props {
+  badge?: string;
+  headline?: string;
+  subheadline?: string;
+  primaryCta?: { text: string; href: string };
+  secondaryCta?: { text: string; href: string };
+}
+
+const {
+  badge = "Now in beta",
+  headline = "Build faster. Ship calmer.",
+  subheadline = "The platform for static sites and modern apps — deploy in seconds, scale to zero, never babysit a server again.",
+  primaryCta = { text: "Start deploying — free", href: "#" },
+  secondaryCta = { text: "Read the docs", href: "#" },
+} = Astro.props;
+---
+
+<section class="hero relative isolate overflow-hidden" aria-label="Hero">
+  <!-- Base background (static CSS radial gradient, deep indigo / violet / teal) -->
+  <div class="hero-bg" aria-hidden="true"></div>
+
+  <!-- Animated aurora layer — blurred gradient blobs drifting in screen blend -->
+  <div class="hero-aurora" aria-hidden="true">
+    <div class="aurora-blob blob-1"></div>
+    <div class="aurora-blob blob-2"></div>
+    <div class="aurora-blob blob-3"></div>
+    <div class="aurora-blob blob-4"></div>
+    <div class="aurora-ribbon"></div>
+  </div>
+
+  <!-- Faint grid fading at edges -->
+  <div class="hero-grid absolute inset-0" aria-hidden="true"></div>
+
+  <!-- Film grain overlay for a tactile, premium feel -->
+  <div class="hero-noise absolute inset-0" aria-hidden="true"></div>
+
+  <!-- Soft vignette to focus the center -->
+  <div class="hero-vignette absolute inset-0" aria-hidden="true"></div>
+
+  <!-- Content -->
+  <div class="relative z-10 mx-auto flex h-full min-h-svh w-full max-w-4xl flex-col items-center justify-center px-5 py-28 text-center sm:px-6">
+    <div class="hero-badge rise">
+      <span class="hero-dot" aria-hidden="true"></span>
+      <span class="font-mono text-[10px] uppercase tracking-[0.22em] text-white/70">
+        {badge}
+      </span>
+    </div>
+
+    <h1 class="hero-headline rise mt-7 text-balance font-semibold leading-[1.02] tracking-[-0.04em]">
+      {headline}
+    </h1>
+
+    <p class="rise mx-auto mt-6 max-w-[520px] text-pretty text-base leading-relaxed text-muted sm:text-lg">
+      {subheadline}
+    </p>
+
+    <div class="rise mt-10 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
+      <a
+        href={primaryCta.href}
+        class="btn btn-primary"
+      >
+        {primaryCta.text}
+      </a>
+      <a
+        href={secondaryCta.href}
+        class="btn btn-ghost"
+      >
+        {secondaryCta.text}
+      </a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    min-height: 100svh;
+  }
+
+  @media (max-width: 640px) {
+    .hero {
+      min-height: 90svh;
+    }
+  }
+
+  /* ------------------------------------------------------------------ *
+     Base background — static CSS radial gradient.
+     Deep indigo / violet / teal on a near-black canvas.
+     ------------------------------------------------------------------ */
+  .hero-bg {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background:
+      radial-gradient(ellipse 90% 65% at 50% 15%, rgba(60, 48, 120, 0.35) 0%, transparent 60%),
+      radial-gradient(ellipse 70% 55% at 78% 75%, rgba(28, 45, 82, 0.28) 0%, transparent 55%),
+      radial-gradient(ellipse 60% 50% at 20% 80%, rgba(14, 36, 46, 0.22) 0%, transparent 50%),
+      linear-gradient(180deg, #0a0a0f 0%, #050507 100%);
+  }
+
+  /* ------------------------------------------------------------------ *
+     Aurora layer — drifting blurred gradient blobs, screen-blended.
+     Only `transform` is animated, so it composites on the GPU.
+     ------------------------------------------------------------------ */
+  .hero-aurora {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .aurora-blob {
+    position: absolute;
+    border-radius: 50%;
+    mix-blend-mode: screen;
+    will-change: transform;
+    animation: drift 26s ease-in-out infinite alternate;
+  }
+
+  .blob-1 {
+    width: 62vmax;
+    height: 62vmax;
+    left: -14%;
+    top: -20%;
+    opacity: 0.6;
+    background: radial-gradient(circle at 32% 32%, rgba(67, 54, 158, 0.95) 0%, transparent 62%);
+    animation-duration: 26s;
+  }
+
+  .blob-2 {
+    width: 54vmax;
+    height: 54vmax;
+    right: -18%;
+    top: 4%;
+    opacity: 0.55;
+    background: radial-gradient(circle at 60% 40%, rgba(94, 72, 178, 0.85) 0%, transparent 62%);
+    animation-duration: 31s;
+    animation-delay: -9s;
+  }
+
+  .blob-3 {
+    width: 46vmax;
+    height: 46vmax;
+    left: 14%;
+    bottom: -24%;
+    opacity: 0.5;
+    background: radial-gradient(circle at 50% 50%, rgba(40, 92, 128, 0.8) 0%, transparent 62%);
+    animation-duration: 36s;
+    animation-delay: -17s;
+  }
+
+  .blob-4 {
+    width: 34vmax;
+    height: 34vmax;
+    right: 8%;
+    bottom: -10%;
+    opacity: 0.5;
+    background: radial-gradient(circle at 50% 50%, rgba(122, 92, 202, 0.55) 0%, transparent 62%);
+    animation-duration: 24s;
+    animation-delay: -5s;
+  }
+
+  /* Sweeping aurora curtain — a broad band of light drifting horizontally */
+  .aurora-ribbon {
+    position: absolute;
+    width: 150vmax;
+    height: 18vmax;
+    left: -25%;
+    top: 26%;
+    opacity: 0.6;
+    filter: blur(70px);
+    mix-blend-mode: screen;
+    will-change: transform;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(96, 76, 190, 0.3) 30%,
+      rgba(52, 130, 170, 0.24) 55%,
+      rgba(96, 76, 190, 0.22) 72%,
+      transparent 100%
+    );
+    animation: sweep 44s ease-in-out infinite alternate;
+  }
+
+  @keyframes drift {
+    0% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(7vmax, -5vmax, 0) scale(1.18);
+    }
+    100% {
+      transform: translate3d(-5vmax, 6vmax, 0) scale(0.9);
+    }
+  }
+
+  @keyframes sweep {
+    0% {
+      transform: translateX(-18%) rotate(-20deg);
+    }
+    100% {
+      transform: translateX(18%) rotate(-20deg);
+    }
+  }
+
+  /* Faint grid fading out at the edges */
+  .hero-grid {
+    z-index: 2;
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+    background-size: 64px 64px;
+    -webkit-mask-image: radial-gradient(ellipse 90% 65% at 50% 40%, black 15%, transparent 70%);
+    mask-image: radial-gradient(ellipse 90% 65% at 50% 40%, black 15%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Film grain (SVG turbulence, 2-4% opacity) */
+  .hero-noise {
+    z-index: 3;
+    opacity: 0.035;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/></svg>");
+    background-size: 160px 160px;
+  }
+
+  /* Soft vignette */
+  .hero-vignette {
+    z-index: 4;
+    pointer-events: none;
+    background: radial-gradient(ellipse 80% 70% at 50% 50%, transparent 45%, rgba(0, 0, 0, 0.55) 100%);
+  }
+
+  /* ------------------------------------------------------------------ *
+     Content
+     ------------------------------------------------------------------ */
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.03);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+  }
+
+  .hero-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: #7dd3fc;
+    box-shadow: 0 0 12px 2px rgba(125, 211, 252, 0.7);
+    animation: dotPulse 2.4s ease-in-out infinite;
+  }
+
+  @keyframes dotPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+
+  .hero-headline {
+    font-size: clamp(2.5rem, 7vw, 5rem);
+    letter-spacing: -0.045em;
+    /* White -> gray vertical gradient text fill */
+    background: linear-gradient(180deg, #ffffff 0%, #e6e6ee 48%, #8b8b96 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    padding: 0 28px;
+    border-radius: 9999px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: transform 200ms ease-out, box-shadow 200ms ease-out,
+      background-color 200ms ease-out, border-color 200ms ease-out;
+  }
+
+  .btn-primary {
+    background: #ffffff;
+    color: #050507;
+  }
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 0 28px rgba(255, 255, 255, 0.22);
+  }
+
+  .btn-ghost {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.03);
+    color: #f4f4f6;
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+  }
+  .btn-ghost:hover {
+    border-color: rgba(255, 255, 255, 0.28);
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  /* Fade-and-rise entrance, staggered */
+  .rise {
+    opacity: 0;
+    animation: rise 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  .rise:nth-of-type(1) { animation-delay: 80ms; }
+  .rise:nth-of-type(2) { animation-delay: 200ms; }
+  .rise:nth-of-type(3) { animation-delay: 320ms; }
+  .rise:nth-of-type(4) { animation-delay: 440ms; }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(18px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Keyboard focus */
+  .btn:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 3px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .aurora-blob,
+    .aurora-ribbon {
+      animation: none;
+    }
+    .hero-dot {
+      animation: none;
+    }
+    .rise {
+      animation: none;
+      opacity: 1;
+      transform: none;
+    }
+  }
+</style>

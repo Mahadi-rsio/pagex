@@ -1,0 +1,252 @@
+---
+import Icon from "./Icon.astro";
+
+const badges = [
+  { name: "React", version: "19" },
+  { name: "Next.js", version: "15" },
+  { name: "Vue", version: "3" },
+  { name: "Svelte", version: "5" },
+  { name: "SvelteKit", version: "2" },
+  { name: "Astro", version: "5" },
+  { name: "Angular", version: "19" },
+];
+
+const pipeline = [
+  { label: "Cloning github.com/acme/storefront", state: "done" },
+  { label: "Installing dependencies (pnpm)", state: "done" },
+  { label: "Building · astro build", state: "done" },
+  { label: "Optimizing 128 assets → Brotli + WebP", state: "active" },
+  { label: "Publishing to edge", state: "idle" },
+];
+---
+<section id="top" class="relative overflow-hidden pt-36 pb-16 sm:pt-44 sm:pb-24">
+  <!-- backdrop -->
+  <div class="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+    <div class="absolute inset-0 bg-grid mask-fade-b opacity-60"></div>
+    <div
+      class="absolute left-1/2 top-[-22rem] h-[46rem] w-[46rem] -translate-x-1/2 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.14),rgba(255,255,255,0)_62%)] blur-[10px] animate-drift"
+    >
+    </div>
+    <div
+      class="absolute right-[-8rem] top-40 h-[26rem] w-[26rem] rounded-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.08),transparent_65%)]"
+    >
+    </div>
+    <div class="absolute inset-x-0 top-0 h-px hairline"></div>
+  </div>
+
+  <div class="shell grid items-center gap-14 lg:grid-cols-[1.05fr_minmax(360px,0.95fr)] lg:gap-10">
+    <!-- copy -->
+    <div class="reveal is-revealed max-w-2xl">
+      <a
+        href="#"
+        class="group mb-7 inline-flex items-center gap-2.5 rounded-full border border-line bg-white/[0.03] px-3.5 py-1.5 text-xs text-muted transition-colors hover:border-line-strong hover:text-fg"
+      >
+        <span class="relative flex size-1.5">
+          <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/70"></span>
+          <span class="relative inline-flex size-1.5 rounded-full bg-white"></span>
+        </span>
+        <span class="font-mono tracking-wide">Cloud build · Git · Auto deploy</span>
+        <span class="text-ink-400 transition-transform group-hover:translate-x-0.5">→</span>
+      </a>
+
+      <h1
+        class="text-balance text-[2.9rem] font-semibold leading-[0.98] tracking-[-0.045em] sm:text-6xl lg:text-[4.25rem]"
+      >
+        <span class="block text-gradient">Deploy anything.</span>
+        <span class="block text-gradient">Scale to zero.</span>
+      </h1>
+
+      <p
+        class="mt-6 max-w-xl text-pretty text-base leading-relaxed text-muted sm:text-lg"
+      >
+        Ship static sites and full applications in seconds. Push to Git and PageX
+        builds, optimizes and deploys them to the edge — or run containers billed{" "}
+        <span class="text-fg">by the second</span> that sleep when idle. Free SSL,
+        instant rollbacks, forever-free tier.
+      </p>
+
+      <div class="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <a
+          href="#"
+          class="group inline-flex h-12 items-center justify-center gap-2 rounded-full bg-fg px-6 text-sm font-semibold text-ink-950 shadow-soft transition-transform duration-200 hover:-translate-y-0.5"
+        >
+          Start deploying — free
+          <Icon name="arrow-right" size={17} class="transition-transform duration-200 group-hover:translate-x-0.5" />
+        </a>
+        <a
+          href="#"
+          class="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-line bg-white/[0.02] px-6 text-sm font-medium text-fg transition-colors duration-200 hover:border-line-strong hover:bg-white/[0.05]"
+        >
+          <Icon name="terminal" size={17} class="text-muted" />
+          <span class="font-mono text-[13px]">npm i -g pagex</span>
+        </a>
+      </div>
+
+      <!-- tech badges -->
+      <div class="mt-9 flex flex-wrap items-center gap-2">
+        <span class="eyebrow mr-1 hidden sm:inline">Deploys</span>
+        {
+          badges.map((b) => (
+            <span class="inline-flex items-center gap-1.5 rounded-full border border-line bg-white/[0.02] px-3 py-1.5 text-xs transition-colors duration-200 hover:border-line-strong">
+              <span class="font-semibold tracking-tight">{b.name}</span>
+              <span class="font-mono text-[10px] text-ink-400">{b.version}</span>
+            </span>
+          ))
+        }
+      </div>
+    </div>
+
+    <!-- visual -->
+    <div class="reveal is-revealed relative" style="transition-delay:120ms">
+      <!-- orb -->
+      <div
+        class="orb pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[30rem] w-[30rem] -translate-x-1/2 -translate-y-1/2 animate-drift"
+        aria-hidden="true"
+      >
+      </div>
+
+      <!-- deploy pipeline panel -->
+      <div class="panel relative overflow-hidden shadow-lift">
+        <div
+          class="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent"
+        >
+        </div>
+
+        <div
+          class="flex items-center justify-between border-b border-line px-4 py-3"
+        >
+          <div class="flex items-center gap-2 text-xs text-muted">
+            <span class="size-2.5 rounded-full border border-line-strong bg-white/10"></span>
+            <span class="size-2.5 rounded-full border border-line-strong bg-white/10"></span>
+            <span class="size-2.5 rounded-full border border-line-strong bg-white/10"></span>
+            <span class="ml-2 font-mono">deploy — storefront</span>
+          </div>
+          <span
+            class="inline-flex items-center gap-1.5 rounded-full border border-line bg-white/[0.03] px-2.5 py-1 font-mono text-[10px] tracking-wide text-ink-200"
+          >
+            <span class="size-1.5 rounded-full bg-white animate-pulse"></span>
+            RUNNING
+          </span>
+        </div>
+
+        <div class="space-y-1 p-3 sm:p-4">
+          {
+            pipeline.map((s, i) => (
+              <div class="flex items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors duration-200 hover:bg-white/[0.03]">
+                <span
+                  class:list={[
+                    "grid size-5 shrink-0 place-items-center rounded-full border text-[10px] transition-colors",
+                    s.state === "done" && "border-line-strong bg-white text-ink-950",
+                    s.state === "active" && "border-line-strong bg-white/10 text-fg",
+                    s.state === "idle" && "border-line bg-transparent text-ink-400",
+                  ]}
+                >
+                  {s.state === "done" ? <Icon name="check" size={11} stroke={2.4} /> : i + 1}
+                </span>
+                <span
+                  class:list={[
+                    "font-mono text-[11px] leading-tight sm:text-xs",
+                    s.state === "idle" ? "text-ink-400" : "text-ink-100",
+                  ]}
+                >
+                  {s.label}
+                </span>
+                {s.state === "active" && (
+                  <span class="ml-auto font-mono text-[10px] text-muted">…</span>
+                )}
+              </div>
+            ))
+          }
+        </div>
+
+        <div class="border-t border-line p-3 sm:p-4">
+          <div class="relative h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+            <div class="absolute inset-y-0 left-0 w-[82%] rounded-full bg-gradient-to-r from-ink-300 to-white"></div>
+            <div
+              class="absolute inset-y-0 w-24 animate-sheen bg-gradient-to-r from-transparent via-white/60 to-transparent"
+            >
+            </div>
+          </div>
+          <div
+            class="mt-3 flex items-center justify-between font-mono text-[10px] text-muted"
+          >
+            <span>128 assets · 4.2 MB → 1.1 MB</span>
+            <span class="text-ink-100">82%</span>
+          </div>
+        </div>
+
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-white/[0.02] px-4 py-3.5"
+        >
+          <div>
+            <div class="font-mono text-[10px] uppercase tracking-widest text-muted">
+              Live
+            </div>
+            <div class="mt-0.5 flex items-center gap-1.5 text-sm font-medium">
+              <Icon name="globe" size={13} class="text-ink-300" />
+              storefront.pagex.dev
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-[10px] text-ink-200">
+              <Icon name="lock" size={11} /> Free SSL
+            </span>
+            <span class="inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-[10px] text-ink-200">
+              <Icon name="bolt" size={11} /> Edge
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- floating stat -->
+      <div
+        class="animate-float absolute -left-3 -top-5 hidden rounded-2xl border border-line-strong bg-ink-850/90 px-3.5 py-2.5 shadow-lift backdrop-blur sm:block"
+      >
+        <div class="font-mono text-[10px] uppercase tracking-widest text-muted">
+          Build time
+        </div>
+        <div class="text-lg font-semibold tracking-tight">18.4s</div>
+      </div>
+      <div
+        class="animate-float absolute -bottom-5 -right-2 hidden rounded-2xl border border-line-strong bg-ink-850/90 px-3.5 py-2.5 shadow-lift backdrop-blur sm:block"
+        style="animation-delay:-3s"
+      >
+        <div class="font-mono text-[10px] uppercase tracking-widest text-muted">
+          Cold start
+        </div>
+        <div class="text-lg font-semibold tracking-tight">0 ms</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .orb {
+    background:
+      radial-gradient(
+        42% 42% at 50% 46%,
+        rgba(255, 255, 255, 0.92) 0%,
+        rgba(255, 255, 255, 0.32) 34%,
+        rgba(255, 255, 255, 0) 70%
+      ),
+      radial-gradient(
+        30% 30% at 32% 66%,
+        rgba(255, 255, 255, 0.75) 0%,
+        transparent 70%
+      ),
+      radial-gradient(
+        26% 26% at 70% 34%,
+        rgba(255, 255, 255, 0.6) 0%,
+        transparent 72%
+      ),
+      conic-gradient(
+        from 210deg at 50% 50%,
+        rgba(255, 255, 255, 0.14),
+        rgba(255, 255, 255, 0.02),
+        rgba(255, 255, 255, 0.14)
+      );
+    filter: blur(28px) saturate(0);
+    opacity: 0.55;
+    mask-image: radial-gradient(circle at center, black 52%, transparent 74%);
+  }
+</style>

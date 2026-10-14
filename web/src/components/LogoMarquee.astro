@@ -1,0 +1,40 @@
+---
+const stack = [
+  "React",
+  "Vue",
+  "Svelte",
+  "Astro",
+  "Angular",
+  "Next.js",
+  "SvelteKit",
+  "Nuxt",
+  "Solid",
+  "Qwik",
+  "Vite",
+  "Remix",
+  "Preact",
+  "Eleventy",
+];
+const row = [...stack, ...stack];
+---
+<section class="relative border-y border-line py-10">
+  <div class="shell mb-8 flex flex-col items-center gap-2 text-center">
+    <span class="eyebrow">One platform, every framework</span>
+    <p class="text-sm text-muted">
+      Zero-config builds for the entire JavaScript ecosystem.
+    </p>
+  </div>
+
+  <div class="mask-fade-x relative overflow-hidden">
+    <div class="flex w-max animate-marquee items-center gap-12 pr-12">
+      {
+        row.map((name) => (
+          <span class="flex items-center gap-3 whitespace-nowrap text-xl font-medium tracking-tight text-ink-300 transition-colors duration-300 hover:text-fg">
+            <span class="size-1.5 rounded-full bg-ink-500" />
+            {name}
+          </span>
+        ))
+      }
+    </div>
+  </div>
+</section>

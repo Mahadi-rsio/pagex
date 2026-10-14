@@ -1,0 +1,77 @@
+---
+import "@fontsource-variable/inter";
+import "@fontsource-variable/jetbrains-mono";
+import "../styles/global.css";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+const {
+  title = "PageX — Deploy anything. Scale to zero.",
+  description = "Deploy static sites and full applications in seconds. Git-connected cloud builds, containers billed per second that scale to zero, free SSL, and a fast CLI. Start free forever.",
+} = Astro.props;
+---
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#060608" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body class="grain min-h-dvh antialiased">
+    <div
+      class="grain-overlay pointer-events-none fixed inset-0 z-[100] opacity-[0.035] mix-blend-soft-light"
+      aria-hidden="true"
+    >
+    </div>
+    <slot />
+
+    <script is:inline>
+      // Reveal-on-scroll + nav scroll state (progressive enhancement)
+      (() => {
+        const els = document.querySelectorAll(".reveal");
+        if (!("IntersectionObserver" in window)) {
+          els.forEach((el) => el.classList.add("is-revealed"));
+          return;
+        }
+        const io = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((e) => {
+              if (e.isIntersecting) {
+                e.target.classList.add("is-revealed");
+                io.unobserve(e.target);
+              }
+            });
+          },
+          { rootMargin: "0px 0px -10% 0px", threshold: 0.12 },
+        );
+        els.forEach((el) => io.observe(el));
+
+        const nav = document.getElementById("site-nav");
+        if (nav) {
+          const onScroll = () => {
+            nav.classList.toggle("nav-scrolled", window.scrollY > 12);
+          };
+          onScroll();
+          window.addEventListener("scroll", onScroll, { passive: true });
+        }
+      })();
+    </script>
+    <style is:global>
+      #site-nav.nav-scrolled {
+        background: rgba(8, 8, 10, 0.72);
+        backdrop-filter: blur(14px) saturate(140%);
+        border-color: var(--color-line);
+      }
+    </style>
+  </body>
+</html>
